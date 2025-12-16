@@ -1,3 +1,9 @@
+# Purpose
+
+This is an experimental independent attempt at extracting the pyqtgraph-based timeline functionality of pyPhoCorePlaceAnalysis and helpers into an independent (decoupled) library so it can be used in other projects (like EEG analysis).
+
+
+
 # Usage
 
 ```
