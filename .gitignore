@@ -1,0 +1,3 @@
+﻿**/*.egg-info
+**/__pycache__
+desktop.ini
