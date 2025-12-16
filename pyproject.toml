@@ -3,9 +3,13 @@ name = "py-pho-timeline"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.9.13"
+requires-python = ">=3.9,<3.12"
 dependencies = [
     "cython>=3.2.3",
+    "pyphoplacecellanalysis",
     "setuptools>=80.9.0",
     "wheel>=0.45.1",
 ]
+
+[tool.uv.sources]
+pyphoplacecellanalysis = { path = "../pyPhoPlaceCellAnalysis", editable = true }
