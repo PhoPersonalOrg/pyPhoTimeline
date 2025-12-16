@@ -1,0 +1,562 @@
+"""
+IntervalRectsItem - GraphicsObject for rendering time intervals as rectangles in pyqtgraph.
+
+Based on pyqtgraph's CandlestickItem example, adapted for pypho_timeline.
+"""
+from typing import Dict, List, Tuple, Optional, Callable, Union, Any
+import numpy as np
+
+from neuropy.utils.mixins.indexing_helpers import UnpackableMixin
+from attrs import define, field
+from qtpy import QtGui, QtWidgets
+import pyphoplacecellanalysis.External.pyqtgraph as pg
+from pyphoplacecellanalysis.External.pyqtgraph import QtCore, QtGui, QtWidgets
+from pyphoplacecellanalysis.External.pyqtgraph.graphicsItems.LegendItem import ItemSample, LegendItem
+
+from pypho_timeline.rendering.graphics.rectangle_helpers import RectangleRenderTupleHelpers
+
+# Optional mixins - handle with try/except
+try:
+    from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.Mixins.ReprPrintableWidgetMixin import ReprPrintableItemMixin
+except ImportError:
+    # Fallback: create minimal stub if mixin not available
+    class ReprPrintableItemMixin:
+        pass
+
+# Optional text item - handle with try/except
+try:
+    from pyphoplacecellanalysis.External.pyqtgraph_extensions.graphicsItems.TextItem.AlignableTextItem import CustomRectBoundedTextItem
+except ImportError:
+    # Fallback: create minimal stub if not available
+    class CustomRectBoundedTextItem:
+        def __init__(self, rect=None, text="", parent=None):
+            pass
+        def updatePosition(self):
+            pass
+        def setParentItem(self, parent):
+            pass
+
+
+@define(slots=False, repr=True)
+class IntervalRectsItemData(UnpackableMixin):
+    """Data class for rectangle specifications in IntervalRectsItem.
+    
+    Incremental progress towards more flexible self.data for `IntervalRectsItem` while maintaining 
+    drop-in compatibility with pre 2025-12-10 tuple-based approach via `UnpackableMixin`.
+    
+    Usage:
+        from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItemData
+        
+        rect_data_tuple: IntervalRectsItemData = IntervalRectsItemData(*rect_data_tuple)  # init from raw tuple object
+        start_t, series_vertical_offset, duration_t, series_height, pen, brush = rect_data_tuple  # unpack just like tuple
+    """
+    start_t: float = field()
+    series_vertical_offset: float = field()
+    duration_t: float = field()
+    series_height: float = field()
+    pen: QtGui.QPen = field()
+    brush: QtGui.QBrush = field()
+    label: Optional[str] = field(default=None)
+
+    def UnpackableMixin_unpacking_includes(self) -> Optional[List]:
+        """Items to be included (allowlist) from unpacking."""
+        return [self.__attrs_attrs__.start_t, self.__attrs_attrs__.series_vertical_offset, 
+                self.__attrs_attrs__.duration_t, self.__attrs_attrs__.series_height, 
+                self.__attrs_attrs__.pen, self.__attrs_attrs__.brush]
+
+
+class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
+    """GraphicsObject that renders 2D intervals as rectangles in a pyqtgraph plot.
+    
+    Based on pyqtgraph's CandlestickItem example.
+    
+    Rectangle Item Specification: 
+        Renders rectangles, with each specified by a tuple of the form:
+            (start_t, series_vertical_offset, duration_t, series_height, pen, brush)
+
+        Note that this is analogous to the position arguments of `QRectF`:
+            (left, top, width, height) and (pen, brush)
+            
+    Usage:
+        Example 1 (basic):
+            from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem
+            active_interval_rects_item = IntervalRectsItem(data)
+            
+            ## Add the active_interval_rects_item to the main_plot_widget: 
+            main_plot_widget.addItem(active_interval_rects_item)
+
+            ## Remove the active_interval_rects_item:
+            main_plot_widget.removeItem(active_interval_rects_item)
+
+        Example 2 (with custom tooltip function):
+            def _custom_format_tooltip_for_rect_data(rect_index: int, rect_data_tuple: Tuple) -> str:
+                start_t, series_vertical_offset, duration_t, series_height, pen, brush = rect_data_tuple
+                ## get the optional label field if `rect_data_tuple` is a `IntervalRectsItemData` instead of a plain tuple
+                a_label = None
+                if not isinstance(rect_data_tuple, Tuple):
+                    a_label = rect_data_tuple.label
+                
+                end_t = start_t + duration_t
+                if a_label:
+                    tooltip_text = f"{a_label}\nItem[{rect_index}]\nStart: {start_t:.3f}\nEnd: {end_t:.3f}\nDuration: {duration_t:.3f}"
+                else:
+                    tooltip_text = f"Item[{rect_index}]\nStart: {start_t:.3f}\nEnd: {end_t:.3f}\nDuration: {duration_t:.3f}"
+                return tooltip_text
+
+            # Build the rendered interval item:
+            from copy import deepcopy
+            new_interval_rects_item = IntervalRectsItem(data, format_tooltip_fn=deepcopy(_custom_format_tooltip_for_rect_data))
+    """
+    pressed = False
+    clickable = True
+    hoverEnter = QtCore.pyqtSignal()
+    hoverExit = QtCore.pyqtSignal()
+    clicked = QtCore.pyqtSignal()
+    ## data must have fields: start_t, series_vertical_offset, duration_t, series_height, pen, brush
+
+    def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False):
+        # menu creation is deferred because it is expensive and often
+        # the user will never see the menu anyway.
+        self.menu = None
+        # note that the use of super() is often avoided because Qt does not 
+        # allow to inherit from multiple QObject subclasses.
+        pg.GraphicsObject.__init__(self)
+        self.data = data  ## data must have fields: start_t, series_vertical_offset, duration_t, series_height, pen, brush
+        self.generatePicture()
+        self.setAcceptHoverEvents(True)
+        self._current_hovered_rect = None  # Track which rectangle is currently hovered
+        self._current_hovered_item_tooltip_format_fn = None
+        if format_tooltip_fn is None:
+            format_tooltip_fn = self._default_format_tooltip_for_rect_data
+        if format_label_fn is None:
+            # format_label_fn = self._default_format_tooltip_for_rect_data            
+            pass ## no labels when not explicitly set
+
+        self._current_hovered_item_tooltip_format_fn = format_tooltip_fn
+        self._item_label_format_fn = format_label_fn
+
+        self._labels = []
+        self.rebuild_label_items()
+
+    def generatePicture(self):
+        ## pre-computing a QPicture object allows paint() to run much more quickly, 
+        ## rather than re-drawing the shapes every time.
+        self.picture = QtGui.QPicture()
+        p = QtGui.QPainter(self.picture)
+        
+        # White background bars:
+        p.setPen(pg.mkPen('w'))
+        p.setBrush(pg.mkBrush('r'))
+        
+        for rect_data in self.data:
+            # Handle both tuples and IntervalRectsItemData objects
+            if isinstance(rect_data, IntervalRectsItemData):
+                start_t = rect_data.start_t
+                series_vertical_offset = rect_data.series_vertical_offset
+                duration_t = rect_data.duration_t
+                series_height = rect_data.series_height
+                pen = rect_data.pen
+                brush = rect_data.brush
+            else:
+                # Tuple unpacking (backward compatibility)
+                (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data
+            
+            p.setPen(pen)
+            p.setBrush(brush) # filling of the rectangles by a passed color:
+            p.drawRect(QtCore.QRectF(start_t, series_vertical_offset, duration_t, series_height)) # QRectF: (left, top, width, height)
+
+        p.end()
+    
+    def update_data(self, new_data):
+        """Update the data in-place and regenerate the picture
+        
+        Args:
+            new_data: List of tuples or IntervalRectsItemData objects with format:
+                (start_t, series_vertical_offset, duration_t, series_height, pen, brush) or
+                IntervalRectsItemData(...)
+        """
+        self.data = new_data
+        self.generatePicture()
+        self.update()
+        # Rebuild labels if label format function exists
+        if self.item_label_format_fn is not None:
+            self.rebuild_label_items()
+    
+    def paint(self, p, *args):
+        p.drawPicture(0, 0, self.picture)
+    
+    def boundingRect(self):
+        ## boundingRect _must_ indicate the entire area that will be drawn on
+        ## or else we will get artifacts and possibly crashing.
+        ## (in this case, QPicture does all the work of computing the bounding rect for us)
+        return QtCore.QRectF(self.picture.boundingRect())
+
+    @property
+    def format_item_tooltip_fn(self) -> Callable:
+        """The format_item_tooltip_fn property."""
+        return self._current_hovered_item_tooltip_format_fn
+    @format_item_tooltip_fn.setter
+    def format_item_tooltip_fn(self, value: Callable):
+        is_changing: bool = (self._current_hovered_item_tooltip_format_fn != value)
+        self._current_hovered_item_tooltip_format_fn = value
+
+    @property
+    def item_label_format_fn(self):
+        """The item_label_format_fn property."""
+        return self._item_label_format_fn
+    @item_label_format_fn.setter
+    def item_label_format_fn(self, value):
+        is_changing: bool = (self._item_label_format_fn != value)
+        self._item_label_format_fn = value
+        if is_changing:
+            self.rebuild_label_items()
+
+    def rebuild_label_items(self, debug_print: bool=False):
+        """Rebuilds self._labels after update."""
+        if debug_print:
+            print(f'IntervalRectsItem.rebuild_label_items(...): removing existing label items: len(self._labels): {len(self._labels)}')
+        ## remove existing label items:
+        for a_text_item in self._labels:
+            # Properly remove from parent/scene
+            a_text_item.setParentItem(None)
+        self._labels = []
+        if debug_print:
+            print(f'\tdone.')
+
+        if self.item_label_format_fn is not None:
+            if debug_print:
+                print(f'\tbuilding labels...')
+            ## Build labels
+            for rect_index in np.arange(len(self.data)):
+                rect_data_tuple = self.data[rect_index]
+                # Handle both tuples and IntervalRectsItemData objects
+                if isinstance(rect_data_tuple, IntervalRectsItemData):
+                    start_t = rect_data_tuple.start_t
+                    series_vertical_offset = rect_data_tuple.series_vertical_offset
+                    duration_t = rect_data_tuple.duration_t
+                    series_height = rect_data_tuple.series_height
+                    pen = rect_data_tuple.pen
+                    brush = rect_data_tuple.brush
+                else:
+                    # Tuple unpacking (backward compatibility)
+                    (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data_tuple
+                label_text: str = self.item_label_format_fn(rect_index=rect_index, rect_data_tuple=rect_data_tuple)
+                a_rect = QtCore.QRectF(start_t, series_vertical_offset, duration_t, series_height)  # QRectF: (left, top, width, height)
+                if debug_print:
+                    print(f'rect_index: {rect_index}, a_rect: {a_rect}, label_text: "{label_text}"')
+                a_text_item: CustomRectBoundedTextItem = CustomRectBoundedTextItem(rect=a_rect, text=label_text, parent=self)
+                           
+                self._labels.append(a_text_item)
+                if debug_print:
+                    print(f'\tadded label: {a_text_item}')
+                a_text_item.updatePosition()
+                
+        else:
+            if debug_print:
+                print(f'\tno self.item_label_format_fn, so not building labels.')
+
+        if debug_print:
+            print(f'\tdone.')
+
+    ## Copy Constructors:
+    def __copy__(self):
+        independent_data_copy = RectangleRenderTupleHelpers.copy_data(self.data)
+        return IntervalRectsItem(independent_data_copy)
+    
+    def __deepcopy__(self, memo):
+        independent_data_copy = RectangleRenderTupleHelpers.copy_data(self.data)
+        return IntervalRectsItem(independent_data_copy)
+
+    # ==================================================================================================================== #
+    # Events
+    # ====================================================================================================================
+
+    def hoverEnterEvent(self, event):
+        if self.clickable:
+            self.hoverEnter.emit()
+
+    def hoverMoveEvent(self, event):
+        """Handle hover move events to show tooltips for individual rectangles."""
+        if not self.clickable:
+            return
+            
+        # Get the position in item coordinates
+        pos = event.pos()
+        
+        # Find which rectangle (if any) contains this position
+        hovered_rect_index = self._get_rect_at_position(pos)
+        
+        if hovered_rect_index != self._current_hovered_rect:
+            self._current_hovered_rect = hovered_rect_index
+            
+            if hovered_rect_index is not None:
+                # Show tooltip for this rectangle
+                global_pos = event.screenPos()
+                self._show_tooltip_for_rect(hovered_rect_index, QtCore.QPoint(int(global_pos.x()), int(global_pos.y())))
+            else:
+                # Hide tooltip when not over any rectangle
+                QtWidgets.QToolTip.hideText()
+
+    def hoverLeaveEvent(self, event):
+        if self.clickable:
+            self.hoverExit.emit()
+            # Hide tooltip when leaving the item
+            QtWidgets.QToolTip.hideText()
+            self._current_hovered_rect = None
+
+    def mousePressEvent(self, event):
+        if self.clickable:
+            pressed = True
+
+    def mouseReleaseEvent(self, event):
+        if self.clickable:
+            pressed = False
+            self.clicked.emit()
+
+    # ==================================================================================================================== #
+    # Hover Event Handlers
+    # ====================================================================================================================
+    def _get_rect_at_position(self, pos):
+        """
+        Find which rectangle (if any) contains the given position.
+        Returns the index of the rectangle, or None if no rectangle contains the position.
+        
+        Args:
+            pos: QtCore.QPointF in item coordinates
+            
+        Returns:
+            int or None: Index of the rectangle containing the position, or None
+        """
+        for i, rect_data in enumerate(self.data):
+            # Handle both tuples and IntervalRectsItemData objects
+            if isinstance(rect_data, IntervalRectsItemData):
+                start_t = rect_data.start_t
+                series_vertical_offset = rect_data.series_vertical_offset
+                duration_t = rect_data.duration_t
+                series_height = rect_data.series_height
+            else:
+                # Tuple unpacking (backward compatibility)
+                (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data
+            rect = QtCore.QRectF(start_t, series_vertical_offset, duration_t, series_height)
+            if rect.contains(pos):
+                return i
+        return None
+    
+    @classmethod
+    def _default_format_tooltip_for_rect_data(cls, rect_index: int, rect_data_tuple: Tuple) -> str:
+        """Default tooltip formatter for rectangle data.
+        
+        rect_data_tuple = self.data[rect_index]
+        start_t, series_vertical_offset, duration_t, series_height, pen, brush = rect_data_tuple
+        """
+        # Handle both tuples and IntervalRectsItemData objects
+        if isinstance(rect_data_tuple, IntervalRectsItemData):
+            start_t = rect_data_tuple.start_t
+            series_vertical_offset = rect_data_tuple.series_vertical_offset
+            duration_t = rect_data_tuple.duration_t
+            series_height = rect_data_tuple.series_height
+            pen = rect_data_tuple.pen
+            brush = rect_data_tuple.brush
+            a_label = rect_data_tuple.label
+        else:
+            # Tuple unpacking (backward compatibility)
+            start_t, series_vertical_offset, duration_t, series_height, pen, brush = rect_data_tuple
+            a_label = None
+        
+        end_t = start_t + duration_t
+        if a_label:
+            tooltip_text = f"{a_label}\nItem[{rect_index}]\nStart: {start_t:.3f}\nEnd: {end_t:.3f}\nDuration: {duration_t:.3f}"
+        else:
+            tooltip_text = f"Item[{rect_index}]\nStart: {start_t:.3f}\nEnd: {end_t:.3f}\nDuration: {duration_t:.3f}"
+        return tooltip_text
+
+    def _show_tooltip_for_rect(self, rect_index, global_pos):
+        """
+        Show tooltip for the specified rectangle.
+        
+        Args:
+            rect_index: Index of the rectangle in self.data
+            global_pos: Global screen position for tooltip
+        """
+        if rect_index is None or rect_index >= len(self.data):
+            return
+        rect_data_tuple = self.data[rect_index]
+        assert self._current_hovered_item_tooltip_format_fn is not None, f"self._current_hovered_item_tooltip_format_fn is None!"
+        tooltip_text: str = self._current_hovered_item_tooltip_format_fn(rect_index=rect_index, rect_data_tuple=rect_data_tuple)        
+        QtWidgets.QToolTip.showText(global_pos, tooltip_text)
+
+    def setToolTip(self, text):
+        """
+        Override setToolTip to provide custom behavior.
+        
+        Args:
+            text: Tooltip text. If None or empty, enables per-rectangle tooltips.
+                  If provided, shows this static text for the entire item.
+        """
+        print(f'WARNING: IntervalRectsItem.setTooltip(text: "{text}") was called, but this would set a single, static tooltip for the entire graphics item and is very unlikely to be what you want to do!')
+        raise NotImplementedError(f'WARNING: IntervalRectsItem.setTooltip(text: "{text}") was called, but this would set a single, static tooltip for the entire graphics item and is very unlikely to be what you want to do!')
+
+    # ==================================================================================================================== #
+    # Context Menu and Interaction Handling
+    # ====================================================================================================================
+    def mouseShape(self):
+        """
+        Return a QPainterPath representing the clickable shape of the curve
+        """
+        if self._mouseShape is None:
+            view = self.getViewBox()
+            if view is None:
+                return QtGui.QPainterPath()
+            stroker = QtGui.QPainterPathStroker()
+            path = self.getPath()
+            path = self.mapToItem(view, path)
+            stroker.setWidth(self.opts['mouseWidth'])
+            mousePath = stroker.createStroke(path)
+            self._mouseShape = self.mapFromItem(view, mousePath)
+        return self._mouseShape
+
+    # On right-click, raise the context menu
+    def mouseClickEvent(self, ev):
+        print(f'IntervalRectsItem.mouseClickEvent(ev: {ev})')
+        if ev.button() == QtCore.Qt.MouseButton.RightButton:
+            if self.raiseContextMenu(ev):
+                ev.accept() # note that I think this means it won't pass the right click along to its parent view, might messup widget-wide menus
+
+    def raiseContextMenu(self, ev):
+        """Works to spawn the context menu in the appropriate location."""
+        print(f'IntervalRectsItem.raiseContextMenu(ev: {ev})')
+        menu = self.getContextMenus()
+        
+        pos = ev.screenPos()
+        menu.popup(QtCore.QPoint(int(pos.x()), int(pos.y())))
+        return True
+
+    def getContextMenus(self, event=None):
+        """Builds the context menus as needed."""
+        if self.menu is None:
+            self.menu = QtWidgets.QMenu()
+            self.menu.setTitle("IntervalRectItem options..")
+            
+            green = QtGui.QAction("Turn green", self.menu)
+            green.triggered.connect(self.setGreen)
+            self.menu.addAction(green)
+            self.menu.green = green
+            
+            blue = QtGui.QAction("Turn blue", self.menu)
+            blue.triggered.connect(self.setBlue)
+            self.menu.addAction(blue)
+            self.menu.green = blue
+            
+            alpha = QtWidgets.QWidgetAction(self.menu)
+            alphaSlider = QtWidgets.QSlider()
+            alphaSlider.setOrientation(QtCore.Qt.Orientation.Horizontal)
+            alphaSlider.setMaximum(255)
+            alphaSlider.setValue(255)
+            alphaSlider.valueChanged.connect(self.setAlpha)
+            alpha.setDefaultWidget(alphaSlider)
+            self.menu.addAction(alpha)
+            self.menu.alpha = alpha
+            self.menu.alphaSlider = alphaSlider
+        return self.menu
+
+    # Define context menu callbacks
+    def setGreen(self):
+        print(f'.setGreen()...')
+        for i, rect_data in enumerate(self.data):
+            # Handle both tuples and IntervalRectsItemData objects
+            if isinstance(rect_data, IntervalRectsItemData):
+                start_t = rect_data.start_t
+                series_vertical_offset = rect_data.series_vertical_offset
+                duration_t = rect_data.duration_t
+                series_height = rect_data.series_height
+                a_label = rect_data.label
+            else:
+                # Tuple unpacking (backward compatibility)
+                (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data
+                a_label = None
+            override_pen = pg.mkPen('g')
+            override_brush = pg.mkBrush('g')
+            self.data[i] = IntervalRectsItemData(start_t, series_vertical_offset, duration_t, series_height, override_pen, override_brush, label=a_label)
+        
+        # Need to regenerate picture
+        self.generatePicture()
+        # inform Qt that this item must be redrawn.
+        self.update()
+
+    def setBlue(self):
+        print(f'.setBlue()...')
+        for i, rect_data in enumerate(self.data):
+            # Handle both tuples and IntervalRectsItemData objects
+            if isinstance(rect_data, IntervalRectsItemData):
+                start_t = rect_data.start_t
+                series_vertical_offset = rect_data.series_vertical_offset
+                duration_t = rect_data.duration_t
+                series_height = rect_data.series_height
+                a_label = rect_data.label
+            else:
+                # Tuple unpacking (backward compatibility)
+                (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data
+                a_label = None
+            override_pen = pg.mkPen('b')
+            override_brush = pg.mkBrush('b')
+            self.data[i] = IntervalRectsItemData(start_t, series_vertical_offset, duration_t, series_height, override_pen, override_brush, label=a_label)
+
+        # Need to regenerate picture
+        self.generatePicture()
+        self.update()
+
+    def setAlpha(self, a):
+        self.setOpacity(a/255.)
+
+
+class CustomLegendItemSample(ReprPrintableItemMixin, ItemSample):
+    """An ItemSample that can render a legend item for `IntervalRectsItem`
+    
+    Usage:
+        from pypho_timeline.rendering.graphics.interval_rects_item import CustomLegendItemSample
+        
+        legend = pg.LegendItem(offset=(-10, -10))
+        legend.setParentItem(plt.graphicsItem())
+        legend.setSampleType(CustomLegendItemSample)
+    """
+    def __init__(self, item):
+        super().__init__(item)
+        self.item = item
+
+    def paint(self, p, *args):
+        if not isinstance(self.item, IntervalRectsItem):
+            ## Call superclass paint
+            super().paint(p, *args)
+        else:
+            # Custom Implementation
+            if not self.item.isVisible():
+                p.setPen(pg.mkPen('w'))
+                p.drawLine(0, 11, 20, 11) # draw flat white line
+                return
+
+            # Define the size of the rectangle
+            rect_width = 20
+            rect_height = 8
+
+            # Calculate the top-left corner coordinates to center the rectangle
+            top_left_x = (self.boundingRect().width() - rect_width) / 2
+            top_left_y = (self.boundingRect().height() - rect_height) / 2
+
+            # The first item is representative of all items, don't draw the item over-and-over
+            use_only_first_items: bool = True
+
+            for rect_data in self.item.data:
+                # Handle both tuples and IntervalRectsItemData objects
+                if isinstance(rect_data, IntervalRectsItemData):
+                    pen = rect_data.pen
+                    brush = rect_data.brush
+                else:
+                    # Tuple unpacking (backward compatibility)
+                    pen, brush = rect_data[4], rect_data[5]
+                if (pen is not None) or (brush is not None):                   
+                    p.setPen(pen)
+                    p.setBrush(brush)
+                    p.drawRect(QtCore.QRectF(top_left_x, top_left_y, rect_width, rect_height))
+                    if use_only_first_items:
+                        return # break, only needed to draw one item
+

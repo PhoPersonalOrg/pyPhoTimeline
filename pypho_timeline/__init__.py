@@ -31,6 +31,18 @@ from pypho_timeline.widgets.custom_graphics_layout_widget import (
 
 from pypho_timeline.mixins.crosshairs_tracing_mixin import CrosshairsTracingMixin
 
+# Rendering (interval/epoch rendering)
+from pypho_timeline.rendering import (
+    IntervalRectsItem,
+    IntervalRectsItemData,
+    RectangleRenderTupleHelpers,
+    Render2DEventRectanglesHelper,
+    EpochRenderingMixin,
+    RenderedEpochsItemsContainer,
+    LiveWindowEventIntervalMonitoringMixin,
+    IntervalsDatasource,
+)
+
 __all__ = [
     # Core
     'SynchronizedPlotMode',
@@ -51,5 +63,14 @@ __all__ = [
     'CustomViewBox',
     # Mixins
     'CrosshairsTracingMixin',
+    # Rendering
+    'IntervalRectsItem',
+    'IntervalRectsItemData',
+    'RectangleRenderTupleHelpers',
+    'Render2DEventRectanglesHelper',
+    'EpochRenderingMixin',
+    'RenderedEpochsItemsContainer',
+    'LiveWindowEventIntervalMonitoringMixin',
+    'IntervalsDatasource',
 ]
 
