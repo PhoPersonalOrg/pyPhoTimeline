@@ -16,6 +16,7 @@ from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
 from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
 from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, NamedColorScheme
 from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
+from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 
 
@@ -139,6 +140,113 @@ class SimpleTimelineWidget(SpecificDockWidgetManipulatingMixin, QtWidgets.QWidge
         y_data3 = 5 + 4 * np.sin(2 * np.pi * x_data3 / 25)
         plot_item3.plot(x_data3, y_data3, pen='m', name='global_data')
         
+        # Track 4: Interval rectangles track (shows time intervals as rectangles)
+        print("Adding interval rectangles track...")
+        intervals_widget, root_graphics4, plot_item4, dock4 = self.add_new_embedded_pyqtgraph_render_plot_widget(
+            name='intervals_track',
+            dockSize=(500, 80),
+            dockAddLocationOpts=['bottom'],
+            sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA
+        )
+        
+        # Set range to show full time range
+        plot_item4.setXRange(self.total_data_start_time, self.total_data_end_time, padding=0)
+        plot_item4.setYRange(0, 5, padding=0)
+        plot_item4.setLabel('bottom', 'Time', units='s')
+        plot_item4.setLabel('left', 'Intervals')
+        plot_item4.hideAxis('left')  # Hide Y-axis for cleaner look
+        
+        # Create sample interval data
+        # Intervals at different vertical positions with different colors
+        interval_data = []
+        
+        # Series 1: Red intervals at y=1
+        intervals_1 = [
+            (10.0, 1.0, 0.5, 5.0, 0.8),  # (start, y_offset, duration, height, alpha)
+            (15.0, 1.0, 0.5, 5.0, 0.8),
+            (20.0, 1.0, 0.5, 5.0, 0.8),
+            (35.0, 1.0, 0.5, 5.0, 0.8),
+            (50.0, 1.0, 0.5, 5.0, 0.8),
+            (65.0, 1.0, 0.5, 5.0, 0.8),
+            (80.0, 1.0, 0.5, 5.0, 0.8),
+        ]
+        
+        # Series 2: Green intervals at y=2
+        intervals_2 = [
+            (12.0, 2.0, 1.0, 4.0, 0.7),
+            (25.0, 2.0, 1.0, 4.0, 0.7),
+            (40.0, 2.0, 1.0, 4.0, 0.7),
+            (55.0, 2.0, 1.0, 4.0, 0.7),
+            (70.0, 2.0, 1.0, 4.0, 0.7),
+        ]
+        
+        # Series 3: Blue intervals at y=3
+        intervals_3 = [
+            (5.0, 3.0, 2.0, 3.0, 0.6),
+            (30.0, 3.0, 2.0, 3.0, 0.6),
+            (60.0, 3.0, 2.0, 3.0, 0.6),
+            (85.0, 3.0, 2.0, 3.0, 0.6),
+        ]
+        
+        # Create pens and brushes for each series
+        red_color = pg.mkColor('r')
+        red_color.setAlphaF(0.8)
+        red_pen = pg.mkPen(red_color, width=2)
+        red_brush = pg.mkBrush(red_color)
+        
+        green_color = pg.mkColor('g')
+        green_color.setAlphaF(0.7)
+        green_pen = pg.mkPen(green_color, width=2)
+        green_brush = pg.mkBrush(green_color)
+        
+        blue_color = pg.mkColor('b')
+        blue_color.setAlphaF(0.6)
+        blue_pen = pg.mkPen(blue_color, width=2)
+        blue_brush = pg.mkBrush(blue_color)
+        
+        # Add intervals from series 1 (red)
+        for start, y_offset, duration, height, alpha in intervals_1:
+            interval_data.append(IntervalRectsItemData(
+                start_t=start,
+                series_vertical_offset=y_offset,
+                duration_t=duration,
+                series_height=height,
+                pen=red_pen,
+                brush=red_brush,
+                label=f"Event at {start:.1f}s"
+            ))
+        
+        # Add intervals from series 2 (green)
+        for start, y_offset, duration, height, alpha in intervals_2:
+            interval_data.append(IntervalRectsItemData(
+                start_t=start,
+                series_vertical_offset=y_offset,
+                duration_t=duration,
+                series_height=height,
+                pen=green_pen,
+                brush=green_brush,
+                label=f"Interval at {start:.1f}s"
+            ))
+        
+        # Add intervals from series 3 (blue)
+        for start, y_offset, duration, height, alpha in intervals_3:
+            interval_data.append(IntervalRectsItemData(
+                start_t=start,
+                series_vertical_offset=y_offset,
+                duration_t=duration,
+                series_height=height,
+                pen=blue_pen,
+                brush=blue_brush,
+                label=f"Long interval at {start:.1f}s"
+            ))
+        
+        # Create the IntervalRectsItem and add it to the plot
+        interval_rects_item = IntervalRectsItem(interval_data)
+        plot_item4.addItem(interval_rects_item)
+        
+        # Store reference for potential updates
+        self.ui.intervals_item = interval_rects_item
+        
     def simulate_window_scroll(self, new_start_time):
         """Simulate scrolling the time window (for demonstration)."""
         new_end_time = new_start_time + (self.active_window_end_time - self.active_window_start_time)
@@ -185,11 +293,13 @@ def main():
     # Start the scroll demo after 1 second
     QtCore.QTimer.singleShot(1000, scroll_demo)
     
-    print("\nTimeline widget created with 3 example tracks:")
+    print("\nTimeline widget created with 4 example tracks:")
     print("  1. Overview track (NO_SYNC) - shows full time range")
     print("  2. Window track (TO_WINDOW) - syncs with active window")
     print("  3. Global track (TO_GLOBAL_DATA) - one-time sync to global range")
+    print("  4. Intervals track (TO_GLOBAL_DATA) - displays time intervals as colored rectangles")
     print("\nThe window will automatically scroll to demonstrate synchronization.")
+    print("Hover over the interval rectangles to see tooltips.")
     print("Close the window to exit.\n")
     
     # Run the application
