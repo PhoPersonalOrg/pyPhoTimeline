@@ -36,16 +36,25 @@ class SpecificDockWidgetManipulatingMixin:
                 # ... initialize other required attributes
     """
     
-    def on_toggle_timeline_sync_mode(self, an_item, is_checked):
+    def on_toggle_timeline_sync_mode(self, an_item, mode_name):
         """ Called to update the sync mode
+        mode_name: str - one of 'Generic' (TO_WINDOW), 'to_global_data' (TO_GLOBAL_DATA), or 'no_sync' (NO_SYNC)
         """
-        print(f'on_toggle_timeline_sync_mode(an_item: {an_item}, is_checked: {is_checked})')
+        print(f'on_toggle_timeline_sync_mode(an_item: {an_item}, mode_name: {mode_name})')
         identifier_name = an_item._name
         print(f'\tidentifier_name: "{identifier_name}"')
-        if is_checked:
-            sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA
-        else:
+        
+        # Convert mode_name string to SynchronizedPlotMode enum
+        if mode_name == 'Generic':
             sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_WINDOW
+        elif mode_name == 'to_global_data':
+            sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA
+        elif mode_name == 'no_sync':
+            sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.NO_SYNC
+        else:
+            print(f'\tWARNING: Unknown mode_name "{mode_name}", defaulting to TO_WINDOW')
+            sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_WINDOW
+        
         print(f'\tsync_mode: {sync_mode}')
         self.sync_matplotlib_render_plot_widget(identifier_name, sync_mode=sync_mode)
         print('\tdone.')
