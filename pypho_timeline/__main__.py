@@ -17,7 +17,7 @@ from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidget
 from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, NamedColorScheme
 from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
-from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource
+from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource
 from pypho_timeline.rendering.detail_renderers import PositionPlotDetailRenderer, VideoThumbnailDetailRenderer
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
@@ -25,8 +25,12 @@ from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPl
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
 
 
-class PositionTrackDatasource:
-    """Example TrackDatasource for position data."""
+class PositionTrackDatasource(BaseTrackDatasource):
+    """Example TrackDatasource for position data.
+    
+    Inherits from BaseTrackDatasource and implements all required methods for
+    displaying position data with async detail loading.
+    """
     
     def __init__(self, position_df: pd.DataFrame, intervals_df: pd.DataFrame):
         """Initialize with position data and intervals.
@@ -35,10 +39,10 @@ class PositionTrackDatasource:
             position_df: DataFrame with columns ['t', 'x', 'y'] (or ['t', 'x'] for 1D)
             intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
         """
+        super().__init__()
         self.position_df = position_df
         self.intervals_df = intervals_df.copy()
         self.custom_datasource_name = "PositionTrack"
-        self.source_data_changed_signal = QtCore.Signal()
         
         # Add visualization columns to intervals
         self.intervals_df['series_vertical_offset'] = 0.0
@@ -98,8 +102,12 @@ class PositionTrackDatasource:
         return f"position_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
 
 
-class VideoTrackDatasource:
-    """Example TrackDatasource for video data."""
+class VideoTrackDatasource(BaseTrackDatasource):
+    """Example TrackDatasource for video data.
+    
+    Inherits from BaseTrackDatasource and implements all required methods for
+    displaying video intervals with async detail loading.
+    """
     
     def __init__(self, video_intervals_df: pd.DataFrame):
         """Initialize with video intervals.
@@ -107,9 +115,9 @@ class VideoTrackDatasource:
         Args:
             video_intervals_df: DataFrame with columns ['t_start', 't_duration', 'video_path']
         """
+        super().__init__()
         self.video_intervals_df = video_intervals_df.copy()
         self.custom_datasource_name = "VideoTrack"
-        self.source_data_changed_signal = QtCore.Signal()
         
         # Add visualization columns
         self.video_intervals_df['series_vertical_offset'] = 0.0

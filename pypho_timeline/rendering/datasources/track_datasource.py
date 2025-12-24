@@ -3,7 +3,8 @@
 This module defines the protocols for datasources that provide both overview intervals
 and detailed data that can be fetched asynchronously when intervals scroll into view.
 """
-from typing import Protocol, Optional, Tuple, List, Any
+from typing import Protocol, Optional, Tuple, List, Any, runtime_checkable
+from abc import ABC, abstractmethod
 import pandas as pd
 from qtpy import QtCore
 
@@ -53,17 +54,36 @@ class DetailRenderer(Protocol):
         ...
 
 
+@runtime_checkable
 class TrackDatasource(Protocol):
     """Protocol for track datasources that provide overview intervals and detailed data.
     
     Extends IntervalsDatasource to add methods for fetching detailed data asynchronously
     and providing a renderer for the detailed view.
+    
+    **Required Methods** (must be implemented):
+        - `df` property: Returns the DataFrame containing interval data
+        - `time_column_names` property: Returns list of time-related column names
+        - `total_df_start_end_times` property: Returns (start, end) tuple for entire dataset
+        - `get_updated_data_window(new_start, new_end)`: Returns intervals in time window
+        - `fetch_detailed_data(interval)`: Fetches detailed data for an interval (thread-safe)
+        - `get_detail_renderer()`: Returns DetailRenderer instance for this track type
+    
+    **Optional Methods** (have default implementations in BaseTrackDatasource):
+        - `get_overview_intervals()`: Returns overview interval data (defaults to `df`)
+        - `get_detail_cache_key(interval)`: Returns unique cache key (defaults to time-based key)
+        - `update_visualization_properties(function)`: Updates visualization columns
+    
+    **Required Attributes**:
+        - `custom_datasource_name`: str - Name identifier for this datasource
+        - `source_data_changed_signal`: QtCore.Signal - Signal emitted when data changes
     """
     
-    # Inherit from IntervalsDatasource
+    # Required attributes (from IntervalsDatasource)
     custom_datasource_name: str
     source_data_changed_signal: QtCore.Signal
     
+    # Required properties (from IntervalsDatasource)
     @property
     def df(self) -> pd.DataFrame:
         """The dataframe containing interval data with columns ['t_start', 't_duration', ...]"""
@@ -79,6 +99,7 @@ class TrackDatasource(Protocol):
         """Returns (earliest_time, latest_time) for the entire dataset"""
         ...
     
+    # Required methods (from IntervalsDatasource)
     def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
         """Returns the subset of intervals that overlap with the given time window"""
         ...
@@ -87,7 +108,7 @@ class TrackDatasource(Protocol):
         """Updates visualization columns in the dataframe"""
         ...
     
-    # New methods for track rendering
+    # Required methods for track rendering
     def get_overview_intervals(self) -> pd.DataFrame:
         """Get overview interval data for rendering simple rectangles.
         
@@ -120,6 +141,7 @@ class TrackDatasource(Protocol):
         """
         ...
     
+    # Optional method (has default implementation in BaseTrackDatasource)
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get a unique cache key for an interval's detailed data.
         
@@ -132,5 +154,159 @@ class TrackDatasource(Protocol):
         ...
 
 
-__all__ = ['TrackDatasource', 'DetailRenderer']
+class BaseTrackDatasource(ABC):
+    """Abstract base class implementing the TrackDatasource protocol.
+    
+    This class provides a concrete implementation that datasources can inherit from,
+    with default implementations for common methods. Subclasses must implement the
+    abstract methods marked with @abstractmethod.
+    
+    **Required Methods to Implement** (abstract):
+        - `df` property: Returns the DataFrame containing interval data
+        - `time_column_names` property: Returns list of time-related column names
+        - `total_df_start_end_times` property: Returns (start, end) tuple for entire dataset
+        - `get_updated_data_window(new_start, new_end)`: Returns intervals in time window
+        - `fetch_detailed_data(interval)`: Fetches detailed data for an interval (thread-safe)
+        - `get_detail_renderer()`: Returns DetailRenderer instance for this track type
+    
+    **Default Implementations Provided**:
+        - `get_overview_intervals()`: Returns `df` property by default
+        - `get_detail_cache_key(interval)`: Generates key from `t_start` and `t_duration`
+        - `update_visualization_properties(function)`: Applies function to dataframe
+    
+    **Example Usage**:
+        ```python
+        class MyTrackDatasource(BaseTrackDatasource):
+            def __init__(self, data_df):
+                super().__init__()
+                self._df = data_df
+                self.custom_datasource_name = "MyTrack"
+            
+            @property
+            def df(self) -> pd.DataFrame:
+                return self._df
+            
+            @property
+            def time_column_names(self) -> list:
+                return ['t_start', 't_duration', 't_end']
+            
+            @property
+            def total_df_start_end_times(self) -> Tuple[float, float]:
+                # Implement based on your data
+                ...
+            
+            def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
+                # Implement filtering logic
+                ...
+            
+            def fetch_detailed_data(self, interval: pd.Series) -> Any:
+                # Implement data fetching
+                ...
+            
+            def get_detail_renderer(self) -> DetailRenderer:
+                # Return appropriate renderer
+                ...
+        ```
+    """
+    
+    def __init__(self):
+        """Initialize the base datasource with common attributes."""
+        self.custom_datasource_name = "BaseTrackDatasource"
+        self.source_data_changed_signal = QtCore.Signal()
+    
+    # Required abstract properties
+    @property
+    @abstractmethod
+    def df(self) -> pd.DataFrame:
+        """The dataframe containing interval data with columns ['t_start', 't_duration', ...]"""
+        ...
+    
+    @property
+    @abstractmethod
+    def time_column_names(self) -> list:
+        """The names of time-related columns (e.g., ['t_start', 't_duration', 't_end'])"""
+        ...
+    
+    @property
+    @abstractmethod
+    def total_df_start_end_times(self) -> Tuple[float, float]:
+        """Returns (earliest_time, latest_time) for the entire dataset"""
+        ...
+    
+    # Required abstract methods
+    @abstractmethod
+    def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
+        """Returns the subset of intervals that overlap with the given time window"""
+        ...
+    
+    @abstractmethod
+    def fetch_detailed_data(self, interval: pd.Series) -> Any:
+        """Fetch detailed data for a specific interval (synchronous, called from worker thread).
+        
+        This method will be called from a worker thread, so it should be thread-safe.
+        It should not perform any GUI operations.
+        
+        Args:
+            interval: Series with at least 't_start' and 't_duration' columns
+            
+        Returns:
+            Detailed data for this interval (type depends on track type, e.g., DataFrame for position,
+            image array for video, etc.)
+        """
+        ...
+    
+    @abstractmethod
+    def get_detail_renderer(self) -> DetailRenderer:
+        """Get the renderer for detailed views of this track type.
+        
+        Returns:
+            A DetailRenderer instance that knows how to render the detailed data
+        """
+        ...
+    
+    # Default implementations for optional methods
+    def get_overview_intervals(self) -> pd.DataFrame:
+        """Get overview interval data for rendering simple rectangles.
+        
+        Default implementation returns the `df` property. Override if you need
+        different overview data or additional processing.
+        
+        Returns:
+            DataFrame with columns ['t_start', 't_duration', ...] and visualization columns
+            ['series_vertical_offset', 'series_height', 'pen', 'brush'] if needed.
+        """
+        return self.df
+    
+    def get_detail_cache_key(self, interval: pd.Series) -> str:
+        """Get a unique cache key for an interval's detailed data.
+        
+        Default implementation generates a key from `t_start` and `t_duration`.
+        Override if you need a more specific key format.
+        
+        Args:
+            interval: Series with at least 't_start' and 't_duration' columns
+            
+        Returns:
+            String key that uniquely identifies this interval's detailed data
+        """
+        t_start = interval.get('t_start', 0.0)
+        t_duration = interval.get('t_duration', 0.0)
+        return f"{self.custom_datasource_name}_{t_start:.6f}_{t_duration:.6f}"
+    
+    def update_visualization_properties(self, dataframe_vis_columns_function):
+        """Updates visualization columns in the dataframe.
+        
+        Default implementation applies the function to the dataframe. Override if
+        you need custom behavior for updating visualization properties.
+        
+        Args:
+            dataframe_vis_columns_function: Function that takes a DataFrame and returns
+                a modified DataFrame with updated visualization columns
+        """
+        # This is a no-op by default since we can't modify the df property directly
+        # Subclasses should override this if they need to update visualization properties
+        pass
+
+
+__all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource']
 
