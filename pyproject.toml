@@ -1,6 +1,6 @@
 [project]
 name = "py-pho-timeline"
-version = "0.2.0"
+version = "0.2.1"
 description = "A library for creating time-synchronized timeline widgets with docked tracks"
 readme = "README.md"
 requires-python = ">=3.9,<3.12"
@@ -15,6 +15,9 @@ dependencies = [
     "neuropy",
     "pyphoplacecellanalysis", # For pyqtgraph extensions and utilities
     "pyqt5singleton>=0.1",
+    "pyqtgraph>=0.13.7",
+    "plotly>=6.5.0",
+    "awkward>=2.8.11",
 ]
 
 [tool.uv.sources]
