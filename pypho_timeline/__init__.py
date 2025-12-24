@@ -41,6 +41,14 @@ from pypho_timeline.rendering import (
     RenderedEpochsItemsContainer,
     LiveWindowEventIntervalMonitoringMixin,
     IntervalsDatasource,
+    TrackRenderer,
+    TrackRenderingMixin,
+    TrackDatasource,
+    DetailRenderer,
+    AsyncDetailFetcher,
+    PositionPlotDetailRenderer,
+    VideoThumbnailDetailRenderer,
+    GenericPlotDetailRenderer,
 )
 
 __all__ = [
@@ -72,5 +80,13 @@ __all__ = [
     'RenderedEpochsItemsContainer',
     'LiveWindowEventIntervalMonitoringMixin',
     'IntervalsDatasource',
+    'TrackRenderer',
+    'TrackRenderingMixin',
+    'TrackDatasource',
+    'DetailRenderer',
+    'AsyncDetailFetcher',
+    'PositionPlotDetailRenderer',
+    'VideoThumbnailDetailRenderer',
+    'GenericPlotDetailRenderer',
 ]
 
