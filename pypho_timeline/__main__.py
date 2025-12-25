@@ -5,6 +5,21 @@ This demonstrates how to create a timeline with docked tracks that can display
 time-synchronized data.
 """
 
+# Compatibility shim for scipy.integrate.simps -> simpson
+# simps was deprecated and removed in SciPy 1.12+, replaced with simpson
+# This must be imported before any other modules that might use simps
+try:
+    from scipy.integrate import simps
+except ImportError:
+    # simps doesn't exist, provide it as an alias to simpson
+    try:
+        from scipy.integrate import simpson
+        import scipy.integrate
+        scipy.integrate.simps = simpson
+    except ImportError:
+        # If simpson also doesn't exist, we can't fix it
+        pass
+
 from pathlib import Path
 import sys
 import numpy as np
@@ -89,6 +104,8 @@ class PositionTrackDatasource(BaseTrackDatasource):
     
     def fetch_detailed_data(self, interval: pd.Series) -> pd.DataFrame:
         """Fetch position data for an interval."""
+        if self.position_df is None:
+            return pd.DataFrame()  # Return empty DataFrame if no position data available
         t_start = interval['t_start']
         t_end = t_start + interval['t_duration']
         mask = (self.position_df['t'] >= t_start) & (self.position_df['t'] < t_end)
@@ -96,6 +113,8 @@ class PositionTrackDatasource(BaseTrackDatasource):
     
     def get_detail_renderer(self):
         """Get detail renderer for position data."""
+        if self.position_df is None:
+            return PositionPlotDetailRenderer(pen_color='cyan', pen_width=2, y_column=None)
         return PositionPlotDetailRenderer(pen_color='cyan', pen_width=2, y_column='y' if 'y' in self.position_df.columns else None)
     
     def get_detail_cache_key(self, interval: pd.Series) -> str:
@@ -553,10 +572,105 @@ def main():
 
 
 def main_all_eeg_modalities_from_xdf_file_example(xdf_file_path: Path):
-    """Main function demonstrating pyPhoTimeline usage."""
+    """Main function demonstrating pyPhoTimeline usage with all EEG modalities from an XDF file."""
+    print("=" * 60)
+    print(f"pyPhoTimeline - Load all EEG (or LSL) modalities from XDF: {xdf_file_path}")
+    print("=" * 60)
 
+    # Create Qt application
+    app = pg.mkQApp("pyPhoTimelineXDFExample")
+
+    # --- 1. Load the XDF file (using pyxdf) ---
+    import pyxdf
+
+    print(f"Loading XDF file: {xdf_file_path} ...")
+    streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+    print(f"Streams loaded: {[s['info']['name'][0] for s in streams]}")
+    print(f"File Header: {file_header}")
+
+    # --- 2. Inspect and extract EEG/continuous data streams ---
+    eeg_streams = []
+    for s in streams:
+        if 'type' in s['info'] and 'EEG' in s['info']['type'][0]:
+            eeg_streams.append(s)
+
+    if not eeg_streams:
+        print("No EEG streams found in XDF file.")
+        return
+
+    print(f"Found {len(eeg_streams)} EEG streams: {[s['info']['name'][0] for s in eeg_streams]}")
+
+    # --- 3. Build interval DataFrame for each EEG stream ---
+    eeg_datasources = []
+    for i, s in enumerate(eeg_streams):
+        data = s['time_series']
+        timestamps = s['time_stamps']
+        stream_name = s['info']['name'][0]
+        n_channels = int(s['info']['channel_count'][0])
+        print(f"Stream {i}: {stream_name}, channels: {n_channels}, samples: {len(timestamps)}")
+
+        # For visualization, we'll use intervals of e.g., 1 second duration
+        df = pd.DataFrame({'t': timestamps})
+        df['t_start'] = df['t']
+        df['t_duration'] = 1.0   # 1-second intervals by default
+        df['t_end'] = df['t_start'] + df['t_duration']
+
+        # If multi-channel, store per-channel as separate tracks if desired
+        # For now, treat the whole stream as one datasource
+        datasource = PositionTrackDatasource(position_df=None, intervals_df=df[['t_start', 't_duration', 't_end']])
+        datasource.custom_datasource_name = f"EEG_{stream_name}"
+        eeg_datasources.append(datasource)
+
+    # --- 4. Create the timeline widget and add EEG tracks ---
+    timeline = SimpleTimelineWidget(
+        total_start_time=min([ds.total_df_start_end_times[0] for ds in eeg_datasources]),
+        total_end_time=max([ds.total_df_start_end_times[1] for ds in eeg_datasources]),
+        window_duration=10.0,
+        window_start_time=min([ds.total_df_start_end_times[0] for ds in eeg_datasources]),
+    )
+
+    for datasource in eeg_datasources:
+        timeline.add_track(
+            datasource,
+            name=datasource.custom_datasource_name
+        )
+
+    timeline.setWindowTitle(f"pyPhoTimeline - EEG Modalities from XDF: {xdf_file_path.name}")
+    timeline.resize(1000, 800)
+    timeline.show()
+
+    print("\nTimeline widget created with EEG tracks from XDF:")
+    for ds in eeg_datasources:
+        print(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
+
+    print("\nScroll on the timeline to see loaded EEG intervals for each stream.")
+    print("Close the window to exit.\n")
+
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":
-    main()
+    # To demo: supply a path to a valid XDF file containing EEG/LFP/continuous apparatus streams:
+    # e.g. replace with your local file: demo_xdf_path = Path("/path/to/your/example.xdf")
+    # Or, use main() for standard demo
+    import argparse
 
+    parser = argparse.ArgumentParser(description="Run pyPhoTimeline EEG XDF example.")
+    parser.add_argument('--xdf', type=str, help='Path to XDF file to visualize EEG tracks.')
+    args = parser.parse_args()
+
+    if args.xdf is not None:
+        demo_xdf_path = Path(args.xdf)
+
+    else:
+        demo_xdf_path = Path(r"E:/Dropbox (Personal)/Databases/UnparsedData/LabRecorderStudies/sub-P001/LabRecorder_Apogee_2025-10-21T051157.400Z_eeg.xdf").resolve()
+        assert demo_xdf_path.exists()
+
+
+    if not demo_xdf_path.exists():
+        print(f"ERROR: XDF file does not exist: {demo_xdf_path}")
+        sys.exit(1)
+    else:
+        print(f'loading xdf file: "{demo_xdf_path.as_posix()}"')
+    main_all_eeg_modalities_from_xdf_file_example(demo_xdf_path)
+    

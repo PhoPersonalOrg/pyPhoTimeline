@@ -17,6 +17,8 @@ dependencies = [
     "pyqtgraph>=0.13.7",
     "plotly>=6.5.0",
     "awkward>=2.8.11",
+    "pyxdf>=1.16.8",
+    "scipy>=1.13.1",
 ]
 
 [tool.uv.sources]
