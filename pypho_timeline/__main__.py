@@ -5,6 +5,7 @@ This demonstrates how to create a timeline with docked tracks that can display
 time-synchronized data.
 """
 
+from pathlib import Path
 import sys
 import numpy as np
 import pandas as pd
@@ -549,6 +550,11 @@ def main():
     
     # Run the application
     sys.exit(app.exec_())
+
+
+def main_all_eeg_modalities_from_xdf_file_example(xdf_file_path: Path):
+    """Main function demonstrating pyPhoTimeline usage."""
+
 
 
 if __name__ == "__main__":
