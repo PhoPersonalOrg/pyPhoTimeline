@@ -7,7 +7,11 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
-from neuropy.core import Epoch
+# Optional import - Epoch from neuropy (only used if available)
+try:
+    from neuropy.core import Epoch
+except ImportError:
+    Epoch = None
 
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
@@ -50,17 +54,17 @@ class Render2DEventRectanglesHelper:
             return [IntervalRectsItemData(*row) for row in zip(df.t_start, df.series_vertical_offset, df.t_duration, df.series_height, df.pen, df.brush)]
 
     @classmethod
-    def build_IntervalRectsItem_from_epoch(cls, epochs: Epoch, dataframe_vis_columns_function, debug_print=False, **kwargs):
+    def build_IntervalRectsItem_from_epoch(cls, epochs, dataframe_vis_columns_function, debug_print=False, **kwargs):
         """Builds an appropriate IntervalRectsItem from any Epoch object and a function that is passed the converted dataframe and adds the visualization specific columns: ['series_vertical_offset', 'series_height', 'pen', 'brush']
         
         Input:
-            epochs: Either a neuropy.core.Epoch object OR dataframe with the columns ['t_start', 't_duration']
+            epochs: Either a neuropy.core.Epoch object (if neuropy is available) OR dataframe with the columns ['t_start', 't_duration']
             dataframe_vis_columns_function: callable that takes a pd.DataFrame that adds the remaining required columns to the dataframe if needed.
         
         Returns:
             IntervalRectsItem
         """
-        if isinstance(epochs, Epoch):
+        if Epoch is not None and isinstance(epochs, Epoch):
             # if it's an Epoch, convert it to a dataframe
             raw_df = epochs.to_dataframe()
             active_df = pd.DataFrame({'t_start':raw_df.start.copy(), 't_duration':raw_df.duration.copy()}) # still will need columns ['series_vertical_offset', 'series_height', 'pen', 'brush'] added later

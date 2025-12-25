@@ -6,7 +6,7 @@ Based on pyqtgraph's CandlestickItem example, adapted for pypho_timeline.
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 import numpy as np
 
-from neuropy.utils.mixins.indexing_helpers import UnpackableMixin
+from pypho_timeline.utils.mixins import UnpackableMixin
 from attrs import define, field
 from qtpy import QtGui, QtWidgets
 import pyphoplacecellanalysis.External.pyqtgraph as pg

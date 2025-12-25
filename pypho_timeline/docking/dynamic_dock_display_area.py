@@ -3,8 +3,8 @@ from collections import OrderedDict
 from enum import Enum
 import numpy as np
 
-from neuropy.utils.colors_util import ColorsUtil
-from neuropy.utils.mixins.dynamic_conformance_updating_mixin import BaseDynamicInstanceConformingMixin
+from pypho_timeline.utils.colors_util import ColorsUtil
+from pypho_timeline.utils.mixins import BaseDynamicInstanceConformingMixin
 
 from pyphoplacecellanalysis.External.pyqtgraph.Qt import QtCore, QtGui, QtWidgets
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot

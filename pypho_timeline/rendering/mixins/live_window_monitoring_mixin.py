@@ -8,7 +8,7 @@ import pandas as pd
 
 from qtpy import QtCore
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
-from neuropy.utils.indexing_helpers import PandasHelpers
+from pypho_timeline.utils.indexing_helpers import PandasHelpers
 
 # Optional mixin - handle with try/except
 try:

@@ -11,7 +11,7 @@ import pandas as pd
 from qtpy import QtCore
 from pyphocorehelpers.print_helpers import SimplePrintable, PrettyPrintable, iPythonKeyCompletingMixin
 from pyphocorehelpers.DataStructure.dynamic_parameters import DynamicParameters
-from neuropy.utils.indexing_helpers import PandasHelpers
+from pypho_timeline.utils.indexing_helpers import PandasHelpers
 
 from pyphocorehelpers.DataStructure.general_parameter_containers import DebugHelper, VisualizationParameters, RenderPlots, RenderPlotsData
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
@@ -240,10 +240,14 @@ class EpochRenderingMixin(LiveWindowEventIntervalMonitoringMixin):
         # Handle DataFrame input by converting to datasource
         if isinstance(interval_datasource, pd.DataFrame):
             ## it's a dataframe, build a datasource
-            from neuropy.utils.mixins.time_slicing import TimeColumnAliasesProtocol
+            # Optional import - TimeColumnAliasesProtocol from neuropy (only used if available)
+            try:
+                from neuropy.utils.mixins.time_slicing import TimeColumnAliasesProtocol
+            except ImportError:
+                TimeColumnAliasesProtocol = None
             
             interval_df: pd.DataFrame = deepcopy(interval_datasource)
-            if IntervalsDatasource is not None:
+            if IntervalsDatasource is not None and TimeColumnAliasesProtocol is not None:
                 interval_df = TimeColumnAliasesProtocol.renaming_synonym_columns_if_needed(df=interval_df, required_columns_synonym_dict=IntervalsDatasource._time_column_name_synonyms)
                 if General2DRenderTimeEpochs is not None:
                     interval_datasource = General2DRenderTimeEpochs.build_render_time_epochs_datasource(interval_df)

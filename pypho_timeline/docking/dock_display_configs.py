@@ -4,7 +4,7 @@ from enum import Enum
 from attrs import define, field, Factory
 import numpy as np
 
-from neuropy.utils.colors_util import ColorsUtil
+from pypho_timeline.utils.colors_util import ColorsUtil
 from pyphoplacecellanalysis.External.pyqtgraph.Qt import QtCore, QtGui, QtWidgets
 from pyphoplacecellanalysis.External.pyqtgraph.dockarea.Dock import Dock, DockDisplayConfig
 
