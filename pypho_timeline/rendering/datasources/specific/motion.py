@@ -24,7 +24,7 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource
     """
     
-    def __init__(self, motion_df: pd.DataFrame, intervals_df: pd.DataFrame, custom_datasource_name: Optional[str]=None):
+    def __init__(self, intervals_df: pd.DataFrame, motion_df: pd.DataFrame, custom_datasource_name: Optional[str]=None):
         """Initialize with motion data and intervals.
         
         Args:
