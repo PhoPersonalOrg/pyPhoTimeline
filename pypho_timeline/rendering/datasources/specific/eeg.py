@@ -27,7 +27,7 @@ class EEGPlotDetailRenderer(DetailRenderer):
 
     """
     
-    def __init__(self, pen_width=2, channel_names=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'], pen_colors=None, pen_color='cyan'):
+    def __init__(self, pen_width=2, channel_names=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'], pen_colors=None):
         """Initialize the eeg plot renderer.
         
         Args:
@@ -36,7 +36,6 @@ class EEGPlotDetailRenderer(DetailRenderer):
             channel_names: List of channel names to plot (default: ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'])
             pen_colors: Optional list of colors for each channel (default: None, auto-generated)
         """
-        self.pen_color = pen_color
         self.pen_colors = pen_colors
         self.pen_width = pen_width
         self.channel_names = channel_names
