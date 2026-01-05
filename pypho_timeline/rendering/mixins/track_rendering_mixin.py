@@ -113,10 +113,12 @@ class TrackRenderingMixin(EpochRenderingMixin):
         # Call parent destroy
         self.EpochRenderingMixin_on_destroy()
     
-    def add_track(self, track_datasource: TrackDatasource, name: str, 
-                  plot_item: Optional[pg.PlotItem] = None, **kwargs) -> TrackRenderer:
+    def add_track(self, track_datasource: TrackDatasource, name: str, plot_item: Optional[pg.PlotItem] = None, **kwargs) -> TrackRenderer:
         """Add a new track to the timeline.
         
+        Updates:
+            self.track_datasources, self.track_renderers
+
         Args:
             track_datasource: TrackDatasource providing overview and detail data
             name: Unique name for this track

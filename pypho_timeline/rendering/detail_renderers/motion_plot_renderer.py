@@ -53,6 +53,21 @@ class MotionPlotDetailRenderer(DetailRenderer):
             
         Returns:
             List of GraphicsObject items added (PlotDataItem)
+
+        Usage:
+            a_track_name: str = 'MOTION_Epoc X Motion'
+            a_renderer = timeline.track_renderers[a_track_name]
+            a_detail_renderer = a_renderer.detail_renderer # MotionPlotDetailRenderer 
+            a_ds = timeline.track_datasources[a_track_name]
+            interval = a_ds.get_overview_intervals()
+
+            dDisplayItem = timeline.ui.dynamic_docked_widget_container.find_display_dock(identifier=a_track_name) # Dock
+            a_widget = timeline.ui.matplotlib_view_widgets[a_track_name] # PyqtgraphTimeSynchronizedWidget 
+            a_root_graphics_layout_widget = a_widget.getRootGraphicsLayoutWidget()
+            a_plot_item = a_widget.getRootPlotItem()
+
+            graphics_objects = a_detail_renderer.render_detail(plot_item=a_plot_item, interval=None, detail_data=a_ds.detailed_df) # List[PlotDataItem]
+
         """
         if detail_data is None or len(detail_data) == 0:
             return []
@@ -63,7 +78,7 @@ class MotionPlotDetailRenderer(DetailRenderer):
         graphics_objects = []
         
         # Check required columns
-        if 't' not in detail_data.columns or 'x' not in detail_data.columns:
+        if 't' not in detail_data.columns:
             return []
         
         # Sort by time
@@ -97,6 +112,7 @@ class MotionPlotDetailRenderer(DetailRenderer):
         
         return graphics_objects
     
+
     def clear_detail(self, plot_item: pg.PlotItem, graphics_objects: List[pg.GraphicsObject]) -> None:
         """Remove motion plot graphics objects.
         
@@ -104,10 +120,21 @@ class MotionPlotDetailRenderer(DetailRenderer):
             plot_item: The pyqtgraph PlotItem
             graphics_objects: List of GraphicsObject items to remove
         """
+        if graphics_objects is None:
+            return
+        
         for obj in graphics_objects:
-            plot_item.removeItem(obj)
-            if hasattr(obj, 'setParentItem'):
-                obj.setParentItem(None)
+            if obj is None:
+                continue
+            try:
+                plot_item.removeItem(obj)
+                if hasattr(obj, 'setParentItem'):
+                    obj.setParentItem(None)
+            except (AttributeError, RuntimeError):
+                # Item may have already been removed or is invalid
+                pass
+
+                
     
     def get_detail_bounds(self, interval: pd.Series, detail_data: Any) -> Tuple[float, float, float, float]:
         """Get bounds for the motion plot.
@@ -119,9 +146,38 @@ class MotionPlotDetailRenderer(DetailRenderer):
         Returns:
             Tuple of (x_min, x_max, y_min, y_max) where x is time and y is channel values
         """
-        t_start = interval.get('t_start', 0.0)
-        t_duration = interval.get('t_duration', 1.0)
-        t_end = t_start + t_duration
+        has_valid_detail_data: bool = (detail_data is not None) and isinstance(detail_data, pd.DataFrame) and (len(detail_data) > 0)
+        if (interval is None):
+            # If interval is None, attempt to determine t_start and t_end from detail_data
+            if has_valid_detail_data:
+                # Try to get time column: use 't' if present, otherwise index values if they look like times
+                if 't' in detail_data.columns:
+                    t_start = float(detail_data['t'].min())
+                    t_end = float(detail_data['t'].max())
+                else:
+                    # Fallback: use DataFrame index if it is numeric and sorted
+                    try:
+                        idx = detail_data.index
+                        if hasattr(idx, 'dtype') and np.issubdtype(idx.dtype, np.number):
+                            t_start = float(idx.min())
+                            t_end = float(idx.max())
+                        else:
+                            t_start = 0.0
+                            t_end = 1.0
+                    except Exception:
+                        t_start = 0.0
+                        t_end = 1.0
+            else:
+                raise ValueError(f'has_valid_detail_data is False')
+                # t_start = 0.0
+                # t_end = 1.0
+
+            t_duration = t_end - t_start
+        else:
+            ## interval is provided
+            t_start = interval.get('t_start', 0.0)
+            t_duration = interval.get('t_duration', 1.0)
+            t_end = t_start + t_duration
         
         if detail_data is None or len(detail_data) == 0:
             return (t_start, t_end, 0.0, 1.0)
@@ -139,7 +195,7 @@ class MotionPlotDetailRenderer(DetailRenderer):
                 y_max = max(detail_data[col].max() for col in channel_columns)
                 # Add padding
                 y_pad = (y_max - y_min) * 0.1 if y_max > y_min else 1.0
-                return (t_start, t_end, y_min - y_pad, y_max + y_pad)
+                return (t_start, t_end, (y_min - y_pad), (y_max + y_pad))
             else:
                 # No channels found, use default bounds
                 return (t_start, t_end, 0.0, 1.0)
