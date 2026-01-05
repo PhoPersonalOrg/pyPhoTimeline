@@ -23,9 +23,9 @@ class MotionPlotDetailRenderer(DetailRenderer):
         """Initialize the motion plot renderer.
         
         Args:
-            pen_color: Default color for channels (used if channel_names is None, default: 'cyan')
             pen_width: Width of the plot lines (default: 2)
             channel_names: List of channel names to plot (default: ['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'])
+            pen_colors: Optional list of colors for each channel (default: None, auto-generated)
         """
         self.pen_colors = pen_colors
         self.pen_width = pen_width
@@ -83,29 +83,21 @@ class MotionPlotDetailRenderer(DetailRenderer):
         df_sorted = detail_data.sort_values('t')
         t_values = df_sorted['t'].values
         
-        if (self.channel_names is not None):
-            found_channel_names: List[str] = [k for k in self.channel_names if (k in df_sorted.columns)]
-            found_all_channel_names: bool = len(found_channel_names) == len(self.channel_names)
-            assert found_all_channel_names
+        assert (self.channel_names is not None)
+        found_channel_names: List[str] = [k for k in self.channel_names if (k in df_sorted.columns)]
+        found_all_channel_names: bool = len(found_channel_names) == len(self.channel_names)
+        assert found_all_channel_names
 
-            # Plot each channel with its distinct color
-            for a_found_channel_name in found_channel_names:
-                y_values = df_sorted[a_found_channel_name].values
-                # Get the color for this channel based on its index in channel_names
-                channel_index = self.channel_names.index(a_found_channel_name)
-                channel_color = self.pen_colors[channel_index]
-                pen = pg.mkPen(channel_color, width=self.pen_width)
-                plot_data_item = pg.PlotDataItem(t_values, y_values, pen=pen, connect='finite', name=a_found_channel_name)
-                plot_item.addItem(plot_data_item)
-                graphics_objects.append(plot_data_item)
-        else:
-            # Fallback: use single pen_color if channel_names is None
-            if 'x' in df_sorted.columns:
-                x_values = df_sorted['x'].values
-                pen = pg.mkPen(self.pen_color, width=self.pen_width)
-                plot_data_item = pg.PlotDataItem(t_values, x_values, pen=pen, connect='finite')
-                plot_item.addItem(plot_data_item)
-                graphics_objects.append(plot_data_item)
+        # Plot each channel with its distinct color
+        for a_found_channel_name in found_channel_names:
+            y_values = df_sorted[a_found_channel_name].values
+            # Get the color for this channel based on its index in channel_names
+            channel_index = self.channel_names.index(a_found_channel_name)
+            channel_color = self.pen_colors[channel_index]
+            pen = pg.mkPen(channel_color, width=self.pen_width)
+            plot_data_item = pg.PlotDataItem(t_values, y_values, pen=pen, connect='finite', name=a_found_channel_name)
+            plot_item.addItem(plot_data_item)
+            graphics_objects.append(plot_data_item)
 
         
         return graphics_objects
@@ -184,27 +176,19 @@ class MotionPlotDetailRenderer(DetailRenderer):
             return (t_start, t_end, 0.0, 1.0)
         
         # Calculate y-axis bounds from all channel values
-        if self.channel_names is not None:
-            # Get all channel columns that exist in the data
-            channel_columns = [col for col in self.channel_names if col in detail_data.columns]
-            if channel_columns:
-                # Find min/max across all channels
-                y_min = min(detail_data[col].min() for col in channel_columns)
-                y_max = max(detail_data[col].max() for col in channel_columns)
-                # Add padding
-                y_pad = (y_max - y_min) * 0.1 if y_max > y_min else 1.0
-                return (t_start, t_end, (y_min - y_pad), (y_max + y_pad))
-            else:
-                # No channels found, use default bounds
-                return (t_start, t_end, 0.0, 1.0)
+        assert (self.channel_names is not None)
+        # Get all channel columns that exist in the data
+        channel_columns = [col for col in self.channel_names if col in detail_data.columns]
+        if channel_columns:
+            # Find min/max across all channels
+            y_min = min(detail_data[col].min() for col in channel_columns)
+            y_max = max(detail_data[col].max() for col in channel_columns)
+            # Add padding
+            y_pad = (y_max - y_min) * 0.1 if y_max > y_min else 1.0
+            return (t_start, t_end, (y_min - y_pad), (y_max + y_pad))
         else:
-            # Fallback: if channel_names is None, check for 'x' column
-            if 'x' in detail_data.columns:
-                x_min, x_max = detail_data['x'].min(), detail_data['x'].max()
-                x_pad = (x_max - x_min) * 0.1 if x_max > x_min else 1.0
-                return (t_start, t_end, x_min - x_pad, x_max + x_pad)
-            else:
-                return (t_start, t_end, 0.0, 1.0)
+            # No channels found, use default bounds
+            return (t_start, t_end, 0.0, 1.0)
 
 
 __all__ = ['MotionPlotDetailRenderer']
