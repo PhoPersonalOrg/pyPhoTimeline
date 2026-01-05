@@ -308,5 +308,88 @@ class BaseTrackDatasource(ABC):
         pass
 
 
-__all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource']
+class IntervalProvidingTrackDatasource(BaseTrackDatasource):
+    """Example TrackDatasource for position data.
+    
+    Inherits from BaseTrackDatasource and implements all required methods for
+    displaying position data with async detail loading.
+    """
+    
+    def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None):
+        """Initialize with position data and intervals.
+        
+        Args:
+            position_df: DataFrame with columns ['t', 'x', 'y'] (or ['t', 'x'] for 1D)
+            intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
+        """
+        super().__init__()
+        self.detailed_df = detailed_df
+        self.intervals_df = intervals_df.copy()
+        self.custom_datasource_name = "PositionTrack"
+        
+        # Add visualization columns to intervals
+        self.intervals_df['series_vertical_offset'] = 0.0
+        self.intervals_df['series_height'] = 1.0
+        
+        # Create pens and brushes
+        color = pg.mkColor('blue')
+        color.setAlphaF(0.3)
+        pen = pg.mkPen(color, width=1)
+        brush = pg.mkBrush(color)
+        self.intervals_df['pen'] = [pen] * len(self.intervals_df)
+        self.intervals_df['brush'] = [brush] * len(self.intervals_df)
+    
+    @property
+    def df(self) -> pd.DataFrame:
+        return self.intervals_df
+    
+    @property
+    def time_column_names(self) -> list:
+        return ['t_start', 't_duration', 't_end']
+    
+    @property
+    def total_df_start_end_times(self) -> tuple:
+        if len(self.intervals_df) == 0:
+            return (0.0, 1.0)
+        t_start = self.intervals_df['t_start'].min()
+        t_end = (self.intervals_df['t_start'] + self.intervals_df['t_duration']).max()
+        return (t_start, t_end)
+    
+    def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
+        """Get intervals overlapping with time window."""
+        mask = (self.intervals_df['t_start'] + self.intervals_df['t_duration'] >= new_start) & \
+               (self.intervals_df['t_start'] <= new_end)
+        return self.intervals_df[mask].copy()
+    
+    def update_visualization_properties(self, dataframe_vis_columns_function):
+        """Update visualization properties."""
+        self.intervals_df = dataframe_vis_columns_function(self.intervals_df)
+    
+    def get_overview_intervals(self) -> pd.DataFrame:
+        """Get overview intervals."""
+        return self.intervals_df
+    
+    def fetch_detailed_data(self, interval: pd.Series) -> pd.DataFrame:
+        """Fetch position data for an interval."""
+        if self.detailed_df is None:
+            return pd.DataFrame()  # Return empty DataFrame if no position data available
+        t_start = interval['t_start']
+        t_end = t_start + interval['t_duration']
+        mask = (self.detailed_df['t'] >= t_start) & (self.detailed_df['t'] < t_end)
+        return self.detailed_df[mask].copy()
+    
+    def get_detail_renderer(self):
+        """Get detail renderer for position data."""
+        from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
+        if self.detailed_df is None:
+            return GenericPlotDetailRenderer(pen_color='cyan', pen_width=2, y_column=None)
+        return GenericPlotDetailRenderer(pen_color='cyan', pen_width=2, y_column='y' if 'y' in self.detailed_df.columns else None)
+
+            
+    def get_detail_cache_key(self, interval: pd.Series) -> str:
+        """Get cache key for interval."""
+        return f"position_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+
+
+__all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource', 'IntervalProvidingTrackDatasource']
 
