@@ -28,12 +28,12 @@ class PositionPlotDetailRenderer(DetailRenderer):
         self.pen_width = pen_width
         self.y_column = y_column
     
-    def render_detail(self, plot_item: pg.PlotItem, interval: pd.Series, detail_data: Any) -> List[pg.GraphicsObject]:
+    def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render position data as a line plot.
         
         Args:
             plot_item: The pyqtgraph PlotItem to render into
-            interval: The interval Series with 't_start' and 't_duration'
+            interval: The interval DataFrame (single row) with 't_start' and 't_duration'
             detail_data: DataFrame with columns ['t', 'x', 'y'] or ['t', 'x']
             
         Returns:
@@ -84,28 +84,28 @@ class PositionPlotDetailRenderer(DetailRenderer):
             if hasattr(obj, 'setParentItem'):
                 obj.setParentItem(None)
     
-    def get_detail_bounds(self, interval: pd.Series, detail_data: Any) -> Tuple[float, float, float, float]:
+    def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
         """Get bounds for the position plot.
         
         Args:
-            interval: The interval Series with 't_start' and 't_duration'
+            interval: The interval DataFrame (single row) with 't_start' and 't_duration'
             detail_data: DataFrame with position data
             
         Returns:
             Tuple of (x_min, x_max, y_min, y_max)
         """
         if detail_data is None or len(detail_data) == 0:
-            t_start = interval.get('t_start', 0.0)
-            t_duration = interval.get('t_duration', 1.0)
+            t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
+            t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
             return (t_start, t_start + t_duration, 0.0, 1.0)
         
         if not isinstance(detail_data, pd.DataFrame):
-            t_start = interval.get('t_start', 0.0)
-            t_duration = interval.get('t_duration', 1.0)
+            t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
+            t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
             return (t_start, t_start + t_duration, 0.0, 1.0)
         
-        t_start = interval.get('t_start', 0.0)
-        t_duration = interval.get('t_duration', 1.0)
+        t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
+        t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
         t_end = t_start + t_duration
         
         if self.y_column is not None and self.y_column in detail_data.columns:

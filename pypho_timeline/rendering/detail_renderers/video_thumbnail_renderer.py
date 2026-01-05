@@ -27,12 +27,12 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         self.thumbnail_height = thumbnail_height
         self.spacing = spacing
     
-    def render_detail(self, plot_item: pg.PlotItem, interval: pd.Series, detail_data: Any) -> List[pg.GraphicsObject]:
+    def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render video frames as thumbnails.
         
         Args:
             plot_item: The pyqtgraph PlotItem to render into
-            interval: The interval Series with 't_start' and 't_duration'
+            interval: The interval DataFrame (single row) with 't_start' and 't_duration'
             detail_data: Video frame data (see class docstring for formats)
             
         Returns:
@@ -42,8 +42,8 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             return []
         
         graphics_objects = []
-        t_start = interval.get('t_start', 0.0)
-        t_duration = interval.get('t_duration', 1.0)
+        t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
+        t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
         
         # Parse detail_data format
         frames = None
@@ -77,7 +77,9 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         thumbnail_width = available_width / n_frames if n_frames > 0 else t_duration
         
         # Get y position (center of interval vertically)
-        y_center = interval.get('series_vertical_offset', 0.0) + interval.get('series_height', self.thumbnail_height) / 2.0
+        y_offset = interval['series_vertical_offset'].iloc[0] if len(interval) > 0 and 'series_vertical_offset' in interval.columns else 0.0
+        y_height = interval['series_height'].iloc[0] if len(interval) > 0 and 'series_height' in interval.columns else self.thumbnail_height
+        y_center = y_offset + y_height / 2.0
         y_bottom = y_center - self.thumbnail_height / 2.0
         
         # Render each frame
@@ -160,21 +162,23 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             if hasattr(obj, 'setParentItem'):
                 obj.setParentItem(None)
     
-    def get_detail_bounds(self, interval: pd.Series, detail_data: Any) -> Tuple[float, float, float, float]:
+    def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
         """Get bounds for the video thumbnails.
         
         Args:
-            interval: The interval Series with 't_start' and 't_duration'
+            interval: The interval DataFrame (single row) with 't_start' and 't_duration'
             detail_data: Video frame data
             
         Returns:
             Tuple of (x_min, x_max, y_min, y_max)
         """
-        t_start = interval.get('t_start', 0.0)
-        t_duration = interval.get('t_duration', 1.0)
+        t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
+        t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
         t_end = t_start + t_duration
         
-        y_center = interval.get('series_vertical_offset', 0.0) + interval.get('series_height', self.thumbnail_height) / 2.0
+        y_offset = interval['series_vertical_offset'].iloc[0] if len(interval) > 0 and 'series_vertical_offset' in interval.columns else 0.0
+        y_height = interval['series_height'].iloc[0] if len(interval) > 0 and 'series_height' in interval.columns else self.thumbnail_height
+        y_center = y_offset + y_height / 2.0
         y_min = y_center - self.thumbnail_height / 2.0
         y_max = y_center + self.thumbnail_height / 2.0
         

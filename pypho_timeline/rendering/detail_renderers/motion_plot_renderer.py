@@ -43,12 +43,12 @@ class MotionPlotDetailRenderer(DetailRenderer):
             self.pen_colors = None
 
     
-    def render_detail(self, plot_item: pg.PlotItem, interval: pd.Series, detail_data: Any) -> List[pg.GraphicsObject]:
+    def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render motion data as line plots for each channel.
         
         Args:
             plot_item: The pyqtgraph PlotItem to render into
-            interval: The interval Series with 't_start' and 't_duration'
+            interval: The interval DataFrame (single row) with 't_start' and 't_duration'
             detail_data: DataFrame with columns ['t'] and channel columns (e.g., ['AccX', 'AccY', ...])
             
         Returns:
@@ -136,19 +136,19 @@ class MotionPlotDetailRenderer(DetailRenderer):
 
                 
     
-    def get_detail_bounds(self, interval: pd.Series, detail_data: Any) -> Tuple[float, float, float, float]:
+    def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
         """Get bounds for the motion plot.
         
         Args:
-            interval: The interval Series with 't_start' and 't_duration'
+            interval: The interval DataFrame (single row) with 't_start' and 't_duration'
             detail_data: DataFrame with motion data (columns: 't' and channel columns)
             
         Returns:
             Tuple of (x_min, x_max, y_min, y_max) where x is time and y is channel values
         """
         has_valid_detail_data: bool = (detail_data is not None) and isinstance(detail_data, pd.DataFrame) and (len(detail_data) > 0)
-        if (interval is None):
-            # If interval is None, attempt to determine t_start and t_end from detail_data
+        if (interval is None) or (len(interval) == 0):
+            # If interval is None or empty, attempt to determine t_start and t_end from detail_data
             if has_valid_detail_data:
                 # Try to get time column: use 't' if present, otherwise index values if they look like times
                 if 't' in detail_data.columns:
@@ -175,8 +175,8 @@ class MotionPlotDetailRenderer(DetailRenderer):
             t_duration = t_end - t_start
         else:
             ## interval is provided
-            t_start = interval.get('t_start', 0.0)
-            t_duration = interval.get('t_duration', 1.0)
+            t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
+            t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
             t_end = t_start + t_duration
         
         if detail_data is None or len(detail_data) == 0:

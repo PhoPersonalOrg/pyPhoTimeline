@@ -19,12 +19,12 @@ class DetailRenderer(Protocol):
     on top of the overview interval rectangles when detailed data is loaded.
     """
     
-    def render_detail(self, plot_item: pg.PlotItem, interval: pd.Series, detail_data: Any) -> List[pg.GraphicsObject]:
+    def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render detailed view for an interval.
         
         Args:
             plot_item: The pyqtgraph PlotItem to render into
-            interval: The interval Series with at least 't_start' and 't_duration' columns
+            interval: The interval DataFrame (single row) with at least 't_start' and 't_duration' columns
             detail_data: The detailed data fetched for this interval (type depends on track type)
             
         Returns:
@@ -41,11 +41,11 @@ class DetailRenderer(Protocol):
         """
         ...
     
-    def get_detail_bounds(self, interval: pd.Series, detail_data: Any) -> Tuple[float, float, float, float]:
+    def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
         """Get the bounds for the detailed view.
         
         Args:
-            interval: The interval Series with at least 't_start' and 't_duration' columns
+            interval: The interval DataFrame (single row) with at least 't_start' and 't_duration' columns
             detail_data: The detailed data for this interval
             
         Returns:

@@ -45,14 +45,18 @@ class DetailFetchWorker(QtCore.QRunnable):
             detail_data = self.datasource.fetch_detailed_data(self.interval)
             
             if not self.is_cancelled():
+                # Convert Series to DataFrame for DetailRenderer compatibility
+                interval_df = self.interval.to_frame().T
                 # Use QTimer.singleShot to ensure callback runs on main thread
                 QtCore.QTimer.singleShot(0, lambda: self.callback(
-                    self.track_id, self.cache_key, self.interval, detail_data, None
+                    self.track_id, self.cache_key, interval_df, detail_data, None
                 ))
         except Exception as e:
             if not self.is_cancelled():
+                # Convert Series to DataFrame for DetailRenderer compatibility
+                interval_df = self.interval.to_frame().T
                 QtCore.QTimer.singleShot(0, lambda: self.callback(
-                    self.track_id, self.cache_key, self.interval, None, e
+                    self.track_id, self.cache_key, interval_df, None, e
                 ))
 
 
@@ -64,7 +68,7 @@ class AsyncDetailFetcher(QtCore.QObject):
     """
     
     # Signal emitted when detail data is ready
-    detail_data_ready = QtCore.Signal(str, str, pd.Series, object, object)  # track_id, cache_key, interval, data, error
+    detail_data_ready = QtCore.Signal(str, str, pd.DataFrame, object, object)  # track_id, cache_key, interval, data, error
     
     def __init__(self, max_cache_size: int = 100, parent=None):
         """Initialize the async detail fetcher.
@@ -101,10 +105,12 @@ class AsyncDetailFetcher(QtCore.QObject):
                 data = self._cache[cache_key]
                 # Move to end (LRU)
                 self._cache.move_to_end(cache_key)
+                # Convert Series to DataFrame for DetailRenderer compatibility
+                interval_df = interval.to_frame().T
                 if callback:
-                    QtCore.QTimer.singleShot(0, lambda: callback(track_id, cache_key, interval, data, None))
+                    QtCore.QTimer.singleShot(0, lambda: callback(track_id, cache_key, interval_df, data, None))
                 else:
-                    self.detail_data_ready.emit(track_id, cache_key, interval, data, None)
+                    self.detail_data_ready.emit(track_id, cache_key, interval_df, data, None)
                 return
             
             # Check if already pending
@@ -114,6 +120,7 @@ class AsyncDetailFetcher(QtCore.QObject):
                     return
         
         # Create worker
+        # Note: callback will receive DataFrame (converted in worker.run())
         worker_callback = callback or (lambda tid, ck, iv, d, e: self.detail_data_ready.emit(tid, ck, iv, d, e))
         worker = DetailFetchWorker(track_id, interval, datasource, cache_key, worker_callback)
         
@@ -126,7 +133,7 @@ class AsyncDetailFetcher(QtCore.QObject):
         # Start worker
         self._thread_pool.start(worker)
     
-    def _on_detail_fetched(self, track_id: str, cache_key: str, interval: pd.Series, 
+    def _on_detail_fetched(self, track_id: str, cache_key: str, interval: pd.DataFrame, 
                           detail_data: Any, error: Optional[Exception]):
         """Handle when detail data is fetched (called from worker callback)."""
         with self._lock:

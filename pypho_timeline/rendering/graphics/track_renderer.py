@@ -21,7 +21,7 @@ class TrackRenderer(QtCore.QObject):
     """
     
     # Signal emitted when detail data is loaded for an interval
-    detail_loaded = QtCore.Signal(str, pd.Series, object)  # track_id, interval, detail_data
+    detail_loaded = QtCore.Signal(str, pd.DataFrame, object)  # track_id, interval, detail_data
     
     def __init__(self, track_id: str, datasource: TrackDatasource, plot_item: pg.PlotItem,
                  async_fetcher: AsyncDetailFetcher, parent=None):
@@ -92,8 +92,10 @@ class TrackRenderer(QtCore.QObject):
         
         # Determine which intervals are now visible
         new_visible_keys = set()
-        for _, interval in intervals_df.iterrows():
-            cache_key = self.datasource.get_detail_cache_key(interval)
+        for idx, interval_series in intervals_df.iterrows():
+            # Convert Series to single-row DataFrame for DetailRenderer methods
+            interval_df = intervals_df.iloc[[idx]]
+            cache_key = self.datasource.get_detail_cache_key(interval_series)
             new_visible_keys.add(cache_key)
             
             # If not already visible and not already loaded, fetch detail
@@ -102,11 +104,11 @@ class TrackRenderer(QtCore.QObject):
                 cached_data = self.async_fetcher.get_cached_data(cache_key)
                 if cached_data is not None:
                     # Use cached data immediately
-                    self._render_detail(interval, cache_key, cached_data)
+                    self._render_detail(interval_df, cache_key, cached_data)
                 else:
-                    # Fetch asynchronously
+                    # Fetch asynchronously (still pass Series for datasource compatibility)
                     self.async_fetcher.fetch_detail_async(
-                        self.track_id, interval, self.datasource
+                        self.track_id, interval_series, self.datasource
                     )
         
         # Cancel fetches for intervals that left viewport
@@ -122,14 +124,14 @@ class TrackRenderer(QtCore.QObject):
         # Update visible intervals set
         self.visible_intervals = new_visible_keys
     
-    def _on_detail_data_ready(self, track_id: str, cache_key: str, interval: pd.Series, 
+    def _on_detail_data_ready(self, track_id: str, cache_key: str, interval: pd.DataFrame, 
                              detail_data: Any, error: Optional[Exception]):
         """Handle when detail data is ready (called from async fetcher signal).
         
         Args:
             track_id: Track identifier
             cache_key: Cache key for the interval
-            interval: The interval Series
+            interval: The interval DataFrame (single row)
             detail_data: The fetched detail data
             error: Error if fetch failed, None otherwise
         """
@@ -145,11 +147,11 @@ class TrackRenderer(QtCore.QObject):
             self._render_detail(interval, cache_key, detail_data)
             self.detail_loaded.emit(self.track_id, interval, detail_data)
     
-    def _render_detail(self, interval: pd.Series, cache_key: str, detail_data: Any):
+    def _render_detail(self, interval: pd.DataFrame, cache_key: str, detail_data: Any):
         """Render detailed view for an interval.
         
         Args:
-            interval: The interval Series
+            interval: The interval DataFrame (single row)
             cache_key: Cache key for this interval
             detail_data: The detail data to render
         """
