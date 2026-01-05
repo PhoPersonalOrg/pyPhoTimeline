@@ -21,6 +21,7 @@ except ImportError:
         pass
 
 from pathlib import Path
+from re import S
 import sys
 import numpy as np
 import pandas as pd
@@ -33,8 +34,8 @@ from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidget
 from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, NamedColorScheme
 from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
-from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource
-from pypho_timeline.rendering.detail_renderers import PositionPlotDetailRenderer, VideoThumbnailDetailRenderer
+from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
+from pypho_timeline.rendering.detail_renderers import PositionPlotDetailRenderer, VideoThumbnailDetailRenderer, GenericPlotDetailRenderer
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData, RenderPlots
@@ -525,6 +526,90 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         print(f"Window scrolled to: {new_start_time:.2f} - {new_end_time:.2f}")
 
 
+
+modality_channels_dict = {'EEG': ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'],
+                        'MOTION': ['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'],
+                        'GENERIC': ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'],
+}
+
+modality_sfreq_dict = {'EEG': 128, 'MOTION': 16,
+                        'GENERIC': 128, 
+}
+
+
+def perform_process_all_streams(streams):
+    all_streams = {}
+    all_streams_datasources = {}
+    for i, s in enumerate(streams):
+        stream_name = s['info']['name'][0]
+        stream_type = s['info']['type'][0]
+        # if ('type' in s['info']):
+        #     a_type = s['info']['type'][0]
+        #     all_streams[a_type] = s
+        timestamps = s['time_stamps'] ## get stream data
+        time_series = s['time_series'] ## get stream data
+        
+        n_channels: int = int(s['info']['channel_count'][0])
+        print(f"Stream {i}: {stream_name}, channels: {n_channels}, samples: {len(timestamps)}")
+
+        # Create a single interval representing the entire stream recording
+        if len(timestamps) == 0:
+            continue
+        
+        stream_start = float(timestamps[0])
+        stream_end = float(timestamps[-1])
+        stream_duration = stream_end - stream_start
+        
+        # Create interval DataFrame with proper structure
+        intervals_df = pd.DataFrame({
+            't_start': [stream_start],
+            't_duration': [stream_duration],
+            't_end': [stream_end]
+        })
+
+        # Add visualization columns
+        intervals_df['series_vertical_offset'] = (1.0) * float(i)
+        intervals_df['series_height'] = 0.9
+        
+        # Create pens and brushes
+        color = pg.mkColor('blue')
+        color.setAlphaF(0.3)
+        pen = pg.mkPen(color, width=1)
+        brush = pg.mkBrush(color)
+        intervals_df['pen'] = [pen]
+        intervals_df['brush'] = [brush]
+
+
+        all_streams[stream_name] = intervals_df
+
+        # Create datasource
+        if 'Motion' in stream_name:
+            n_t_stamps, n_columns = np.shape(time_series)
+            assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
+            assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
+            time_series_df = pd.DataFrame(time_series, columns=modality_channels_dict['MOTION']) # ['AccelX', 'AccelY', 'AccelZ', 'GyroX', 'GyroY', 'GyroZ']
+            time_series_df['t'] = timestamps
+            datasource = PositionTrackDatasource(position_df=time_series_df, intervals_df=intervals_df)
+            datasource.custom_datasource_name = f"MOTION_{stream_name}"
+        # elif 'Epoc X' in stream_name:
+        #     ## TODO: Implement EEG datasource:
+        #     datasource = BaseTrackDatasource()
+        #     datasource.custom_datasource_name = f"EEG_{stream_name}"
+        else:
+            datasource = None
+            print(f'unknown stream type -- cannot build datasource for stream: stream_name: "{stream_name}", stream_type: "{stream_type}"')
+
+        all_streams_datasources[stream_name] = datasource
+    ## END for i, s in enumerate(streams)...
+
+    return all_streams, all_streams_datasources
+
+
+
+# ==================================================================================================================================================================================================================================================================================== #
+# Testing Functions                                                                                                                                                                                                                                                                    #
+# ==================================================================================================================================================================================================================================================================================== #
+
 def main():
     """Main function demonstrating pyPhoTimeline usage."""
     print("=" * 60)
@@ -574,11 +659,142 @@ def main():
     # Run the application
     sys.exit(app.exec_())
 
+# def main_all_eeg_modalities_from_xdf_file_example(xdf_file_path: Path):
+#     """Main function demonstrating pyPhoTimeline usage with all EEG modalities from an XDF file."""
+#     print("=" * 60)
+#     print(f"pyPhoTimeline - Load all EEG (or LSL) modalities from XDF: {xdf_file_path}")
+#     print("=" * 60)
 
-def main_all_eeg_modalities_from_xdf_file_example(xdf_file_path: Path):
+#     # Create Qt application
+#     app = pg.mkQApp("pyPhoTimelineXDFExample")
+
+#     # --- 1. Load the XDF file (using pyxdf) ---
+#     import pyxdf
+
+#     print(f"Loading XDF file: {xdf_file_path} ...")
+#     streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+#     print(f"Streams loaded: {[s['info']['name'][0] for s in streams]}")
+#     print(f"File Header: {file_header}")
+
+#     # --- 2. Inspect and extract EEG/continuous data streams ---
+#     eeg_streams = []
+#     for s in streams:
+#         if 'type' in s['info'] and 'EEG' in s['info']['type'][0]:
+#             eeg_streams.append(s)
+
+
+#     all_streams = {}
+#     for s in streams:
+#         if ('type' in s['info']):
+#             a_type = s['info']['type'][0]
+#             all_streams[a_type] = s
+
+
+#     if not eeg_streams:
+#         print("No EEG streams found in XDF file.")
+#         return
+
+#     print(f"Found {len(eeg_streams)} EEG streams: {[s['info']['name'][0] for s in eeg_streams]}")
+
+#     # --- 3. Build interval DataFrame for each EEG stream ---
+#     eeg_datasources = []
+#     for i, s in enumerate(eeg_streams):
+#         timestamps = s['time_stamps']
+#         stream_name = s['info']['name'][0]
+#         n_channels = int(s['info']['channel_count'][0])
+#         print(f"Stream {i}: {stream_name}, channels: {n_channels}, samples: {len(timestamps)}")
+
+#         # Create a single interval representing the entire stream recording
+#         if len(timestamps) == 0:
+#             continue
+        
+#         stream_start = float(timestamps[0])
+#         stream_end = float(timestamps[-1])
+#         stream_duration = stream_end - stream_start
+        
+#         # Create interval DataFrame with proper structure
+#         intervals_df = pd.DataFrame({
+#             't_start': [stream_start],
+#             't_duration': [stream_duration],
+#             't_end': [stream_end]
+#         })
+        
+#         # Add visualization columns
+#         intervals_df['series_vertical_offset'] = 0.0
+#         intervals_df['series_height'] = 1.0
+        
+#         # Create pens and brushes
+#         color = pg.mkColor('blue')
+#         color.setAlphaF(0.3)
+#         pen = pg.mkPen(color, width=1)
+#         brush = pg.mkBrush(color)
+#         intervals_df['pen'] = [pen]
+#         intervals_df['brush'] = [brush]
+        
+#         # Create datasource
+#         datasource = PositionTrackDatasource(position_df=None, intervals_df=intervals_df)
+#         datasource.custom_datasource_name = f"EEG_{stream_name}"
+#         eeg_datasources.append(datasource)
+
+
+
+
+
+#     # --- 4. Create the timeline widget and add EEG tracks ---
+#     timeline = SimpleTimelineWidget(
+#         total_start_time=min([ds.total_df_start_end_times[0] for ds in eeg_datasources]),
+#         total_end_time=max([ds.total_df_start_end_times[1] for ds in eeg_datasources]),
+#         window_duration=10.0,
+#         window_start_time=min([ds.total_df_start_end_times[0] for ds in eeg_datasources]),
+#         add_example_tracks=False  # Don't add example tracks for XDF data
+#     )
+
+#     # Create plot widgets for each EEG stream and add tracks
+#     for datasource in eeg_datasources:
+#         # Create a plot widget for this track
+#         track_widget, root_graphics, plot_item, dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
+#             name=datasource.custom_datasource_name,
+#             dockSize=(500, 80),
+#             dockAddLocationOpts=['bottom'],
+#             sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA
+#         )
+        
+#         # Set the plot to show the full time range
+#         plot_item.setXRange(
+#             timeline.total_data_start_time, 
+#             timeline.total_data_end_time, 
+#             padding=0
+#         )
+#         plot_item.setYRange(0, 1, padding=0)
+#         plot_item.setLabel('bottom', 'Time', units='s')
+#         plot_item.setLabel('left', datasource.custom_datasource_name)
+#         plot_item.hideAxis('left')  # Hide Y-axis for cleaner look
+        
+#         # Add the track to the plot
+#         timeline.add_track(
+#             datasource,
+#             name=datasource.custom_datasource_name,
+#             plot_item=plot_item
+#         )
+
+#     timeline.setWindowTitle(f"pyPhoTimeline - EEG Modalities from XDF: {xdf_file_path.name}")
+#     timeline.resize(1000, 800)
+#     timeline.show()
+
+#     print("\nTimeline widget created with EEG tracks from XDF:")
+#     for ds in eeg_datasources:
+#         print(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
+
+#     print("\nScroll on the timeline to see loaded EEG intervals for each stream.")
+#     print("Close the window to exit.\n")
+
+#     sys.exit(app.exec_())
+
+
+def main_all_modalities_from_xdf_file_example(xdf_file_path: Path):
     """Main function demonstrating pyPhoTimeline usage with all EEG modalities from an XDF file."""
     print("=" * 60)
-    print(f"pyPhoTimeline - Load all EEG (or LSL) modalities from XDF: {xdf_file_path}")
+    print(f"pyPhoTimeline - Load all modalities from XDF: {xdf_file_path}")
     print("=" * 60)
 
     # Create Qt application
@@ -593,68 +809,30 @@ def main_all_eeg_modalities_from_xdf_file_example(xdf_file_path: Path):
     print(f"File Header: {file_header}")
 
     # --- 2. Inspect and extract EEG/continuous data streams ---
-    eeg_streams = []
-    for s in streams:
-        if 'type' in s['info'] and 'EEG' in s['info']['type'][0]:
-            eeg_streams.append(s)
+    all_streams, all_streams_datasources = perform_process_all_streams(streams=streams)
 
-    if not eeg_streams:
-        print("No EEG streams found in XDF file.")
+    if not all_streams:
+        print("No streams found in XDF file.")
         return
 
-    print(f"Found {len(eeg_streams)} EEG streams: {[s['info']['name'][0] for s in eeg_streams]}")
+    print(f"Found {len(all_streams)} streams: {[a_name for a_name in list(all_streams_datasources.keys())]}")
 
-    # --- 3. Build interval DataFrame for each EEG stream ---
-    eeg_datasources = []
-    for i, s in enumerate(eeg_streams):
-        timestamps = s['time_stamps']
-        stream_name = s['info']['name'][0]
-        n_channels = int(s['info']['channel_count'][0])
-        print(f"Stream {i}: {stream_name}, channels: {n_channels}, samples: {len(timestamps)}")
-
-        # Create a single interval representing the entire stream recording
-        if len(timestamps) == 0:
-            continue
-        
-        stream_start = float(timestamps[0])
-        stream_end = float(timestamps[-1])
-        stream_duration = stream_end - stream_start
-        
-        # Create interval DataFrame with proper structure
-        intervals_df = pd.DataFrame({
-            't_start': [stream_start],
-            't_duration': [stream_duration],
-            't_end': [stream_end]
-        })
-        
-        # Add visualization columns
-        intervals_df['series_vertical_offset'] = 0.0
-        intervals_df['series_height'] = 1.0
-        
-        # Create pens and brushes
-        color = pg.mkColor('blue')
-        color.setAlphaF(0.3)
-        pen = pg.mkPen(color, width=1)
-        brush = pg.mkBrush(color)
-        intervals_df['pen'] = [pen]
-        intervals_df['brush'] = [brush]
-        
-        # Create datasource
-        datasource = PositionTrackDatasource(position_df=None, intervals_df=intervals_df)
-        datasource.custom_datasource_name = f"EEG_{stream_name}"
-        eeg_datasources.append(datasource)
+    
+    active_datasources_dict = {k:v for k, v in all_streams_datasources.items() if v is not None}
+    active_datasource_list = list(active_datasources_dict.values())
+    print(f"\tbuild active_datasources: {len(active_datasource_list)} datasources.")
 
     # --- 4. Create the timeline widget and add EEG tracks ---
     timeline = SimpleTimelineWidget(
-        total_start_time=min([ds.total_df_start_end_times[0] for ds in eeg_datasources]),
-        total_end_time=max([ds.total_df_start_end_times[1] for ds in eeg_datasources]),
+        total_start_time=min([ds.total_df_start_end_times[0] for ds in active_datasource_list]),
+        total_end_time=max([ds.total_df_start_end_times[1] for ds in active_datasource_list]),
         window_duration=10.0,
-        window_start_time=min([ds.total_df_start_end_times[0] for ds in eeg_datasources]),
+        window_start_time=min([ds.total_df_start_end_times[0] for ds in active_datasource_list]),
         add_example_tracks=False  # Don't add example tracks for XDF data
     )
 
     # Create plot widgets for each EEG stream and add tracks
-    for datasource in eeg_datasources:
+    for datasource in active_datasource_list:
         # Create a plot widget for this track
         track_widget, root_graphics, plot_item, dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
             name=datasource.custom_datasource_name,
@@ -681,18 +859,21 @@ def main_all_eeg_modalities_from_xdf_file_example(xdf_file_path: Path):
             plot_item=plot_item
         )
 
-    timeline.setWindowTitle(f"pyPhoTimeline - EEG Modalities from XDF: {xdf_file_path.name}")
+    timeline.setWindowTitle(f"pyPhoTimeline - ALL Modalities from XDF: {xdf_file_path.name}")
     timeline.resize(1000, 800)
     timeline.show()
 
-    print("\nTimeline widget created with EEG tracks from XDF:")
-    for ds in eeg_datasources:
+    print("\nTimeline widget created with tracks from XDF:")
+    for ds in active_datasource_list:
         print(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
 
     print("\nScroll on the timeline to see loaded EEG intervals for each stream.")
     print("Close the window to exit.\n")
 
+
     sys.exit(app.exec_())
+
+
 
 
 if __name__ == "__main__":
@@ -718,5 +899,6 @@ if __name__ == "__main__":
         sys.exit(1)
     else:
         print(f'loading xdf file: "{demo_xdf_path.as_posix()}"')
-    main_all_eeg_modalities_from_xdf_file_example(demo_xdf_path)
+    # main_all_eeg_modalities_from_xdf_file_example(demo_xdf_path)
+    main_all_modalities_from_xdf_file_example(demo_xdf_path)
     
