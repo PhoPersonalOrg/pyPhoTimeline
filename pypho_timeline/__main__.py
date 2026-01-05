@@ -217,8 +217,11 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             plots.append(widget.getRootPlotItem())
         return plots
     
-    def __init__(self, total_start_time=0.0, total_end_time=100.0, window_duration=10.0, window_start_time=30.0, parent=None):
+    def __init__(self, total_start_time=0.0, total_end_time=100.0, window_duration=10.0, window_start_time=30.0, add_example_tracks=True, parent=None):
         super().__init__(parent)
+        
+        # Store whether to add example tracks
+        self._add_example_tracks = add_example_tracks
         
         # Initialize UI container
         self.ui = PhoUIContainer()
@@ -274,8 +277,9 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         # Add to layout
         self.ui.layout.addWidget(self.ui.dynamic_docked_widget_container)
         
-        # Add some example tracks
-        self.add_example_tracks()
+        # Add some example tracks (only if requested)
+        if self._add_example_tracks:
+            self.add_example_tracks()
         
     def add_example_tracks(self):
         """Add example timeline tracks to demonstrate functionality."""
@@ -603,21 +607,40 @@ def main_all_eeg_modalities_from_xdf_file_example(xdf_file_path: Path):
     # --- 3. Build interval DataFrame for each EEG stream ---
     eeg_datasources = []
     for i, s in enumerate(eeg_streams):
-        data = s['time_series']
         timestamps = s['time_stamps']
         stream_name = s['info']['name'][0]
         n_channels = int(s['info']['channel_count'][0])
         print(f"Stream {i}: {stream_name}, channels: {n_channels}, samples: {len(timestamps)}")
 
-        # For visualization, we'll use intervals of e.g., 1 second duration
-        df = pd.DataFrame({'t': timestamps})
-        df['t_start'] = df['t']
-        df['t_duration'] = 1.0   # 1-second intervals by default
-        df['t_end'] = df['t_start'] + df['t_duration']
-
-        # If multi-channel, store per-channel as separate tracks if desired
-        # For now, treat the whole stream as one datasource
-        datasource = PositionTrackDatasource(position_df=None, intervals_df=df[['t_start', 't_duration', 't_end']])
+        # Create a single interval representing the entire stream recording
+        if len(timestamps) == 0:
+            continue
+        
+        stream_start = float(timestamps[0])
+        stream_end = float(timestamps[-1])
+        stream_duration = stream_end - stream_start
+        
+        # Create interval DataFrame with proper structure
+        intervals_df = pd.DataFrame({
+            't_start': [stream_start],
+            't_duration': [stream_duration],
+            't_end': [stream_end]
+        })
+        
+        # Add visualization columns
+        intervals_df['series_vertical_offset'] = 0.0
+        intervals_df['series_height'] = 1.0
+        
+        # Create pens and brushes
+        color = pg.mkColor('blue')
+        color.setAlphaF(0.3)
+        pen = pg.mkPen(color, width=1)
+        brush = pg.mkBrush(color)
+        intervals_df['pen'] = [pen]
+        intervals_df['brush'] = [brush]
+        
+        # Create datasource
+        datasource = PositionTrackDatasource(position_df=None, intervals_df=intervals_df)
         datasource.custom_datasource_name = f"EEG_{stream_name}"
         eeg_datasources.append(datasource)
 
@@ -627,12 +650,35 @@ def main_all_eeg_modalities_from_xdf_file_example(xdf_file_path: Path):
         total_end_time=max([ds.total_df_start_end_times[1] for ds in eeg_datasources]),
         window_duration=10.0,
         window_start_time=min([ds.total_df_start_end_times[0] for ds in eeg_datasources]),
+        add_example_tracks=False  # Don't add example tracks for XDF data
     )
 
+    # Create plot widgets for each EEG stream and add tracks
     for datasource in eeg_datasources:
+        # Create a plot widget for this track
+        track_widget, root_graphics, plot_item, dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
+            name=datasource.custom_datasource_name,
+            dockSize=(500, 80),
+            dockAddLocationOpts=['bottom'],
+            sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA
+        )
+        
+        # Set the plot to show the full time range
+        plot_item.setXRange(
+            timeline.total_data_start_time, 
+            timeline.total_data_end_time, 
+            padding=0
+        )
+        plot_item.setYRange(0, 1, padding=0)
+        plot_item.setLabel('bottom', 'Time', units='s')
+        plot_item.setLabel('left', datasource.custom_datasource_name)
+        plot_item.hideAxis('left')  # Hide Y-axis for cleaner look
+        
+        # Add the track to the plot
         timeline.add_track(
             datasource,
-            name=datasource.custom_datasource_name
+            name=datasource.custom_datasource_name,
+            plot_item=plot_item
         )
 
     timeline.setWindowTitle(f"pyPhoTimeline - EEG Modalities from XDF: {xdf_file_path.name}")
