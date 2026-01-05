@@ -35,7 +35,6 @@ from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDi
 from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
-MotionPlotDetailRenderer
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, PositionTrackDatasource, VideoTrackDatasource
 from pypho_timeline.rendering.detail_renderers import MotionPlotDetailRenderer, PositionPlotDetailRenderer, VideoThumbnailDetailRenderer, GenericPlotDetailRenderer
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
@@ -431,15 +430,20 @@ def perform_process_all_streams(streams):
             assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
             time_series_df = pd.DataFrame(time_series, columns=modality_channels_dict['MOTION']) # ['AccelX', 'AccelY', 'AccelZ', 'GyroX', 'GyroY', 'GyroZ']
             time_series_df['t'] = timestamps
-            datasource = PositionTrackDatasource(position_df=time_series_df, intervals_df=intervals_df)
+            datasource = MotionTrackDatasource(motion_df=time_series_df, intervals_df=intervals_df, custom_datasource_name=f"MOTION_{stream_name}")
             datasource.custom_datasource_name = f"MOTION_{stream_name}"
-        # elif 'Epoc X' in stream_name:
-        #     ## TODO: Implement EEG datasource:
-        #     datasource = BaseTrackDatasource()
-        #     datasource.custom_datasource_name = f"EEG_{stream_name}"
+        elif 'Epoc X' in stream_name:
+            ## TODO: Implement EEG datasource:
+            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"EEG_{stream_name}")
+            datasource.custom_datasource_name = f"EEG_{stream_name}"
+        elif (intervals_df is not None) and (len(intervals_df) > 0):
+            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"UNKNOWN_{stream_name}")
+            datasource.custom_datasource_name = f"UNKNOWN_{stream_name}"
+            print(f'WARN: unspecific stream type -- cannot build datasource for stream: stream_name: "{stream_name}", stream_type: "{stream_type}"')
+
         else:
             datasource = None
-            print(f'unknown stream type -- cannot build datasource for stream: stream_name: "{stream_name}", stream_type: "{stream_type}"')
+            print(f'WARN: NO intervals_df!! unknown stream type -- cannot build datasource for stream: stream_name: "{stream_name}", stream_type: "{stream_type}"')
 
         all_streams_datasources[stream_name] = datasource
     ## END for i, s in enumerate(streams)...

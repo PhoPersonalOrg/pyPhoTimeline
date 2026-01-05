@@ -24,15 +24,16 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
     """
     
-    def __init__(self, video_intervals_df: pd.DataFrame):
+    def __init__(self, video_intervals_df: pd.DataFrame, custom_datasource_name: Optional[str]=None):
         """Initialize with video intervals.
         
         Args:
             video_intervals_df: DataFrame with columns ['t_start', 't_duration', 'video_path']
         """
-        super().__init__(video_intervals_df, detailed_df=None)
-        self.custom_datasource_name = "VideoTrack"
-        
+        if custom_datasource_name is None:
+            custom_datasource_name = "VideoTrack"
+        super().__init__(video_intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name)
+
         # Override visualization properties (parent sets blue, we want green; parent sets height=1.0, we want 50.0)
         self.intervals_df['series_height'] = 50.0
         

@@ -31,10 +31,9 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
             motion_df: DataFrame with columns ['t', 'x', 'y'] (or ['t', 'x'] for 1D)
             intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
         """
-        super().__init__(intervals_df, detailed_df=motion_df)
         if custom_datasource_name is None:
             custom_datasource_name = "MotionTrack"
-        self.custom_datasource_name = custom_datasource_name
+        super().__init__(intervals_df, detailed_df=motion_df, custom_datasource_name=custom_datasource_name)
         
         # Override visualization properties (parent sets blue, we want blue too, but keep same height)
         # Parent already sets series_height=1.0, which is what we want, so no change needed
@@ -43,9 +42,11 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
     def get_detail_renderer(self):
         """Get detail renderer for motion data."""
         if self.detailed_df is None:
-            return MotionPlotDetailRenderer(pen_color='cyan', pen_width=2, y_column=None)
-        return MotionPlotDetailRenderer(pen_color='cyan', pen_width=2, y_column='y' if 'y' in self.detailed_df.columns else None)
-    
+            print(f'WARN: self.detailed_df is None!')
+            return MotionPlotDetailRenderer(pen_width=2)
+        return MotionPlotDetailRenderer(pen_width=2)
+
+
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
         return f"motion_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"

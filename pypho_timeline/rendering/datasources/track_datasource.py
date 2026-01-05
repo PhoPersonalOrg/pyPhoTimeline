@@ -315,7 +315,7 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
     displaying position data with async detail loading.
     """
     
-    def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None):
+    def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None):
         """Initialize with position data and intervals.
         
         Args:
@@ -325,8 +325,10 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         super().__init__()
         self.detailed_df = detailed_df
         self.intervals_df = intervals_df.copy()
-        self.custom_datasource_name = "PositionTrack"
-        
+        if custom_datasource_name is None:
+            custom_datasource_name = "GenericIntervalTrack"
+        self.custom_datasource_name = custom_datasource_name
+
         # Add visualization columns to intervals
         self.intervals_df['series_vertical_offset'] = 0.0
         self.intervals_df['series_height'] = 1.0
@@ -380,15 +382,15 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
     
     def get_detail_renderer(self):
         """Get detail renderer for position data."""
-        from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
+        from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer, IntervalPlotDetailRenderer
         if self.detailed_df is None:
-            return GenericPlotDetailRenderer(pen_color='cyan', pen_width=2, y_column=None)
-        return GenericPlotDetailRenderer(pen_color='cyan', pen_width=2, y_column='y' if 'y' in self.detailed_df.columns else None)
+            return IntervalPlotDetailRenderer(pen_color='cyan', pen_width=2)
+        return IntervalPlotDetailRenderer(pen_color='cyan', pen_width=2)
 
             
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
-        return f"position_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+        return f"{self.custom_datasource_name}_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
 
 
 __all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource', 'IntervalProvidingTrackDatasource']

@@ -24,15 +24,16 @@ class PositionTrackDatasource(IntervalProvidingTrackDatasource):
         from pypho_timeline.rendering.datasources.specific.position import PositionTrackDatasource
     """
     
-    def __init__(self, position_df: pd.DataFrame, intervals_df: pd.DataFrame):
+    def __init__(self, intervals_df: pd.DataFrame, position_df: pd.DataFrame, custom_datasource_name: Optional[str]=None):
         """Initialize with position data and intervals.
         
         Args:
             position_df: DataFrame with columns ['t', 'x', 'y'] (or ['t', 'x'] for 1D)
             intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
         """
-        super().__init__(intervals_df, detailed_df=position_df)
-        self.custom_datasource_name = "PositionTrack"
+        if custom_datasource_name is None:
+            custom_datasource_name = "PositionTrack"
+        super().__init__(intervals_df, detailed_df=position_df, custom_datasource_name=custom_datasource_name)
         
         # Override visualization properties (parent sets blue, we want blue too, but keep same height)
         # Parent already sets series_height=1.0, which is what we want, so no change needed
