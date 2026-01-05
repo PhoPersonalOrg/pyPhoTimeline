@@ -3,9 +3,12 @@ from typing import List, Tuple, Any, Optional
 import numpy as np
 import pandas as pd
 import pyphoplacecellanalysis.External.pyqtgraph as pg
+from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
+from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 
-
-class VideoThumbnailDetailRenderer:
+## TODO: should implement/conform to `DetailRenderer`
+## TODO: should inherit from `GenericPlotDetailRenderer`
+class VideoThumbnailDetailRenderer(DetailRenderer):
     """Detail renderer for video tracks that displays video frames as thumbnails.
     
     Expects detail_data to be either:

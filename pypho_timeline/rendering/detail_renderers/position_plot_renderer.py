@@ -5,9 +5,12 @@ import pandas as pd
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
+from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 
 
-class PositionPlotDetailRenderer:
+## TODO: should implement/conform to `DetailRenderer`
+## TODO: should inherit from `GenericPlotDetailRenderer`
+class PositionPlotDetailRenderer(DetailRenderer):
     """Detail renderer for position tracks that displays position as a line plot.
     
     Expects detail_data to be a DataFrame with columns ['t', 'x', 'y'] or ['t', 'x'].

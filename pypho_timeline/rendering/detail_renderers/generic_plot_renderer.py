@@ -6,12 +6,15 @@ import pyphoplacecellanalysis.External.pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
 
-
-class GenericPlotDetailRenderer:
+## TODO: should implement/conform to `DetailRenderer`
+class GenericPlotDetailRenderer(DetailRenderer):
     """Generic detail renderer that uses a custom render function.
     
     This renderer allows users to provide their own rendering function for
     custom track types.
+
+    from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
+
     """
     
     def __init__(self, render_fn: Callable[[pg.PlotItem, pd.Series, Any], List[pg.GraphicsObject]],
