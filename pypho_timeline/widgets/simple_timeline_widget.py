@@ -12,11 +12,13 @@ import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
 from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
+from pypho_timeline.rendering.detail_renderers import DataframePlotDetailRenderer
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, PositionTrackDatasource, VideoTrackDatasource
-from pypho_timeline.rendering.datasources.specific.eeg import EEGPlotDetailRenderer, EEGTrackDatasource
+from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
+
 
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData, RenderPlots
@@ -412,9 +414,11 @@ def perform_process_all_streams(streams):
 
 
         all_streams[stream_name] = intervals_df
+        has_valid_intervals: bool = (intervals_df is not None) and (len(intervals_df) > 0)
 
         # Create datasource
-        if 'Motion' in stream_name:
+        if (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name):
+            assert has_valid_intervals
             n_t_stamps, n_columns = np.shape(time_series)
             assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
             assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
@@ -422,7 +426,26 @@ def perform_process_all_streams(streams):
             time_series_df['t'] = timestamps
             datasource = MotionTrackDatasource(motion_df=time_series_df, intervals_df=intervals_df, custom_datasource_name=f"MOTION_{stream_name}")
             datasource.custom_datasource_name = f"MOTION_{stream_name}"
-        elif 'Epoc X' in stream_name:
+
+        elif (stream_type.upper() in ['RAW']) and (' eQuality' in stream_name): #  and ('Epoc X' in stream_name)
+            ## TODO: Implement EEG datasource:
+            assert has_valid_intervals
+
+            from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
+            channel_names = modality_channels_dict['EEG']
+
+            a_detail_renderer: DataframePlotDetailRenderer = DataframePlotDetailRenderer(channel_names=channel_names)
+            
+            n_t_stamps, n_columns = np.shape(time_series)
+            assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
+            assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
+            time_series_df = pd.DataFrame(time_series, columns=channel_names) # ['AccelX', 'AccelY', 'AccelZ', 'GyroX', 'GyroY', 'GyroZ']
+            time_series_df['t'] = timestamps
+            # datasource = EEGTrackDatasource(intervals_df=intervals_df, eeg_df=time_series_df, custom_datasource_name=f"EEG_{stream_name}")
+            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=time_series_df, custom_datasource_name=f"EEGQ_{stream_name}", detail_renderer=a_detail_renderer)
+            # datasource.custom_datasource_name = f"EEG_{stream_name}"
+
+        elif (stream_type.upper() == 'EEG'): #  and ('Epoc X' in stream_name)
             ## TODO: Implement EEG datasource:
             n_t_stamps, n_columns = np.shape(time_series)
             assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
@@ -432,7 +455,8 @@ def perform_process_all_streams(streams):
             datasource = EEGTrackDatasource(intervals_df=intervals_df, eeg_df=time_series_df, custom_datasource_name=f"EEG_{stream_name}")
             # datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"EEG_{stream_name}")
             # datasource.custom_datasource_name = f"EEG_{stream_name}"
-        elif (intervals_df is not None) and (len(intervals_df) > 0):
+
+        elif has_valid_intervals:
             datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"UNKNOWN_{stream_name}")
             datasource.custom_datasource_name = f"UNKNOWN_{stream_name}"
             print(f'WARN: unspecific stream type -- cannot build datasource for stream: stream_name: "{stream_name}", stream_type: "{stream_type}"')

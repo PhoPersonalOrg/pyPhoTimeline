@@ -1,3 +1,12 @@
+ 
+from __future__ import annotations # prevents having to specify types for typehinting as strings
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    ## typehinting only imports here
+    from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import IntervalPlotDetailRenderer
+
+
 """TrackDatasource and DetailRenderer protocols for timeline track rendering.
 
 This module defines the protocols for datasources that provide both overview intervals
@@ -10,6 +19,8 @@ from qtpy import QtCore
 
 from pypho_timeline.rendering.datasources.interval_datasource import IntervalsDatasource
 import pyphoplacecellanalysis.External.pyqtgraph as pg
+
+
 
 
 class DetailRenderer(Protocol):
@@ -315,7 +326,7 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
     displaying position data with async detail loading.
     """
     
-    def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None):
+    def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None, detail_renderer: Optional[IntervalPlotDetailRenderer]=None):
         """Initialize with position data and intervals.
         
         Args:
@@ -323,6 +334,8 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
             intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
         """
         super().__init__()
+        self._detail_renderer = detail_renderer
+        
         self.detailed_df = detailed_df
         self.intervals_df = intervals_df.copy()
         if custom_datasource_name is None:
@@ -340,7 +353,8 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         brush = pg.mkBrush(color)
         self.intervals_df['pen'] = [pen] * len(self.intervals_df)
         self.intervals_df['brush'] = [brush] * len(self.intervals_df)
-    
+
+
     @property
     def df(self) -> pd.DataFrame:
         return self.intervals_df
@@ -382,10 +396,17 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
     
     def get_detail_renderer(self):
         """Get detail renderer for position data."""
-        from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer, IntervalPlotDetailRenderer
-        if self.detailed_df is None:
+        if self._detail_renderer is None:
+            from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer, IntervalPlotDetailRenderer
+            if self.detailed_df is None:
+                return IntervalPlotDetailRenderer(pen_color='cyan', pen_width=2)
             return IntervalPlotDetailRenderer(pen_color='cyan', pen_width=2)
-        return IntervalPlotDetailRenderer(pen_color='cyan', pen_width=2)
+        else:
+            # if self.detailed_df is None:
+            #     return IntervalPlotDetailRenderer(pen_color='cyan', pen_width=2)
+            # return IntervalPlotDetailRenderer(pen_color='cyan', pen_width=2)
+            return self._detail_renderer
+
 
             
     def get_detail_cache_key(self, interval: pd.Series) -> str:

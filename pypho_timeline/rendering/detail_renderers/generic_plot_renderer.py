@@ -82,6 +82,8 @@ class GenericPlotDetailRenderer(DetailRenderer):
         
         return (t_start, t_end, y_offset, y_offset + y_height)
 
+
+
 """IntervalPlotDetailRenderer - Renders position data as line plots."""
 ## TODO: should inherit from `GenericPlotDetailRenderer`
 class IntervalPlotDetailRenderer(DetailRenderer):
@@ -198,5 +200,263 @@ class IntervalPlotDetailRenderer(DetailRenderer):
 
 
 
-__all__ = ['GenericPlotDetailRenderer', 'IntervalPlotDetailRenderer']
+class DataframePlotDetailRenderer(DetailRenderer):
+    """Detail renderer for dataframe tracks that displays dataframe channels as line plots.
+    
+    Expects detail_data to be a DataFrame with columns ['t'] and channel columns.
+    Channels can be explicitly specified or auto-detected from numeric columns.
+
+    Usage:
+        from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
+
+        # Auto-detect channels from DataFrame
+        renderer = DataframePlotDetailRenderer()
+        
+        # Explicitly specify channels
+        renderer = DataframePlotDetailRenderer(channel_names=['x', 'y', 'z'])
+        
+        # Disable normalization to plot raw values
+        renderer = DataframePlotDetailRenderer(channel_names=['AccX', 'AccY'], normalize=False)
+    """
+    
+    def __init__(self, pen_width=2, channel_names: Optional[List[str]]=None, pen_colors=None, pen_color='cyan', normalize: bool = True):
+        """Initialize the dataframe plot renderer.
+        
+        Args:
+            pen_width: Width of the plot lines (default: 2)
+            channel_names: Optional list of channel names to plot. If None, auto-detects all numeric columns except 't' (default: None)
+            pen_colors: Optional list of colors for each channel (default: None, auto-generated)
+            pen_color: Default color for channels (used if channel_names is None and single channel, default: 'cyan')
+            normalize: If True, normalize all channels to 0-1 range. If False, plot raw values (default: True)
+        """
+        self.pen_color = pen_color
+        self.pen_colors = pen_colors
+        self.pen_width = pen_width
+        self.channel_names = channel_names
+        self.normalize = normalize
+        
+        # Generate distinct colors for each channel if channel_names is provided
+        # (If None, colors will be generated during render_detail when channels are auto-detected)
+        if (channel_names is not None) and (pen_colors is None):
+            # Predefined palette of distinct colors
+            # Generate enough distinct colors for all Dataframe channels using matplotlib's colormap
+            import matplotlib.pyplot as plt
+            import matplotlib
+            num_channels = len(channel_names)
+            # Use a rainbow colormap suitable for black/dark backgrounds. 
+            # 'nipy_spectral' and 'turbo' are perceptually uniform and good for this.
+            cmap = plt.get_cmap('nipy_spectral')
+            color_palette = [matplotlib.colors.to_hex(cmap(i / max(num_channels-1, 1))) for i in range(num_channels)]
+            # Cycle through palette if more channels than colors
+            self.pen_colors = [color_palette[i % len(color_palette)] for i in range(len(channel_names))]
+        else:
+            self.pen_colors = None
+
+    
+    def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
+        """Render dataframe channels as line plots.
+        
+        Args:
+            plot_item: The pyqtgraph PlotItem to render into
+            interval: The interval DataFrame (single row) with 't_start' and 't_duration'
+            detail_data: DataFrame with columns ['t'] and channel columns
+            
+        Returns:
+            List of GraphicsObject items added (PlotDataItem)
+
+        Usage:
+            a_track_name: str = 'MOTION_Epoc X Dataframe'
+            a_renderer = timeline.track_renderers[a_track_name]
+            a_detail_renderer = a_renderer.detail_renderer # DataframePlotDetailRenderer 
+            a_ds = timeline.track_datasources[a_track_name]
+            interval = a_ds.get_overview_intervals()
+
+            dDisplayItem = timeline.ui.dynamic_docked_widget_container.find_display_dock(identifier=a_track_name) # Dock
+            a_widget = timeline.ui.matplotlib_view_widgets[a_track_name] # PyqtgraphTimeSynchronizedWidget 
+            a_root_graphics_layout_widget = a_widget.getRootGraphicsLayoutWidget()
+            a_plot_item = a_widget.getRootPlotItem()
+
+            graphics_objects = a_detail_renderer.render_detail(plot_item=a_plot_item, interval=None, detail_data=a_ds.detailed_df) # List[PlotDataItem]
+
+        """
+        if detail_data is None or len(detail_data) == 0:
+            return []
+        
+        if not isinstance(detail_data, pd.DataFrame):
+            raise TypeError(f"DataframePlotDetailRenderer expects DataFrame, got {type(detail_data)}")
+        
+        graphics_objects = []
+        
+        # Check required columns
+        if 't' not in detail_data.columns:
+            return []
+        
+        # Sort by time
+        df_sorted = detail_data.sort_values('t')
+        t_values = df_sorted['t'].values
+        
+        # Auto-detect channels if channel_names is None
+        if self.channel_names is None:
+            # Auto-detect: all numeric columns except 't'
+            numeric_cols = df_sorted.select_dtypes(include=[np.number]).columns.tolist()
+            channel_names_to_use = [col for col in numeric_cols if col != 't']
+            if len(channel_names_to_use) == 0:
+                return []  # No channels found
+            # Generate colors for auto-detected channels
+            if self.pen_colors is None:
+                import matplotlib.pyplot as plt
+                import matplotlib
+                num_channels = len(channel_names_to_use)
+                cmap = plt.get_cmap('nipy_spectral')
+                color_palette = [matplotlib.colors.to_hex(cmap(i / max(num_channels-1, 1))) for i in range(num_channels)]
+                pen_colors_to_use = [color_palette[i % len(color_palette)] for i in range(len(channel_names_to_use))]
+            else:
+                # Use provided colors, cycling if there are more channels than colors
+                pen_colors_to_use = [self.pen_colors[i % len(self.pen_colors)] for i in range(len(channel_names_to_use))]
+        else:
+            # Use explicitly provided channel names
+            channel_names_to_use = self.channel_names
+            found_channel_names: List[str] = [k for k in channel_names_to_use if (k in df_sorted.columns)]
+            # Only assert all channels required when channel_names was explicitly provided
+            found_all_channel_names: bool = len(found_channel_names) == len(channel_names_to_use)
+            if not found_all_channel_names:
+                missing_channels = set(channel_names_to_use) - set(found_channel_names)
+                raise ValueError(f"Missing channels: {missing_channels}")
+            channel_names_to_use = found_channel_names
+            pen_colors_to_use = self.pen_colors if self.pen_colors is not None else [self.pen_color] * len(channel_names_to_use)
+
+        # Normalize channels if requested
+        if self.normalize:
+            # Normalize all channel columns between 0.0 and 1.0 across all channel_names_to_use
+            channel_df = df_sorted[channel_names_to_use].astype(float)
+            min_vals = channel_df.min(skipna=True)
+            max_vals = channel_df.max(skipna=True)
+            ranges = max_vals - min_vals
+            # Replace 0 and NaN in ranges with 1 to avoid division by zero/NaN
+            ranges = ranges.replace(0, 1).fillna(1)
+            normalized_channel_df = (channel_df - min_vals) / ranges
+            use_normalized = True
+        else:
+            use_normalized = False
+
+        # Plot each channel with its distinct color
+        for idx, channel_name in enumerate(channel_names_to_use):
+            if use_normalized:
+                y_values = normalized_channel_df[channel_name].values
+            else:
+                y_values = df_sorted[channel_name].values
+            
+            # Get the color for this channel
+            if self.channel_names is not None:
+                # Use color based on original channel_names index
+                channel_index = self.channel_names.index(channel_name)
+                channel_color = pen_colors_to_use[channel_index] if len(pen_colors_to_use) > channel_index else self.pen_color
+            else:
+                # Use color based on auto-detected order
+                channel_color = pen_colors_to_use[idx] if idx < len(pen_colors_to_use) else self.pen_color
+            
+            pen = pg.mkPen(channel_color, width=self.pen_width)
+            plot_data_item = pg.PlotDataItem(t_values, y_values, pen=pen, connect='finite', name=channel_name)
+            plot_item.addItem(plot_data_item)
+            graphics_objects.append(plot_data_item)
+        
+        return graphics_objects
+    
+
+    def clear_detail(self, plot_item: pg.PlotItem, graphics_objects: List[pg.GraphicsObject]) -> None:
+        """Remove dataframe plot graphics objects.
+        
+        Args:
+            plot_item: The pyqtgraph PlotItem
+            graphics_objects: List of GraphicsObject items to remove
+        """
+        if graphics_objects is None:
+            return
+        
+        for obj in graphics_objects:
+            if obj is None:
+                continue
+            try:
+                plot_item.removeItem(obj)
+                if hasattr(obj, 'setParentItem'):
+                    obj.setParentItem(None)
+            except (AttributeError, RuntimeError):
+                # Item may have already been removed or is invalid
+                pass
+
+                
+    
+    def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
+        """Get bounds for the dataframe plot.
+        
+        Args:
+            interval: The interval DataFrame (single row) with 't_start' and 't_duration'
+            detail_data: DataFrame with dataframe data (columns: 't' and channel columns)
+            
+        Returns:
+            Tuple of (x_min, x_max, y_min, y_max) where x is time and y is channel values
+        """
+        has_valid_detail_data: bool = (detail_data is not None) and isinstance(detail_data, pd.DataFrame) and (len(detail_data) > 0)
+        if (interval is None) or (len(interval) == 0):
+            # If interval is None or empty, attempt to determine t_start and t_end from detail_data
+            if has_valid_detail_data:
+                # Try to get time column: use 't' if present, otherwise index values if they look like times
+                if 't' in detail_data.columns:
+                    t_start = float(detail_data['t'].min())
+                    t_end = float(detail_data['t'].max())
+                else:
+                    # Fallback: use DataFrame index if it is numeric and sorted
+                    try:
+                        idx = detail_data.index
+                        if hasattr(idx, 'dtype') and np.issubdtype(idx.dtype, np.number):
+                            t_start = float(idx.min())
+                            t_end = float(idx.max())
+                        else:
+                            t_start = 0.0
+                            t_end = 1.0
+                    except Exception:
+                        t_start = 0.0
+                        t_end = 1.0
+            else:
+                raise ValueError(f'has_valid_detail_data is False')
+                # t_start = 0.0
+                # t_end = 1.0
+
+            t_duration = t_end - t_start
+        else:
+            ## interval is provided
+            t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
+            t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
+            t_end = t_start + t_duration
+        
+        if detail_data is None or len(detail_data) == 0:
+            return (t_start, t_end, 0.0, 1.0)
+        
+        if not isinstance(detail_data, pd.DataFrame):
+            return (t_start, t_end, 0.0, 1.0)
+        
+        # Determine which channel columns to use
+        if self.channel_names is None:
+            # Auto-detect: all numeric columns except 't'
+            numeric_cols = detail_data.select_dtypes(include=[np.number]).columns.tolist()
+            channel_columns = [col for col in numeric_cols if col != 't']
+        else:
+            # Get all channel columns that exist in the data
+            channel_columns = [col for col in self.channel_names if col in detail_data.columns]
+        
+        if channel_columns:
+            # Find min/max across all channels
+            y_min = min(detail_data[col].min() for col in channel_columns)
+            y_max = max(detail_data[col].max() for col in channel_columns)
+            # Add padding
+            y_pad = (y_max - y_min) * 0.1 if y_max > y_min else 1.0
+            return (t_start, t_end, (y_min - y_pad), (y_max + y_pad))
+        else:
+            # No channels found, use default bounds
+            return (t_start, t_end, 0.0, 1.0)
+
+
+
+
+__all__ = ['GenericPlotDetailRenderer', 'IntervalPlotDetailRenderer', 'DataframePlotDetailRenderer']
 
