@@ -363,10 +363,11 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
 modality_channels_dict = {'EEG': ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'],
                         'MOTION': ['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'],
                         'GENERIC': ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'],
+                        'LOG': ['msg'],
 }
 
 modality_sfreq_dict = {'EEG': 128, 'MOTION': 16,
-                        'GENERIC': 128, 
+                        'GENERIC': 128, 'LOG': -1,
 }
 
 
@@ -424,7 +425,8 @@ def perform_process_all_streams(streams):
             assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
             time_series_df = pd.DataFrame(time_series, columns=modality_channels_dict['MOTION']) # ['AccelX', 'AccelY', 'AccelZ', 'GyroX', 'GyroY', 'GyroZ']
             time_series_df['t'] = timestamps
-            datasource = MotionTrackDatasource(motion_df=time_series_df, intervals_df=intervals_df, custom_datasource_name=f"MOTION_{stream_name}")
+            # High-frequency motion data: use 1000 points/second for downsampling
+            datasource = MotionTrackDatasource(motion_df=time_series_df, intervals_df=intervals_df, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True)
             datasource.custom_datasource_name = f"MOTION_{stream_name}"
 
         elif (stream_type.upper() in ['RAW']) and (' eQuality' in stream_name): #  and ('Epoc X' in stream_name)
@@ -441,8 +443,9 @@ def perform_process_all_streams(streams):
             assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
             time_series_df = pd.DataFrame(time_series, columns=channel_names) # ['AccelX', 'AccelY', 'AccelZ', 'GyroX', 'GyroY', 'GyroZ']
             time_series_df['t'] = timestamps
+            # High-frequency EEG data: use 1000 points/second for downsampling
             # datasource = EEGTrackDatasource(intervals_df=intervals_df, eeg_df=time_series_df, custom_datasource_name=f"EEG_{stream_name}")
-            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=time_series_df, custom_datasource_name=f"EEGQ_{stream_name}", detail_renderer=a_detail_renderer)
+            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=time_series_df, custom_datasource_name=f"EEGQ_{stream_name}", detail_renderer=a_detail_renderer, max_points_per_second=2.0, enable_downsampling=True)
             # datasource.custom_datasource_name = f"EEG_{stream_name}"
 
         elif (stream_type.upper() == 'EEG'): #  and ('Epoc X' in stream_name)
@@ -452,12 +455,32 @@ def perform_process_all_streams(streams):
             assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
             time_series_df = pd.DataFrame(time_series, columns=modality_channels_dict['EEG']) # ['AccelX', 'AccelY', 'AccelZ', 'GyroX', 'GyroY', 'GyroZ']
             time_series_df['t'] = timestamps
-            datasource = EEGTrackDatasource(intervals_df=intervals_df, eeg_df=time_series_df, custom_datasource_name=f"EEG_{stream_name}")
+            # High-frequency EEG data: use 1000 points/second for downsampling
+            datasource = EEGTrackDatasource(intervals_df=intervals_df, eeg_df=time_series_df, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True)
             # datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"EEG_{stream_name}")
             # datasource.custom_datasource_name = f"EEG_{stream_name}"
 
+        elif (stream_type.upper() in ['MARKERS']) and (stream_name in ['EventBoard', 'TextLogger']): #  and ('Epoc X' in stream_name)
+            ## Text log datasource:
+            assert has_valid_intervals
+            from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
+            channel_names = modality_channels_dict['LOG']
+
+            a_detail_renderer: DataframePlotDetailRenderer = DataframePlotDetailRenderer(channel_names=channel_names)
+            
+            n_t_stamps, n_columns = np.shape(time_series)
+            assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
+            assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
+            time_series_df = pd.DataFrame(time_series, columns=channel_names) # ['AccelX', 'AccelY', 'AccelZ', 'GyroX', 'GyroY', 'GyroZ']
+            time_series_df['t'] = timestamps
+            # High-frequency EEG data: use 1000 points/second for downsampling
+            # datasource = EEGTrackDatasource(intervals_df=intervals_df, eeg_df=time_series_df, custom_datasource_name=f"EEG_{stream_name}")
+            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=time_series_df, custom_datasource_name=f"LOG_{stream_name}", detail_renderer=a_detail_renderer, enable_downsampling=False)
+
+
         elif has_valid_intervals:
-            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"UNKNOWN_{stream_name}")
+            # Unknown stream type: disable downsampling by default
+            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"UNKNOWN_{stream_name}", max_points_per_second=1.0, enable_downsampling=False)
             datasource.custom_datasource_name = f"UNKNOWN_{stream_name}"
             print(f'WARN: unspecific stream type -- cannot build datasource for stream: stream_name: "{stream_name}", stream_type: "{stream_type}"')
 

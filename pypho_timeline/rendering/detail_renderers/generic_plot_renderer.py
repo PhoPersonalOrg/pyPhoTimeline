@@ -219,7 +219,7 @@ class DataframePlotDetailRenderer(DetailRenderer):
         renderer = DataframePlotDetailRenderer(channel_names=['AccX', 'AccY'], normalize=False)
     """
     
-    def __init__(self, pen_width=2, channel_names: Optional[List[str]]=None, pen_colors=None, pen_color='cyan', normalize: bool = True):
+    def __init__(self, pen_width=2, channel_names: Optional[List[str]]=None, pen_colors=None, pen_color='white', normalize: bool = True):
         """Initialize the dataframe plot renderer.
         
         Args:

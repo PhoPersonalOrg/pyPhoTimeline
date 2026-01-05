@@ -119,6 +119,7 @@ class StringDataTrackDatasource(BaseTrackDatasource):
         self._intervals_df['pen'] = [pen] * len(self._intervals_df)
         self._intervals_df['brush'] = [brush] * len(self._intervals_df)
     
+    
     def _convert_to_intervals(self) -> pd.DataFrame:
         """Convert original DataFrame to interval format with t_start and t_duration."""
         if self._df_original.empty or self._onset_col not in self._df_original.columns:
