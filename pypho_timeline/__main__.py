@@ -42,11 +42,11 @@ from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPl
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
 
 
-class PositionTrackDatasource(BaseTrackDatasource):
+class PositionTrackDatasource(IntervalProvidingTrackDatasource):
     """Example TrackDatasource for position data.
     
-    Inherits from BaseTrackDatasource and implements all required methods for
-    displaying position data with async detail loading.
+    Inherits from IntervalProvidingTrackDatasource and implements position-specific
+    detail rendering for displaying position data with async detail loading.
     """
     
     def __init__(self, position_df: pd.DataFrame, intervals_df: pd.DataFrame):
@@ -56,78 +56,29 @@ class PositionTrackDatasource(BaseTrackDatasource):
             position_df: DataFrame with columns ['t', 'x', 'y'] (or ['t', 'x'] for 1D)
             intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
         """
-        super().__init__()
-        self.position_df = position_df
-        self.intervals_df = intervals_df.copy()
+        super().__init__(intervals_df, detailed_df=position_df)
         self.custom_datasource_name = "PositionTrack"
         
-        # Add visualization columns to intervals
-        self.intervals_df['series_vertical_offset'] = 0.0
-        self.intervals_df['series_height'] = 1.0
-        
-        # Create pens and brushes
-        color = pg.mkColor('blue')
-        color.setAlphaF(0.3)
-        pen = pg.mkPen(color, width=1)
-        brush = pg.mkBrush(color)
-        self.intervals_df['pen'] = [pen] * len(self.intervals_df)
-        self.intervals_df['brush'] = [brush] * len(self.intervals_df)
-    
-    @property
-    def df(self) -> pd.DataFrame:
-        return self.intervals_df
-    
-    @property
-    def time_column_names(self) -> list:
-        return ['t_start', 't_duration', 't_end']
-    
-    @property
-    def total_df_start_end_times(self) -> tuple:
-        if len(self.intervals_df) == 0:
-            return (0.0, 1.0)
-        t_start = self.intervals_df['t_start'].min()
-        t_end = (self.intervals_df['t_start'] + self.intervals_df['t_duration']).max()
-        return (t_start, t_end)
-    
-    def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
-        """Get intervals overlapping with time window."""
-        mask = (self.intervals_df['t_start'] + self.intervals_df['t_duration'] >= new_start) & \
-               (self.intervals_df['t_start'] <= new_end)
-        return self.intervals_df[mask].copy()
-    
-    def update_visualization_properties(self, dataframe_vis_columns_function):
-        """Update visualization properties."""
-        self.intervals_df = dataframe_vis_columns_function(self.intervals_df)
-    
-    def get_overview_intervals(self) -> pd.DataFrame:
-        """Get overview intervals."""
-        return self.intervals_df
-    
-    def fetch_detailed_data(self, interval: pd.Series) -> pd.DataFrame:
-        """Fetch position data for an interval."""
-        if self.position_df is None:
-            return pd.DataFrame()  # Return empty DataFrame if no position data available
-        t_start = interval['t_start']
-        t_end = t_start + interval['t_duration']
-        mask = (self.position_df['t'] >= t_start) & (self.position_df['t'] < t_end)
-        return self.position_df[mask].copy()
+        # Override visualization properties (parent sets blue, we want blue too, but keep same height)
+        # Parent already sets series_height=1.0, which is what we want, so no change needed
+        # Parent already sets blue color, which is what we want, so no change needed
     
     def get_detail_renderer(self):
         """Get detail renderer for position data."""
-        if self.position_df is None:
+        if self.detailed_df is None:
             return PositionPlotDetailRenderer(pen_color='cyan', pen_width=2, y_column=None)
-        return PositionPlotDetailRenderer(pen_color='cyan', pen_width=2, y_column='y' if 'y' in self.position_df.columns else None)
+        return PositionPlotDetailRenderer(pen_color='cyan', pen_width=2, y_column='y' if 'y' in self.detailed_df.columns else None)
     
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
         return f"position_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
 
 
-class VideoTrackDatasource(BaseTrackDatasource):
+class VideoTrackDatasource(IntervalProvidingTrackDatasource):
     """Example TrackDatasource for video data.
     
-    Inherits from BaseTrackDatasource and implements all required methods for
-    displaying video intervals with async detail loading.
+    Inherits from IntervalProvidingTrackDatasource and implements video-specific
+    detail rendering for displaying video intervals with async detail loading.
     """
     
     def __init__(self, video_intervals_df: pd.DataFrame):
@@ -136,51 +87,19 @@ class VideoTrackDatasource(BaseTrackDatasource):
         Args:
             video_intervals_df: DataFrame with columns ['t_start', 't_duration', 'video_path']
         """
-        super().__init__()
-        self.video_intervals_df = video_intervals_df.copy()
+        super().__init__(video_intervals_df, detailed_df=None)
         self.custom_datasource_name = "VideoTrack"
         
-        # Add visualization columns
-        self.video_intervals_df['series_vertical_offset'] = 0.0
-        self.video_intervals_df['series_height'] = 50.0
+        # Override visualization properties (parent sets blue, we want green; parent sets height=1.0, we want 50.0)
+        self.intervals_df['series_height'] = 50.0
         
-        # Create pens and brushes
+        # Create pens and brushes with green color
         color = pg.mkColor('green')
         color.setAlphaF(0.3)
         pen = pg.mkPen(color, width=1)
         brush = pg.mkBrush(color)
-        self.video_intervals_df['pen'] = [pen] * len(self.video_intervals_df)
-        self.video_intervals_df['brush'] = [brush] * len(self.video_intervals_df)
-    
-    @property
-    def df(self) -> pd.DataFrame:
-        return self.video_intervals_df
-    
-    @property
-    def time_column_names(self) -> list:
-        return ['t_start', 't_duration', 't_end']
-    
-    @property
-    def total_df_start_end_times(self) -> tuple:
-        if len(self.video_intervals_df) == 0:
-            return (0.0, 1.0)
-        t_start = self.video_intervals_df['t_start'].min()
-        t_end = (self.video_intervals_df['t_start'] + self.video_intervals_df['t_duration']).max()
-        return (t_start, t_end)
-    
-    def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
-        """Get intervals overlapping with time window."""
-        mask = (self.video_intervals_df['t_start'] + self.video_intervals_df['t_duration'] >= new_start) & \
-               (self.video_intervals_df['t_start'] <= new_end)
-        return self.video_intervals_df[mask].copy()
-    
-    def update_visualization_properties(self, dataframe_vis_columns_function):
-        """Update visualization properties."""
-        self.video_intervals_df = dataframe_vis_columns_function(self.video_intervals_df)
-    
-    def get_overview_intervals(self) -> pd.DataFrame:
-        """Get overview intervals."""
-        return self.video_intervals_df
+        self.intervals_df['pen'] = [pen] * len(self.intervals_df)
+        self.intervals_df['brush'] = [brush] * len(self.intervals_df)
     
     def fetch_detailed_data(self, interval: pd.Series) -> dict:
         """Fetch video frames for an interval (simulated with random images)."""
