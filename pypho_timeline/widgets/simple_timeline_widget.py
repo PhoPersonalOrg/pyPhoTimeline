@@ -15,7 +15,9 @@ from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidget
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, PositionTrackDatasource, VideoTrackDatasource
+from pypho_timeline.rendering.datasources.specific.eeg import EEGPlotDetailRenderer, EEGTrackDatasource
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
+
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData, RenderPlots
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
@@ -69,7 +71,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         
         # Initialize plots_data and plots for mixins
         self.plots_data = RenderPlotsData(name='SimpleTimelineWidget')
-        self.plots = PyqtgraphRenderPlots(name='SimpleTimelineWidget')
+        self.plots = PyqtgraphRenderPlots(name='SimpleTimelineWidget', render_detail_graphics_objects={})
         
         # Time window properties
         self.total_data_start_time = total_start_time
@@ -422,8 +424,14 @@ def perform_process_all_streams(streams):
             datasource.custom_datasource_name = f"MOTION_{stream_name}"
         elif 'Epoc X' in stream_name:
             ## TODO: Implement EEG datasource:
-            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"EEG_{stream_name}")
-            datasource.custom_datasource_name = f"EEG_{stream_name}"
+            n_t_stamps, n_columns = np.shape(time_series)
+            assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
+            assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
+            time_series_df = pd.DataFrame(time_series, columns=modality_channels_dict['EEG']) # ['AccelX', 'AccelY', 'AccelZ', 'GyroX', 'GyroY', 'GyroZ']
+            time_series_df['t'] = timestamps
+            datasource = EEGTrackDatasource(intervals_df=intervals_df, eeg_df=time_series_df, custom_datasource_name=f"EEG_{stream_name}")
+            # datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"EEG_{stream_name}")
+            # datasource.custom_datasource_name = f"EEG_{stream_name}"
         elif (intervals_df is not None) and (len(intervals_df) > 0):
             datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"UNKNOWN_{stream_name}")
             datasource.custom_datasource_name = f"UNKNOWN_{stream_name}"

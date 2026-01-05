@@ -279,7 +279,7 @@ def main_all_modalities_from_xdf_file_example(xdf_file_path: Path):
     # Create plot widgets for each EEG stream and add tracks
     for datasource in active_datasource_list:
         # Create a plot widget for this track
-        track_widget, root_graphics, a_plot_item, dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
+        track_widget, a_root_graphics, a_plot_item, a_dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
             name=datasource.custom_datasource_name,
             dockSize=(500, 80),
             dockAddLocationOpts=['bottom'],
@@ -298,11 +298,33 @@ def main_all_modalities_from_xdf_file_example(xdf_file_path: Path):
         a_plot_item.hideAxis('left')  # Hide Y-axis for cleaner look
         
         # Add the track to the plot
+        a_track_name: str = datasource.custom_datasource_name
         timeline.add_track(
             datasource,
-            name=datasource.custom_datasource_name,
+            name=a_track_name,
             plot_item=a_plot_item
         )
+
+        try:
+            a_renderer = timeline.track_renderers[a_track_name]
+            a_detail_renderer = a_renderer.detail_renderer # MotionPlotDetailRenderer 
+            a_ds = timeline.track_datasources[a_track_name]
+            # interval = a_ds.intervals_df
+            interval = a_ds.get_overview_intervals()
+
+            extant_graphics_objects = timeline.plots.render_detail_graphics_objects.get(a_track_name, [])
+            if extant_graphics_objects:
+                ## remove existing
+                a_detail_renderer.clear_detail(plot_item=a_plot_item, graphics_objects=extant_graphics_objects)
+
+
+            graphics_objects = a_detail_renderer.render_detail(plot_item=a_plot_item, interval=interval, detail_data=a_ds.detailed_df) # List[PlotDataItem]
+            timeline.plots.render_detail_graphics_objects[a_track_name] = graphics_objects
+
+        except (ValueError, AttributeError, KeyError, IndexError) as e:
+            print(f'\tERROR for a_track_name: "{a_track_name}" while trying to add `a_detail_renderer.render_detail(...) {e}')
+        
+
     ## END for datasource in active_datasource_list...
 
     timeline.setWindowTitle(f"pyPhoTimeline - ALL Modalities from XDF: {xdf_file_path.name}")
