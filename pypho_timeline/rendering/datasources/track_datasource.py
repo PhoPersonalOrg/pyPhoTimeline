@@ -326,12 +326,16 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
     displaying position data with async detail loading.
     """
     
-    def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None, detail_renderer: Optional[IntervalPlotDetailRenderer]=None):
+    def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None, detail_renderer: Optional[IntervalPlotDetailRenderer]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True):
         """Initialize with position data and intervals.
         
         Args:
-            position_df: DataFrame with columns ['t', 'x', 'y'] (or ['t', 'x'] for 1D)
             intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
+            detailed_df: DataFrame with columns ['t'] and data columns (optional)
+            custom_datasource_name: Custom name for this datasource (optional)
+            detail_renderer: Custom detail renderer (optional)
+            max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
+            enable_downsampling: Whether to enable downsampling. Default: True
         """
         super().__init__()
         self._detail_renderer = detail_renderer
@@ -341,6 +345,10 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         if custom_datasource_name is None:
             custom_datasource_name = "GenericIntervalTrack"
         self.custom_datasource_name = custom_datasource_name
+        
+        # Downsampling configuration
+        self.max_points_per_second = max_points_per_second
+        self.enable_downsampling = enable_downsampling
 
         # Add visualization columns to intervals
         self.intervals_df['series_vertical_offset'] = 0.0
@@ -386,13 +394,26 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         return self.intervals_df
     
     def fetch_detailed_data(self, interval: pd.Series) -> pd.DataFrame:
-        """Fetch position data for an interval."""
+        """Fetch position data for an interval with optional downsampling."""
         if self.detailed_df is None:
             return pd.DataFrame()  # Return empty DataFrame if no position data available
         t_start = interval['t_start']
         t_end = t_start + interval['t_duration']
         mask = (self.detailed_df['t'] >= t_start) & (self.detailed_df['t'] < t_end)
-        return self.detailed_df[mask].copy()
+        result_df = self.detailed_df[mask].copy()
+        
+        # Apply downsampling if enabled
+        if self.enable_downsampling and self.max_points_per_second is not None and len(result_df) > 0:
+            # Calculate target point count based on interval duration
+            t_duration = interval.get('t_duration', t_end - t_start)
+            max_points = int(t_duration * self.max_points_per_second)
+            
+            # Only downsample if we have more points than target
+            if len(result_df) > max_points:
+                from pypho_timeline.utils.downsampling import downsample_dataframe
+                result_df = downsample_dataframe(result_df, max_points=max_points, time_col='t')
+        
+        return result_df
     
     def get_detail_renderer(self):
         """Get detail renderer for position data."""

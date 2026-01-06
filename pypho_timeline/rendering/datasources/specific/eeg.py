@@ -230,16 +230,19 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
         from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
     """
     
-    def __init__(self, intervals_df: pd.DataFrame, eeg_df: pd.DataFrame, custom_datasource_name: Optional[str]=None):
+    def __init__(self, intervals_df: pd.DataFrame, eeg_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True):
         """Initialize with eeg data and intervals.
         
         Args:
-            eeg_df: DataFrame with columns ['t'] and channel columns (e.g., ['AF3', 'F7', 'F3', ...])
             intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
+            eeg_df: DataFrame with columns ['t'] and channel columns (e.g., ['AF3', 'F7', 'F3', ...])
+            custom_datasource_name: Custom name for this datasource (optional)
+            max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
+            enable_downsampling: Whether to enable downsampling. Default: True
         """
         if custom_datasource_name is None:
             custom_datasource_name = "EEGTrack"
-        super().__init__(intervals_df, detailed_df=eeg_df, custom_datasource_name=custom_datasource_name)
+        super().__init__(intervals_df, detailed_df=eeg_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling)
         
         # Override visualization properties (parent sets blue, we want blue too, but keep same height)
         # Parent already sets series_height=1.0, which is what we want, so no change needed

@@ -194,8 +194,9 @@ class CustomViewBox(ReprPrintableItemMixin, pg.ViewBox):
         # ev.accept()
 
         if (ev.button() == QtCore.Qt.MouseButton.RightButton): # (axis is not None) and
+            # Allow default zoom behavior for right-click drag (rectangular zoom)
+            super().mouseDragEvent(ev, axis=axis)
             ev.accept()
-            # ev.ignore()
         elif (ev.button() == QtCore.Qt.MouseButton.LeftButton):
             # axis is not None and 
             # Emit a signal or directly update the slider here

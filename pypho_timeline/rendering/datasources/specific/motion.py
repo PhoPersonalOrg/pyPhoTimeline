@@ -24,16 +24,19 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource
     """
     
-    def __init__(self, intervals_df: pd.DataFrame, motion_df: pd.DataFrame, custom_datasource_name: Optional[str]=None):
+    def __init__(self, intervals_df: pd.DataFrame, motion_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True):
         """Initialize with motion data and intervals.
         
         Args:
-            motion_df: DataFrame with columns ['t', 'x', 'y'] (or ['t', 'x'] for 1D)
             intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
+            motion_df: DataFrame with columns ['t'] and channel columns (e.g., ['AccX', 'AccY', ...])
+            custom_datasource_name: Custom name for this datasource (optional)
+            max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
+            enable_downsampling: Whether to enable downsampling. Default: True
         """
         if custom_datasource_name is None:
             custom_datasource_name = "MotionTrack"
-        super().__init__(intervals_df, detailed_df=motion_df, custom_datasource_name=custom_datasource_name)
+        super().__init__(intervals_df, detailed_df=motion_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling)
         
         # Override visualization properties (parent sets blue, we want blue too, but keep same height)
         # Parent already sets series_height=1.0, which is what we want, so no change needed
