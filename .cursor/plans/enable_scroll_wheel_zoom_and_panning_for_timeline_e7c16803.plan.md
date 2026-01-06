@@ -44,18 +44,18 @@ The timeline currently has mouse interaction disabled and lacks scroll wheel zoo
 
 - **After line 263** (after `mouseDragEvent` method): Add new `wheelEvent` method:
   ```python
-      def wheelEvent(self, ev, axis=None):
-          """Handle mouse wheel events for zooming.
-          
-          Uses pyqtgraph's default wheel zoom behavior which zooms centered on mouse position.
-          """
-          if self._debug_print:
-              print(f'CustomViewBox.wheelEvent(ev: {ev}, axis={axis})')
-          
-          # Use default pyqtgraph wheel zoom behavior
-          # This will zoom centered on the mouse position
-          super().wheelEvent(ev, axis=axis)
-          ev.accept()
+        def wheelEvent(self, ev, axis=None):
+            """Handle mouse wheel events for zooming.
+            
+            Uses pyqtgraph's default wheel zoom behavior which zooms centered on mouse position.
+            """
+            if self._debug_print:
+                print(f'CustomViewBox.wheelEvent(ev: {ev}, axis={axis})')
+            
+            # Use default pyqtgraph wheel zoom behavior
+            # This will zoom centered on the mouse position
+            super().wheelEvent(ev, axis=axis)
+            ev.accept()
   ```
 
 
@@ -108,5 +108,3 @@ Implementation approach:
 3. `pypho_timeline/docking/specific_dock_widget_mixin.py` - Implement synchronized zooming (optional, can be added in a follow-up if needed)
 
 ## Notes
-
-- The wheel event handler uses pyqtgraph's default behavior which zooms centered on the mouse cursor position

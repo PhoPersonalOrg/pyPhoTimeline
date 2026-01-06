@@ -179,6 +179,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
         
         return track_renderer
     
+    
     def _on_plot_viewport_changed(self, track_name: str, evt):
         """Handle viewport change from a plot's ViewBox.
         
@@ -192,6 +193,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
         x_range, y_range = evt
         if len(x_range) == 2:
             self.track_renderers[track_name].update_viewport(x_range[0], x_range[1])
+    
     
     def remove_track(self, name: str):
         """Remove a track from the timeline.
@@ -216,7 +218,8 @@ class TrackRenderingMixin(EpochRenderingMixin):
         
         # Emit signal
         self.sigTrackRemoved.emit(name)
-    
+
+
     @pyqtExceptionPrintingSlot(float, float)
     def TrackRenderingMixin_on_window_update(self, new_start: Optional[float] = None, 
                                              new_end: Optional[float] = None):

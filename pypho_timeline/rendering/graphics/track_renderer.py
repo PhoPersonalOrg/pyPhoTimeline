@@ -9,8 +9,9 @@ from pypho_timeline.rendering.datasources.track_datasource import TrackDatasourc
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem
 from pypho_timeline.rendering.async_detail_fetcher import AsyncDetailFetcher
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
+from pypho_timeline.utils.logging_util import get_rendering_logger
 
-logger = logging.getLogger(__name__)
+logger = get_rendering_logger(__name__)
 
 
 class TrackRenderer(QtCore.QObject):

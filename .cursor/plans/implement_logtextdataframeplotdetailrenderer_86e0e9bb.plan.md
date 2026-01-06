@@ -124,4 +124,5 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
 
 - Add `LogTextDataFramePlotDetailRenderer` class
 
+
 ````

@@ -1,3 +1,4 @@
 ﻿**/*.egg-info
 **/__pycache__
 desktop.ini
+timeline_rendering.log
