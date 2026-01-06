@@ -159,7 +159,9 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         # self.params.cmap = pg.colormap.get('jet','matplotlib') # prepare a linear color map
         # self.params.image_margins = 0.0
         # self.params.image_bounds_extent, self.params.x_range, self.params.y_range = pyqtplot_build_image_bounds_extent(self.active_one_step_decoder.xbin, self.active_one_step_decoder.ybin, margin=self.params.image_margins, debug_print=self.enable_debug_print)
-        pass
+
+        self.TrackOptionsPanelOwningMixin_on_setup()
+        
 
 
     def _buildGraphics(self):
@@ -537,6 +539,14 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         else:
             print(f'\tno change!')
     
+    def set_track_renderer(self, track_renderer):
+        """Set the track renderer reference for this widget.
+        
+        Args:
+            track_renderer: TrackRenderer instance associated with this widget
+        """
+        self._track_renderer = track_renderer
+    
     @property
     def optionsPanel(self):
         """Property to support camelCase naming convention for dock compatibility."""
@@ -557,10 +567,25 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         # Only create options panel if we have a track renderer
         if self._track_renderer is None:
             return None
-        
+
+        # Use consistent connections storage (same as rest of class)
+        if not hasattr(self.ui, 'connections') or self.ui.connections is None:
+            self.ui.connections = {}
+        connections_dict = self.ui.connections
+
         # Create options panel if not already created
         if self.options_panel is None:
-            detail_renderer = self._track_renderer.detail_renderer
+            # Handle both TrackRenderer and DetailRenderer directly
+            # If _track_renderer has a detail_renderer attribute, it's a TrackRenderer
+            # Otherwise, it's a DetailRenderer itself
+            if hasattr(self._track_renderer, 'detail_renderer'):
+                # It's a TrackRenderer
+                detail_renderer = self._track_renderer.detail_renderer
+                track_renderer = self._track_renderer
+            else:
+                # It's a DetailRenderer directly
+                detail_renderer = self._track_renderer
+                track_renderer = None
             
             # Check if detail renderer has channel_names (channel-based renderer)
             if hasattr(detail_renderer, 'channel_names') and detail_renderer.channel_names is not None:
@@ -568,24 +593,72 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                 from pypho_timeline.widgets.track_options_panels import TrackChannelVisibilityOptionsPanel
                 
                 channel_names = detail_renderer.channel_names
-                initial_visibility = self._track_renderer.channel_visibility.copy()
+                # Get initial visibility from track_renderer if available, otherwise from detail_renderer, or create default
+                if track_renderer is not None and hasattr(track_renderer, 'channel_visibility'):
+                    initial_visibility = track_renderer.channel_visibility.copy()
+                elif hasattr(detail_renderer, 'channel_visibility') and detail_renderer.channel_visibility:
+                    initial_visibility = detail_renderer.channel_visibility.copy()
+                else:
+                    # Create default visibility (all channels visible)
+                    initial_visibility = {channel: True for channel in channel_names}
                 
                 self.options_panel = TrackChannelVisibilityOptionsPanel(
                     channel_names=channel_names,
                     initial_visibility=initial_visibility
                 )
                 
-                # Connect panel signals to track renderer
-                self.options_panel.channelVisibilityChanged.connect(
-                    self._track_renderer.update_channel_visibility
-                )
-                
-                # Store reference in track renderer for bidirectional updates
-                self._track_renderer.set_options_panel(self.options_panel)
+                # Build desired connections only if track_renderer exists and has the methods
+                desired_connections = {}
+                if track_renderer is not None:
+                    if hasattr(track_renderer, 'on_options_changed'):
+                        desired_connections['on_options_changed'] = (self.options_panel.optionsChanged, track_renderer.on_options_changed)
+                    if hasattr(track_renderer, 'on_options_accepted'):
+                        desired_connections['on_options_accepted'] = (self.options_panel.onOptionsAccepted, track_renderer.on_options_accepted)
+                    if hasattr(track_renderer, 'on_options_rejected'):
+                        desired_connections['on_options_rejected'] = (self.options_panel.onOptionsRejected, track_renderer.on_options_rejected)
+
+                # Connect panel signals to track renderer if available
+                if track_renderer is not None and hasattr(track_renderer, 'update_channel_visibility'):
+                    desired_connections['update_channel_visibility'] = (self.options_panel.channelVisibilityChanged, track_renderer.update_channel_visibility)
+                    # Store reference in track renderer for bidirectional updates
+                    if hasattr(track_renderer, 'set_options_panel'):
+                        track_renderer.set_options_panel(self.options_panel)
+
             else:
                 # Create basic options panel for tracks without channels
                 from pypho_timeline.widgets.track_options_panels import OptionsPanel
                 self.options_panel = OptionsPanel()
+
+                # Build desired connections only if track_renderer exists and has the methods
+                desired_connections = {}
+                if track_renderer is not None:
+                    if hasattr(track_renderer, 'on_options_changed'):
+                        desired_connections['on_options_changed'] = (self.options_panel.optionsChanged, track_renderer.on_options_changed)
+                    if hasattr(track_renderer, 'on_options_accepted'):
+                        desired_connections['on_options_accepted'] = (self.options_panel.onOptionsAccepted, track_renderer.on_options_accepted)
+                    if hasattr(track_renderer, 'on_options_rejected'):
+                        desired_connections['on_options_rejected'] = (self.options_panel.onOptionsRejected, track_renderer.on_options_rejected)
+
+            # Connect panel signals to track renderer if available
+            if track_renderer is not None:
+                for k, (a_sig, a_slot) in desired_connections.items():
+                    # Safely disconnect existing connection if present
+                    extant_conn = connections_dict.pop(k, None)
+                    if extant_conn is not None:
+                        try:
+                            print(f'disconnecting "{k}" signal')
+                            a_sig.disconnect(extant_conn)
+                        except (TypeError, RuntimeError) as e:
+                            # Connection may already be disconnected or invalid
+                            print(f'Warning: Could not disconnect "{k}" signal: {e}')
+
+                    # Make new connection if track_renderer has the method
+                    if hasattr(track_renderer, k):
+                        try:
+                            connections_dict[k] = a_sig.connect(a_slot)
+                        except (TypeError, AttributeError) as e:
+                            print(f'Warning: Could not connect "{k}" signal: {e}')
+
         
         return self.options_panel
             
