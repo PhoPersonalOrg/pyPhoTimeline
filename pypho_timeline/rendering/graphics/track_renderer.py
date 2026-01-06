@@ -324,6 +324,39 @@ class TrackRenderer(QtCore.QObject):
         rect = self.overview_rects_item.boundingRect()
         return (rect.left(), rect.right(), rect.top(), rect.bottom())
     
+
+    # Options Panel Implementation _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
+    def on_options_changed(self):
+        """Update visibility state for a channel and re-render visible intervals.
+        
+        Args:
+            channel_name: Name of the channel
+            is_visible: True to show channel, False to hide
+        """
+        print(f'.on_options_changed()')
+
+    def on_options_accepted(self):
+        """Update visibility state for a channel and re-render visible intervals.
+        
+        Args:
+            channel_name: Name of the channel
+            is_visible: True to show channel, False to hide
+        """
+        print(f'.on_options_accepted()')
+
+
+    def on_options_rejected(self):
+        """Update visibility state for a channel and re-render visible intervals.
+        
+        Args:
+            channel_name: Name of the channel
+            is_visible: True to show channel, False to hide
+        """
+        print(f'.on_options_rejected()')
+
+
+
+
     def update_channel_visibility(self, channel_name: str, is_visible: bool):
         """Update visibility state for a channel and re-render visible intervals.
         

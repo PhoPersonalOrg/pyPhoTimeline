@@ -33,6 +33,8 @@ class OptionsPanel(QtWidgets.QWidget):
     
     # Generic signal emitted when any option changes
     optionsChanged = QtCore.Signal()
+    onOptionsAccepted = QtCore.Signal()
+    onOptionsRejected = QtCore.Signal()
     
     def __init__(self, parent=None):
         """Initialize the base options panel.
@@ -88,6 +90,30 @@ class OptionsPanel(QtWidgets.QWidget):
         return widget
 
 
+    # Options Panel Implementation _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
+    @pyqtExceptionPrintingSlot()
+    def on_options_changed(self):
+        """Emit optionsChanged signal when any option changes."""
+        print(f'.on_options_changed()')
+        self.optionsChanged.emit()
+
+
+    @pyqtExceptionPrintingSlot()
+    def on_options_accepted(self):
+        """Emit onOptionsAccepted signal when options are accepted."""
+        print(f'.on_options_accepted()')
+        self.onOptionsAccepted.emit()
+
+
+    @pyqtExceptionPrintingSlot()
+    def on_options_rejected(self):
+        """Emit onOptionsRejected signal when options are rejected."""
+        print(f'.on_options_rejected()')
+        self.onOptionsRejected.emit()
+
+
+
+
 # Channel Visibility Options Panel _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
 class TrackChannelVisibilityOptionsPanel(OptionsPanel):
     """Options panel widget for managing channel visibility in timeline tracks.
@@ -99,11 +125,11 @@ class TrackChannelVisibilityOptionsPanel(OptionsPanel):
         panel = TrackChannelVisibilityOptionsPanel(channel_names=['x', 'y', 'z'])
         panel.channelVisibilityChanged.connect(on_visibility_changed)
     """
-    
     # Signal emitted when a channel's visibility changes
     # Args: (channel_name: str, is_visible: bool)
     channelVisibilityChanged = QtCore.Signal(str, bool)
     
+
     def __init__(self, channel_names: List[str], initial_visibility: Optional[Dict[str, bool]] = None, parent=None):
         """Initialize the channel visibility options panel.
         
@@ -242,7 +268,10 @@ class TrackOptionsPanelOwningMixin:
     Usage:
         from pypho_timeline.widgets.track_options_panels import TrackChannelVisibilityOptionsPanel, TrackOptionsPanelOwningMixin
     """
-    
+    optionsChanged = QtCore.Signal()
+    onOptionsAccepted = QtCore.Signal()
+    onOptionsRejected = QtCore.Signal()
+
     @property
     def options_panel(self):
         """Get the options panel widget."""
@@ -269,11 +298,25 @@ class TrackOptionsPanelOwningMixin:
         assert hasattr(self, 'ui')
         assert self.ui is not None
         self.ui.options_panel = None
-    
+
+
     @pyqtExceptionPrintingSlot()
-    def TrackOptionsPanelOwningMixin_on_destroy(self):
-        """Perform teardown/destruction of anything that needs to be manually removed or released."""
-        pass
+    def TrackOptionsPanelOwningMixin_optionsChanged(self):
+        """Emit optionsChanged signal when options change."""
+        self.optionsChanged.emit()
+
+    @pyqtExceptionPrintingSlot()
+    def TrackOptionsPanelOwningMixin_onOptionsAccepted(self):
+        """Emit onOptionsAccepted signal when options are accepted."""
+        self.onOptionsAccepted.emit()
+
+
+    @pyqtExceptionPrintingSlot()
+    def TrackOptionsPanelOwningMixin_onOptionsRejected(self):
+        """Emit onOptionsRejected signal when options are rejected."""
+        self.onOptionsRejected.emit()
+
+
 
 
 

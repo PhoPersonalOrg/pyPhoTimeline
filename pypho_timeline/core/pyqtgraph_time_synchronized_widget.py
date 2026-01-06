@@ -11,7 +11,9 @@ import pyphoplacecellanalysis.External.pyqtgraph as pg
 # from pyphoplacecellanalysis.External.pyqtgraph.Qt import QtCore, QtGui
 from pyphocorehelpers.DataStructure.general_parameter_containers import VisualizationParameters, RenderPlotsData, RenderPlots
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
+from pyphocorehelpers.DataStructure.dynamic_parameters import DynamicParameters
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
+from pyphocorehelpers.gui.Qt.connections_container import ConnectionsContainer
 
 from pypho_timeline.core.time_synchronized_plotter_base import TimeSynchronizedPlotterBase
 from pyphoplacecellanalysis.Pho2D.PyQtPlots.Extensions.pyqtgraph_helpers import pyqtplot_build_image_bounds_extent
@@ -104,8 +106,12 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         self.params = VisualizationParameters(name=name, plot_function_name=plot_function_name, debug_print=False, wants_crosshairs=kwargs.get('wants_crosshairs', False), should_force_discrete_to_bins=kwargs.get('should_force_discrete_to_bins', False))
         self.plots_data = RenderPlotsData(name=name)
         self.plots = PyqtgraphRenderPlots(name=name)
-        self.ui = PhoUIContainer(name=name, connections=None)
-        self.ui.connections = PhoUIContainer(name=name)
+        self.ui = PhoUIContainer(name=name, connections=ConnectionsContainer())
+        # Initialize connections as ConnectionsContainer for consistency with rest of codebase
+        if isinstance(self.ui, DynamicParameters):
+            self.ui.setdefault('connections', ConnectionsContainer())
+        else:
+            self.ui.connections = ConnectionsContainer()
 
         self.params.name = name
         if plot_function_name is not None:
@@ -124,7 +130,17 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         self.setup()
         
         self.buildUI()
+        # self.TrackOptionsPanelOwningMixin_on_buildUI()
+        
         self._update_plots()
+        
+        # Track renderer reference for options panel (set when track is added)
+        self._track_renderer = None
+        self.options_panel = None
+
+
+
+
 
 
 
@@ -219,6 +235,8 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         # self.ui.imv.setColorMap(self.params.cmap)
         ## Set initial view bounds
         # self.ui.root_view.setRange(QtCore.QRectF(0, 0, 600, 600))
+        
+
 
     
     def update(self, t, defer_render=False):
@@ -539,6 +557,14 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         else:
             print(f'\tno change!')
     
+
+
+
+
+    # ==================================================================================================================================================================================================================================================================================== #
+    # Options Panel Mixin                                                                                                                                                                                                                                                                  #
+    # ==================================================================================================================================================================================================================================================================================== #
+
     def set_track_renderer(self, track_renderer):
         """Set the track renderer reference for this widget.
         
@@ -569,9 +595,13 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
             return None
 
         # Use consistent connections storage (same as rest of class)
-        if not hasattr(self.ui, 'connections') or self.ui.connections is None:
-            self.ui.connections = {}
-        connections_dict = self.ui.connections
+        # Initialize connections if it doesn't exist (handles DynamicParameters properly)
+        if isinstance(self.ui, DynamicParameters):
+            # Need this workaround because hasattr fails for DynamicParameters/PhoUIContainer right now:
+            self.ui.setdefault('connections', ConnectionsContainer())
+        else:
+            if not hasattr(self.ui, 'connections') or self.ui.connections is None:
+                self.ui.connections = ConnectionsContainer()
 
         # Create options panel if not already created
         if self.options_panel is None:
@@ -607,6 +637,11 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                     initial_visibility=initial_visibility
                 )
                 
+                # Forward panel signals to widget's mixin signals
+                self.options_panel.optionsChanged.connect(self.TrackOptionsPanelOwningMixin_optionsChanged)
+                self.options_panel.onOptionsAccepted.connect(self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
+                self.options_panel.onOptionsRejected.connect(self.TrackOptionsPanelOwningMixin_onOptionsRejected)
+                
                 # Build desired connections only if track_renderer exists and has the methods
                 desired_connections = {}
                 if track_renderer is not None:
@@ -628,6 +663,11 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                 # Create basic options panel for tracks without channels
                 from pypho_timeline.widgets.track_options_panels import OptionsPanel
                 self.options_panel = OptionsPanel()
+                
+                # Forward panel signals to widget's mixin signals
+                self.options_panel.optionsChanged.connect(self.TrackOptionsPanelOwningMixin_optionsChanged)
+                self.options_panel.onOptionsAccepted.connect(self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
+                self.options_panel.onOptionsRejected.connect(self.TrackOptionsPanelOwningMixin_onOptionsRejected)
 
                 # Build desired connections only if track_renderer exists and has the methods
                 desired_connections = {}
@@ -643,7 +683,7 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
             if track_renderer is not None:
                 for k, (a_sig, a_slot) in desired_connections.items():
                     # Safely disconnect existing connection if present
-                    extant_conn = connections_dict.pop(k, None)
+                    extant_conn = self.ui.connections.pop(k, None)
                     if extant_conn is not None:
                         try:
                             print(f'disconnecting "{k}" signal')
@@ -655,7 +695,7 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                     # Make new connection if track_renderer has the method
                     if hasattr(track_renderer, k):
                         try:
-                            connections_dict[k] = a_sig.connect(a_slot)
+                            self.ui.connections[k] = a_sig.connect(a_slot)
                         except (TypeError, AttributeError) as e:
                             print(f'Warning: Could not connect "{k}" signal: {e}')
 

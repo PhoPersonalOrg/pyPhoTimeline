@@ -115,4 +115,3 @@ User clicks options button (automatically shown by Dock when widget provides opt
 - Toggling checkboxes immediately updates plot
 - Dialog can remain open while interacting with timeline
 - Options panel only created for tracks with channel-based renderers (no button for other tracks)
-- Visibility state persists for track lifetime

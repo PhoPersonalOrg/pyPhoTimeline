@@ -301,6 +301,12 @@ def main_all_modalities_from_xdf_file_example(xdf_file_path: Path):
     # Create plot widgets for each EEG stream and add tracks
     for datasource in active_datasource_list:
         # Create a plot widget for this track
+        a_detail_renderer = datasource.get_detail_renderer()
+
+        # The getOptionsPanel() method will be called by the dock when needed
+        # No need to set optionsPanel attribute if getOptionsPanel() is implemented
+
+        ## if we provide a valid `optionsPanel: Optional[QWidget]` here on the widget the button will automatically show up on the dock
         track_widget, a_root_graphics, a_plot_item, a_dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
             name=datasource.custom_datasource_name,
             dockSize=(500, 80),
@@ -308,6 +314,21 @@ def main_all_modalities_from_xdf_file_example(xdf_file_path: Path):
             sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA
         )
         
+        assert a_detail_renderer is not None
+        track_widget.set_track_renderer(a_detail_renderer)
+        # Explicitly set the attribute (not just rely on getOptionsPanel())
+        track_widget.optionsPanel = track_widget.getOptionsPanel()
+
+        # Try to force dock to update button visibility
+        a_dock.updateWidgetsHaveOptionsPanel()
+
+        a_dock.update()  # May refresh the title bar
+        # Or if available:
+        if hasattr(a_dock, 'updateTitleBar') or hasattr(a_dock, 'refresh'):
+            a_dock.updateTitleBar()  # or refresh()
+
+        
+
         # Set the plot to show the full time range
         a_plot_item.setXRange(
             timeline.total_data_start_time, 
