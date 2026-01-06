@@ -242,8 +242,10 @@ class TrackRenderer(QtCore.QObject):
             logger.debug(f"TrackRenderer[{self.track_id}] _render_detail() - using detail_renderer type={detail_renderer_type}")
             
             # Set channel visibility on renderer if it supports it
-            if hasattr(self.detail_renderer, 'channel_visibility'):
-                self.detail_renderer.channel_visibility = self.channel_visibility
+            # Always set it if detail renderer has channel_names (it should support visibility)
+            if hasattr(self.detail_renderer, 'channel_names') and self.detail_renderer.channel_names is not None:
+                self.detail_renderer.channel_visibility = self.channel_visibility.copy()
+                logger.debug(f"TrackRenderer[{self.track_id}] _render_detail() - set channel_visibility on detail_renderer: {self.channel_visibility}")
             
             graphics_objects = self.detail_renderer.render_detail(
                 self.plot_item, interval, detail_data
@@ -333,16 +335,47 @@ class TrackRenderer(QtCore.QObject):
             channel_name: Name of the channel
             is_visible: True to show channel, False to hide
         """
-        print(f'.on_options_changed()')
+        logger.info(f"TrackRenderer[{self.track_id}] on_options_changed()")
+
 
     def on_options_accepted(self):
-        """Update visibility state for a channel and re-render visible intervals.
+        """Apply the current visibility state from the options panel and re-render visible intervals.
         
-        Args:
-            channel_name: Name of the channel
-            is_visible: True to show channel, False to hide
+        This is called when the user presses OK in the options dialog. It reads the current
+        visibility state from the options panel and applies it to all channels, then triggers
+        a re-render of all visible intervals.
         """
-        print(f'.on_options_accepted()')
+        logger.info(f"TrackRenderer[{self.track_id}] on_options_accepted() - applying visibility changes from options panel")
+        
+        # Get current visibility state from options panel
+        if self._options_panel is None:
+            logger.warning(f"TrackRenderer[{self.track_id}] on_options_accepted() - no options panel available")
+            return
+        
+        # Check if panel has get_visibility_state method (TrackChannelVisibilityOptionsPanel)
+        if not hasattr(self._options_panel, 'get_visibility_state'):
+            logger.debug(f"TrackRenderer[{self.track_id}] on_options_accepted() - options panel does not support visibility state")
+            return
+        
+        new_visibility_state = self._options_panel.get_visibility_state()
+        logger.info(f"TrackRenderer[{self.track_id}] on_options_accepted() - got visibility state from panel: {new_visibility_state}")
+        
+        # Check if any channels changed
+        has_changes = False
+        for channel_name, is_visible in new_visibility_state.items():
+            if channel_name in self.channel_visibility:
+                old_visible = self.channel_visibility[channel_name]
+                if old_visible != is_visible:
+                    has_changes = True
+                    self.channel_visibility[channel_name] = is_visible
+                    logger.info(f"TrackRenderer[{self.track_id}] Channel '{channel_name}' visibility changed from {old_visible} to {is_visible}")
+        
+        if not has_changes:
+            logger.debug(f"TrackRenderer[{self.track_id}] on_options_accepted() - no visibility changes detected")
+            return
+        
+        # Trigger re-render with updated visibility (using shared helper method)
+        self._trigger_visibility_render()
 
 
     def on_options_rejected(self):
@@ -352,9 +385,27 @@ class TrackRenderer(QtCore.QObject):
             channel_name: Name of the channel
             is_visible: True to show channel, False to hide
         """
-        print(f'.on_options_rejected()')
+        logger.info(f"TrackRenderer[{self.track_id}] on_options_rejected()")
 
 
+    def _trigger_visibility_render(self):
+        """Helper method to clear all visible detail graphics and trigger re-render after visibility changes."""
+        # Clear all visible detail graphics
+        logger.warning(f"TrackRenderer[{self.track_id}] _trigger_visibility_render()")
+        visible_cache_keys = list(self.visible_intervals)
+        logger.debug(f"TrackRenderer[{self.track_id}] Clearing {len(visible_cache_keys)} intervals for re-render after visibility change")
+        
+        for cache_key in visible_cache_keys:
+            self._clear_detail(cache_key)
+        
+        # Trigger viewport update to re-render with new visibility
+        # This will re-fetch intervals and render with filtered channels
+        if self.plot_item is not None:
+            viewbox = self.plot_item.getViewBox()
+            if viewbox is not None:
+                x_range, y_range = viewbox.viewRange()
+                if len(x_range) == 2:
+                    self.update_viewport(x_range[0], x_range[1])
 
 
     def update_channel_visibility(self, channel_name: str, is_visible: bool):
@@ -379,21 +430,9 @@ class TrackRenderer(QtCore.QObject):
         if self._options_panel is not None:
             self._options_panel.set_visibility_state({channel_name: is_visible}, emit_signals=False)
         
-        # Clear all visible detail graphics
-        visible_cache_keys = list(self.visible_intervals)
-        logger.debug(f"TrackRenderer[{self.track_id}] Clearing {len(visible_cache_keys)} intervals for re-render after visibility change")
-        
-        for cache_key in visible_cache_keys:
-            self._clear_detail(cache_key)
-        
-        # Trigger viewport update to re-render with new visibility
-        # This will re-fetch intervals and render with filtered channels
-        if self.plot_item is not None:
-            viewbox = self.plot_item.getViewBox()
-            if viewbox is not None:
-                x_range, y_range = viewbox.viewRange()
-                if len(x_range) == 2:
-                    self.update_viewport(x_range[0], x_range[1])
+        # Trigger re-render
+        self._trigger_visibility_render()
+    
     
     def set_options_panel(self, options_panel):
         """Set the options panel reference for bidirectional updates.

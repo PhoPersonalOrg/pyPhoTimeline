@@ -304,16 +304,19 @@ class TrackOptionsPanelOwningMixin:
     def TrackOptionsPanelOwningMixin_optionsChanged(self):
         """Emit optionsChanged signal when options change."""
         self.optionsChanged.emit()
+        print(f'TrackOptionsPanelOwningMixin_optionsChanged()')
 
     @pyqtExceptionPrintingSlot()
     def TrackOptionsPanelOwningMixin_onOptionsAccepted(self):
         """Emit onOptionsAccepted signal when options are accepted."""
+        print(f'TrackOptionsPanelOwningMixin_onOptionsAccepted()')
         self.onOptionsAccepted.emit()
 
 
     @pyqtExceptionPrintingSlot()
     def TrackOptionsPanelOwningMixin_onOptionsRejected(self):
         """Emit onOptionsRejected signal when options are rejected."""
+        print(f'TrackOptionsPanelOwningMixin_onOptionsRejected()')
         self.onOptionsRejected.emit()
 
 
