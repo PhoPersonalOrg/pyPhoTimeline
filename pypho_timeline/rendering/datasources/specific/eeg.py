@@ -118,6 +118,10 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         found_all_channel_names: bool = len(found_channel_names) == len(self.channel_names)
         assert found_all_channel_names
 
+        # Filter channels based on visibility if channel_visibility is set
+        if hasattr(self, 'channel_visibility') and self.channel_visibility:
+            found_channel_names = [ch for ch in found_channel_names if self.channel_visibility.get(ch, True)]
+
         # Normalize channel columns using shared helper
         normalized_channel_df, (y_min, y_max) = self.compute_normalized_channels(detail_df=df_sorted, channel_names=found_channel_names)
 

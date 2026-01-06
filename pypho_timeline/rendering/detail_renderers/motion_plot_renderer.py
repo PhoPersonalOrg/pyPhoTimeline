@@ -105,6 +105,10 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         found_all_channel_names: bool = len(found_channel_names) == len(self.channel_names)
         assert found_all_channel_names
 
+        # Filter channels based on visibility if channel_visibility is set
+        if hasattr(self, 'channel_visibility') and self.channel_visibility:
+            found_channel_names = [ch for ch in found_channel_names if self.channel_visibility.get(ch, True)]
+
         # Normalize channels using shared helper to support per-group modes
         normalized_channel_df, (y_min, y_max) = self.compute_normalized_channels(detail_df=df_sorted, channel_names=found_channel_names)
         # normalized_channel_df = normalize_channels(df_sorted, found_channel_names, default_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds)

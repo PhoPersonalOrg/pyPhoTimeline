@@ -6,9 +6,10 @@ import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pyphocorehelpers.DataStructure.general_parameter_containers import VisualizationParameters
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
+from pypho_timeline.widgets.track_channel_visibility_options_panel import TrackChannelVisibilityOptionsPanel, TrackOptionsPanelOwningMixin
 
 
-class TimeSynchronizedPlotterBase(QtWidgets.QWidget):
+class TimeSynchronizedPlotterBase(TrackOptionsPanelOwningMixin, QtWidgets.QWidget):
     """ Subclasses generally display time-dependent results produced by a PfND_TimeDependent instance in a manner synchronized with another plotter/renderer.
     Seems to have its `self.on_window_changed_rate_limited(...)` called to perform updates, which in-turn calls its `self.on_window_changed(...)`, which calls its `self.update(end_t, defer_render=False)`
 
@@ -62,6 +63,8 @@ class TimeSynchronizedPlotterBase(QtWidgets.QWidget):
             self.windowName = self.windowName
         
         self.enable_debug_print = TimeSynchronizedPlotterBase.enable_debug_print
+        self.TrackOptionsPanelOwningMixin_on_init()
+
         # self.setup()        
         # self.buildUI()
         # self.show()
@@ -71,13 +74,14 @@ class TimeSynchronizedPlotterBase(QtWidgets.QWidget):
         raise NotImplementedError # Inheriting classes must override setup to perform particular setup
         self.app = pg.mkQApp(self.applicationName)
         self.params = VisualizationParameters(self.applicationName)
+        self.TrackOptionsPanelOwningMixin_on_setup()
         
         
     def buildUI(self):
         """ for QGridLayout
             addWidget(widget, row, column, rowSpan, columnSpan, Qt.Alignment alignment = 0)
         """
-        self.ui = PhoUIContainer()
+        self.ui = PhoUIContainer(options_panel=None)
         
         self.ui.layout = QtWidgets.QGridLayout()
         self.ui.layout.setObjectName('root_layout')
@@ -91,6 +95,9 @@ class TimeSynchronizedPlotterBase(QtWidgets.QWidget):
         self.resize(800,800)
         self.setWindowTitle(self.windowName)
         
+        self.TrackOptionsPanelOwningMixin_on_buildUI()
+
+
     def _buildGraphics(self):
         """ Implementors must override this method to build the main graphics object and add it at layout position (0, 0)"""
         raise NotImplementedError

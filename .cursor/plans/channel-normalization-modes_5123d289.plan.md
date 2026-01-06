@@ -77,4 +77,3 @@ todos:
 ## 5. Usage examples and documentation touch-ups
 
 - **Centralize examples in the helper module**:
-- Move and revise the multi-modality examples (Motion, eQuality, EEG) into `normalization.py`, ensuring they are syntactically valid (tuple keys) and show realistic patterns like:

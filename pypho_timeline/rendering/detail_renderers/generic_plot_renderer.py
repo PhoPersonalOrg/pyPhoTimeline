@@ -345,6 +345,41 @@ class DataframePlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, Deta
                 raise ValueError(f"Missing channels: {missing_channels}")
             channel_names_to_use = found_channel_names
             pen_colors_to_use = self.pen_colors if self.pen_colors is not None else [self.pen_color] * len(channel_names_to_use)
+        
+        # Filter channels based on visibility if channel_visibility is set
+        if hasattr(self, 'channel_visibility') and self.channel_visibility:
+            original_channel_names_to_use = channel_names_to_use.copy()
+            channel_names_to_use = [ch for ch in channel_names_to_use if self.channel_visibility.get(ch, True)]
+            # Update pen_colors_to_use to match filtered channels
+            if self.channel_names is not None and self.pen_colors is not None:
+                # Rebuild pen_colors_to_use based on filtered channels, preserving original order
+                filtered_pen_colors = []
+                for ch in channel_names_to_use:
+                    if ch in self.channel_names:
+                        idx = self.channel_names.index(ch)
+                        if idx < len(self.pen_colors):
+                            filtered_pen_colors.append(self.pen_colors[idx])
+                        else:
+                            filtered_pen_colors.append(self.pen_color)
+                    else:
+                        filtered_pen_colors.append(self.pen_color)
+                pen_colors_to_use = filtered_pen_colors
+            elif self.channel_names is None:
+                # Auto-detected channels: rebuild pen_colors_to_use based on filtered order
+                filtered_pen_colors = []
+                for ch in channel_names_to_use:
+                    if ch in original_channel_names_to_use:
+                        orig_idx = original_channel_names_to_use.index(ch)
+                        if orig_idx < len(pen_colors_to_use):
+                            filtered_pen_colors.append(pen_colors_to_use[orig_idx])
+                        else:
+                            filtered_pen_colors.append(self.pen_color)
+                    else:
+                        filtered_pen_colors.append(self.pen_color)
+                pen_colors_to_use = filtered_pen_colors
+            elif len(pen_colors_to_use) > len(channel_names_to_use):
+                # Truncate pen_colors_to_use to match filtered channels (simple case)
+                pen_colors_to_use = pen_colors_to_use[:len(channel_names_to_use)]
 
         # Normalize channels if requested using shared mixin helper
         if self.normalize:
