@@ -320,13 +320,15 @@ class BaseTrackDatasource(ABC):
 
 
 class IntervalProvidingTrackDatasource(BaseTrackDatasource):
-    """Example TrackDatasource for position data.
+    """A TrackDatasource that at the minimum provides time intervals for its data (such as when the recording was started/ended).
     
     Inherits from BaseTrackDatasource and implements all required methods for
     displaying position data with async detail loading.
     """
     
-    def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None, detail_renderer: Optional[IntervalPlotDetailRenderer]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True):
+    def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None, detail_renderer: Optional[IntervalPlotDetailRenderer]=None,
+        max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
+        ):
         """Initialize with position data and intervals.
         
         Args:

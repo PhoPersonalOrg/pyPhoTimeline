@@ -1,19 +1,16 @@
 """MotionPlotDetailRenderer - Renders motion data as line plots."""
-from typing import List, Optional, Tuple, Any, Dict, Sequence
+from typing import List, Mapping, Optional, Tuple, Any, Dict, Sequence
 import numpy as np
 import pandas as pd
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
-from pypho_timeline.rendering.helpers import (
-    ChannelNormalizationMode,
-    normalize_channels,
-)
+from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin
 
 
 ## TODO: should inherit from `GenericPlotDetailRenderer`
-class MotionPlotDetailRenderer(DetailRenderer):
+class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRenderer):
     """Detail renderer for motion tracks that displays motion channels as line plots.
     
     Expects detail_data to be a DataFrame with columns ['t'] and channel columns
@@ -27,7 +24,11 @@ class MotionPlotDetailRenderer(DetailRenderer):
     def __init__(self, pen_width=2, channel_names=['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'], pen_colors=None,
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
-                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None):
+                 arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
+                 normalize: bool = True, normalize_over_full_data: bool = True,
+                 normalization_reference_df: Optional[pd.DataFrame] = None,
+                 **kwargs,
+                 ):
         """Initialize the motion plot renderer.
         
         Args:
@@ -35,12 +36,17 @@ class MotionPlotDetailRenderer(DetailRenderer):
             channel_names: List of channel names to plot (default: ['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'])
             pen_colors: Optional list of colors for each channel (default: None, auto-generated)
         """
+        ChannelNormalizationModeNormalizingMixin.__init__(self, channel_names=channel_names, fallback_normalization_mode=fallback_normalization_mode, normalization_mode_dict=normalization_mode_dict, arbitrary_bounds=arbitrary_bounds,
+                                                         normalize=normalize, normalize_over_full_data=normalize_over_full_data, normalization_reference_df=normalization_reference_df)
+        DetailRenderer.__init__(self, **kwargs)
+
+
         self.pen_colors = pen_colors
         self.pen_width = pen_width
         self.channel_names = channel_names
-        self.fallback_normalization_mode = fallback_normalization_mode
-        self.normalization_mode_dict = normalization_mode_dict
-        self.arbitrary_bounds = arbitrary_bounds
+        # self.fallback_normalization_mode = fallback_normalization_mode
+        # self.normalization_mode_dict = normalization_mode_dict
+        # self.arbitrary_bounds = arbitrary_bounds
 
         # Generate distinct colors for each channel
         if (channel_names is not None) and (pen_colors is None):
@@ -100,13 +106,8 @@ class MotionPlotDetailRenderer(DetailRenderer):
         assert found_all_channel_names
 
         # Normalize channels using shared helper to support per-group modes
-        normalized_channel_df = normalize_channels(
-            df_sorted,
-            found_channel_names,
-            default_mode=self.fallback_normalization_mode,
-            normalization_mode_dict=self.normalization_mode_dict,
-            arbitrary_bounds=self.arbitrary_bounds,
-        )
+        normalized_channel_df, (y_min, y_max) = self.compute_normalized_channels(detail_df=df_sorted, channel_names=found_channel_names)
+        # normalized_channel_df = normalize_channels(df_sorted, found_channel_names, default_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds)
 
         # Plot each channel with its distinct color
         for a_found_channel_name in found_channel_names:
@@ -116,6 +117,7 @@ class MotionPlotDetailRenderer(DetailRenderer):
             channel_color = self.pen_colors[channel_index]
             pen = pg.mkPen(channel_color, width=self.pen_width)
             plot_data_item = pg.PlotDataItem(t_values, y_values, pen=pen, connect='finite', name=a_found_channel_name)
+            # plot_item.axes.y
             plot_item.addItem(plot_data_item)
             graphics_objects.append(plot_data_item)
 

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 # from qtpy import QtWidgets, QtCore
-from typing import Dict, List, Tuple, Optional, Callable, Union, Any, Sequence
+from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
 
 
@@ -12,15 +12,12 @@ import pyphoplacecellanalysis.External.pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
-from pypho_timeline.rendering.helpers import (
-    ChannelNormalizationMode,
-    normalize_channels,
-)
+from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin
 
 
 ## NOTE: Currently inherits directly from DetailRenderer protocol. GenericPlotDetailRenderer is designed
 ## to wrap functions rather than for traditional inheritance. MotionPlotDetailRenderer follows the same pattern.
-class EEGPlotDetailRenderer(DetailRenderer):
+class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRenderer):
     """Detail renderer for eeg tracks that displays eeg channels as line plots.
     
     Expects detail_data to be a DataFrame with columns ['t'] and channel columns
@@ -34,7 +31,11 @@ class EEGPlotDetailRenderer(DetailRenderer):
     def __init__(self, pen_width=2, channel_names=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'], pen_colors=None,
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
-                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None):
+                 arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
+                 normalize: bool = True, normalize_over_full_data: bool = True,
+                 normalization_reference_df: Optional[pd.DataFrame] = None,
+                 **kwargs,
+                 ):
         """Initialize the eeg plot renderer.
         
         Args:
@@ -43,12 +44,13 @@ class EEGPlotDetailRenderer(DetailRenderer):
             channel_names: List of channel names to plot (default: ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'])
             pen_colors: Optional list of colors for each channel (default: None, auto-generated)
         """
+        ChannelNormalizationModeNormalizingMixin.__init__(self, channel_names=channel_names, fallback_normalization_mode=fallback_normalization_mode, normalization_mode_dict=normalization_mode_dict, arbitrary_bounds=arbitrary_bounds,
+                                                         normalize=normalize, normalize_over_full_data=normalize_over_full_data, normalization_reference_df=normalization_reference_df)
+        DetailRenderer.__init__(self, **kwargs)
+
         self.pen_colors = pen_colors
         self.pen_width = pen_width
         self.channel_names = channel_names
-        self.fallback_normalization_mode = fallback_normalization_mode
-        self.normalization_mode_dict = normalization_mode_dict
-        self.arbitrary_bounds = arbitrary_bounds
 
         # Generate distinct colors for each channel
         if (channel_names is not None) and (pen_colors is None):
@@ -115,14 +117,9 @@ class EEGPlotDetailRenderer(DetailRenderer):
         found_channel_names: List[str] = [k for k in self.channel_names if (k in df_sorted.columns)]
         found_all_channel_names: bool = len(found_channel_names) == len(self.channel_names)
         assert found_all_channel_names
+
         # Normalize channel columns using shared helper
-        normalized_channel_df = normalize_channels(
-            df_sorted,
-            found_channel_names,
-            default_mode=self.fallback_normalization_mode,
-            normalization_mode_dict=self.normalization_mode_dict,
-            arbitrary_bounds=self.arbitrary_bounds,
-        )
+        normalized_channel_df, (y_min, y_max) = self.compute_normalized_channels(detail_df=df_sorted, channel_names=found_channel_names)
 
         # Plot each channel with its distinct color
         for a_found_channel_name in found_channel_names:
@@ -240,10 +237,14 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
         from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
     """
     
-    def __init__(self, intervals_df: pd.DataFrame, eeg_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
+    def __init__(self, intervals_df: pd.DataFrame, eeg_df: pd.DataFrame, custom_datasource_name: Optional[str]=None,
+                 max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
-                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None):
+                 arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
+                 normalize: bool = True, normalize_over_full_data: bool = True,
+                 normalization_reference_df: Optional[pd.DataFrame] = None,
+                 ):
         """Initialize with eeg data and intervals.
         
         Args:
@@ -257,10 +258,28 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
             custom_datasource_name = "EEGTrack"
         super().__init__(intervals_df, detailed_df=eeg_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling)
 
+        if (normalization_reference_df is None) and (self.detailed_df is not None):
+            normalization_reference_df = self.detailed_df
+
+        # self._detail_renderer = EEGPlotDetailRenderer(
+        #         pen_width=2,
+        #         fallback_normalization_mode=fallback_normalization_mode,
+        #         normalization_mode_dict=normalization_mode_dict,
+        #         arbitrary_bounds=arbitrary_bounds,
+        #         normalize=normalize,
+        #         normalize_over_full_data=normalize_over_full_data,
+        #         normalization_reference_df=normalization_reference_df,
+        #     )
+
         self.fallback_normalization_mode = fallback_normalization_mode
         self.normalization_mode_dict = normalization_mode_dict
         self.arbitrary_bounds = arbitrary_bounds
-        
+        self.normalize = normalize
+        self.normalization_mode_dict = normalization_mode_dict
+        self.arbitrary_bounds = arbitrary_bounds
+        self.normalize_over_full_data = normalize_over_full_data
+        self.normalization_reference_df = normalization_reference_df
+
         # Override visualization properties (parent sets blue, we want blue too, but keep same height)
         # Parent already sets series_height=1.0, which is what we want, so no change needed
         # Parent already sets blue color, which is what we want, so no change needed
@@ -274,12 +293,14 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
                 fallback_normalization_mode=self.fallback_normalization_mode,
                 normalization_mode_dict=self.normalization_mode_dict,
                 arbitrary_bounds=self.arbitrary_bounds,
+                normalize=self.normalize, normalize_over_full_data=self.normalize_over_full_data, normalization_reference_df=self.normalization_reference_df,                
             )
         return EEGPlotDetailRenderer(
             pen_width=2,
             fallback_normalization_mode=self.fallback_normalization_mode,
             normalization_mode_dict=self.normalization_mode_dict,
             arbitrary_bounds=self.arbitrary_bounds,
+            normalize=self.normalize, normalize_over_full_data=self.normalize_over_full_data, normalization_reference_df=self.normalization_reference_df,
         )
 
 

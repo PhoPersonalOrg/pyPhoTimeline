@@ -1,14 +1,11 @@
 """GenericPlotDetailRenderer - Generic renderer for arbitrary plot data."""
-from typing import List, Tuple, Any, Callable, Optional, Dict, Sequence
+from typing import List, Mapping, Tuple, Any, Callable, Optional, Dict, Sequence
 import numpy as np
 import pandas as pd
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
-from pypho_timeline.rendering.helpers import (
-    ChannelNormalizationMode,
-    normalize_channels,
-)
+from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin, normalize_channels
 
 
 class GenericPlotDetailRenderer(DetailRenderer):
@@ -109,7 +106,7 @@ class IntervalPlotDetailRenderer(DetailRenderer):
         self.pen_width = pen_width
         self.y_column = y_column
     
-    
+
     def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render position data as a line plot.
         
@@ -210,7 +207,7 @@ class IntervalPlotDetailRenderer(DetailRenderer):
 
 
 
-class DataframePlotDetailRenderer(DetailRenderer):
+class DataframePlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRenderer):
     """Detail renderer for dataframe tracks that displays dataframe channels as line plots.
     
     Expects detail_data to be a DataFrame with columns ['t'] and channel columns.
@@ -229,10 +226,13 @@ class DataframePlotDetailRenderer(DetailRenderer):
         renderer = DataframePlotDetailRenderer(channel_names=['AccX', 'AccY'], normalize=False)
     """
     
-    def __init__(self, pen_width=2, channel_names: Optional[List[str]]=None, pen_colors=None, pen_color='white', normalize: bool = True,
-                 fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
+    def __init__(self, pen_width=2, channel_names: Optional[List[str]]=None, pen_colors=None, pen_color='white',
+                 fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.NONE,
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
-                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None):
+                 arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
+                 normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None,
+                 **kwargs,
+                 ):
         """Initialize the dataframe plot renderer.
         
         Args:
@@ -245,11 +245,16 @@ class DataframePlotDetailRenderer(DetailRenderer):
         self.pen_color = pen_color
         self.pen_colors = pen_colors
         self.pen_width = pen_width
-        self.channel_names = channel_names
-        self.normalize = normalize
-        self.fallback_normalization_mode = fallback_normalization_mode
-        self.normalization_mode_dict = normalization_mode_dict
-        self.arbitrary_bounds = arbitrary_bounds
+
+
+        # Preserve original channel_names semantics (None means auto-detect)
+        original_channel_names = channel_names
+        self.channel_names = original_channel_names
+        # Initialize shared normalization configuration via the mixin
+        ChannelNormalizationModeNormalizingMixin.__init__(self, channel_names=(channel_names or []), fallback_normalization_mode=fallback_normalization_mode, normalization_mode_dict=normalization_mode_dict, arbitrary_bounds=arbitrary_bounds, normalize=normalize, normalize_over_full_data=normalize_over_full_data, normalization_reference_df=normalization_reference_df, **kwargs)
+        # Restore auto-detect sentinel (mixin does not rely on self.channel_names when we pass channel_names explicitly to compute_normalized_channels)
+        self.channel_names = original_channel_names
+
 
         # Generate distinct colors for each channel if channel_names is provided
         # (If None, colors will be generated during render_detail when channels are auto-detected)
@@ -341,18 +346,13 @@ class DataframePlotDetailRenderer(DetailRenderer):
             channel_names_to_use = found_channel_names
             pen_colors_to_use = self.pen_colors if self.pen_colors is not None else [self.pen_color] * len(channel_names_to_use)
 
-        # Normalize channels if requested
+        # Normalize channels if requested using shared mixin helper
         if self.normalize:
-            normalized_channel_df = normalize_channels(
-                df_sorted,
-                channel_names_to_use,
-                default_mode=self.fallback_normalization_mode,
-                normalization_mode_dict=self.normalization_mode_dict,
-                arbitrary_bounds=self.arbitrary_bounds,
-            )
+            normalized_channel_df, (y_min, y_max) = self.compute_normalized_channels(detail_df=df_sorted, channel_names=channel_names_to_use)
             use_normalized = True
         else:
             use_normalized = False
+            
 
         # Plot each channel with its distinct color
         for idx, channel_name in enumerate(channel_names_to_use):

@@ -205,8 +205,7 @@ class ChannelNormalizationModeNormalizingMixin:
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Mapping[Iterable[str], ChannelNormalizationMode]] = None,
                  arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
-                 normalize: bool = True,
-                 normalize_over_full_data: bool = True,
+                 normalize: bool = True, normalize_over_full_data: bool = True,
                  normalization_reference_df: Optional[pd.DataFrame] = None,
                  **kwargs):
         """Initialize normalization configuration for a renderer-like class."""
@@ -222,6 +221,11 @@ class ChannelNormalizationModeNormalizingMixin:
         # If provided, this should be a DataFrame with at least the same channel columns
         # as any detail_df passed to compute_normalized_channels.
         self.normalization_reference_df: Optional[pd.DataFrame] = normalization_reference_df
+        # if self.normalization_reference_df is not None:
+            
+        
+
+        normalize_over_full_data: bool = (self.normalization_reference_df is not None)
 
 
     def compute_normalized_channels(self, detail_df: pd.DataFrame, channel_names: Optional[Sequence[str]] = None) -> Tuple[pd.DataFrame, Tuple[float, float]]:
@@ -249,11 +253,7 @@ class ChannelNormalizationModeNormalizingMixin:
         # If we are not normalizing, just return raw values and their range
         if not self.normalize:
             sub_df = detail_df[sorted(channel_list)].astype(float)
-            y_min = float(sub_df.min(axis=None))
-            y_max = float(sub_df.max(axis=None))
-            if not np.isfinite(y_min) or not np.isfinite(y_max) or y_min == y_max:
-                # Fallback to a simple [0, 1] range if the data are degenerate
-                return sub_df, (0.0, 1.0)
+            y_min, y_max = _safe_min_max(sub_df.values)
             return sub_df, (y_min, y_max)
 
         # Choose the DataFrame over which to compute normalization statistics
@@ -278,12 +278,7 @@ class ChannelNormalizationModeNormalizingMixin:
         if normalized_detail.empty:
             return normalized_detail, (0.0, 1.0)
 
-        y_min = float(normalized_detail.min(axis=None))
-        y_max = float(normalized_detail.max(axis=None))
-        if not np.isfinite(y_min) or not np.isfinite(y_max) or y_min == y_max:
-            # Fallback to a simple [0, 1] range if the normalized data are degenerate
-            return normalized_detail, (0.0, 1.0)
-
+        y_min, y_max = _safe_min_max(normalized_detail.values)
         return normalized_detail, (y_min, y_max)
 
 
