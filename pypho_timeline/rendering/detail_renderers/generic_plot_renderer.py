@@ -109,6 +109,7 @@ class IntervalPlotDetailRenderer(DetailRenderer):
         self.pen_width = pen_width
         self.y_column = y_column
     
+    
     def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render position data as a line plot.
         
@@ -153,6 +154,7 @@ class IntervalPlotDetailRenderer(DetailRenderer):
         
         return graphics_objects
     
+
     def clear_detail(self, plot_item: pg.PlotItem, graphics_objects: List[pg.GraphicsObject]) -> None:
         """Remove position plot graphics objects.
         
@@ -165,6 +167,7 @@ class IntervalPlotDetailRenderer(DetailRenderer):
             if hasattr(obj, 'setParentItem'):
                 obj.setParentItem(None)
     
+
     def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
         """Get bounds for the position plot.
         

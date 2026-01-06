@@ -42,11 +42,7 @@ class ChannelNormalizationMode(Enum):
     ARBITRARY = auto()         # Normalize using arbitrary (specified) bounds per channel
 
 
-def build_channel_mode_map(
-    channel_names: Sequence[str],
-    normalization_mode_dict: Optional[Mapping[Iterable[str], ChannelNormalizationMode]],
-    default_mode: ChannelNormalizationMode,
-) -> Dict[str, ChannelNormalizationMode]:
+def build_channel_mode_map(channel_names: Sequence[str], normalization_mode_dict: Optional[Mapping[Iterable[str], ChannelNormalizationMode]], default_mode: ChannelNormalizationMode) -> Dict[str, ChannelNormalizationMode]:
     """Build per-channel normalization mode map from group dict and default.
 
     Args:
@@ -83,13 +79,7 @@ def _safe_min_max(values: np.ndarray) -> Tuple[float, float]:
     return v_min, v_max
 
 
-def normalize_channels(
-    df: pd.DataFrame,
-    channel_names: Sequence[str],
-    default_mode: ChannelNormalizationMode,
-    normalization_mode_dict: Optional[Mapping[Iterable[str], ChannelNormalizationMode]] = None,
-    arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
-) -> pd.DataFrame:
+def normalize_channels(df: pd.DataFrame, channel_names: Sequence[str], default_mode: ChannelNormalizationMode, normalization_mode_dict: Optional[Mapping[Iterable[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None) -> pd.DataFrame:
     """Return a normalized view of the specified channels according to modes.
 
     Args:
