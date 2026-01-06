@@ -327,25 +327,25 @@ def main_all_modalities_from_xdf_file_example(xdf_file_path: Path):
             plot_item=a_plot_item
         )
 
-        ## after adding the track, try to add/render the detailed data if possible (currently hardcoded). 
-        try:
-            a_renderer = timeline.track_renderers[a_track_name]
-            a_detail_renderer = a_renderer.detail_renderer # MotionPlotDetailRenderer 
-            a_ds = timeline.track_datasources[a_track_name]
-            # interval = a_ds.intervals_df
-            interval = a_ds.get_overview_intervals()
+        # ## after adding the track, try to add/render the detailed data if possible (currently hardcoded). 
+        # try:
+        #     a_renderer = timeline.track_renderers[a_track_name]
+        #     a_detail_renderer = a_renderer.detail_renderer # MotionPlotDetailRenderer 
+        #     a_ds = timeline.track_datasources[a_track_name]
+        #     # interval = a_ds.intervals_df
+        #     interval = a_ds.get_overview_intervals()
 
-            extant_graphics_objects = timeline.plots.render_detail_graphics_objects.get(a_track_name, [])
-            if extant_graphics_objects:
-                ## remove existing
-                a_detail_renderer.clear_detail(plot_item=a_plot_item, graphics_objects=extant_graphics_objects)
+        #     extant_graphics_objects = timeline.plots.render_detail_graphics_objects.get(a_track_name, [])
+        #     if extant_graphics_objects:
+        #         ## remove existing
+        #         a_detail_renderer.clear_detail(plot_item=a_plot_item, graphics_objects=extant_graphics_objects)
 
 
-            graphics_objects = a_detail_renderer.render_detail(plot_item=a_plot_item, interval=interval, detail_data=a_ds.detailed_df) # List[PlotDataItem]
-            timeline.plots.render_detail_graphics_objects[a_track_name] = graphics_objects
+        #     graphics_objects = a_detail_renderer.render_detail(plot_item=a_plot_item, interval=interval, detail_data=a_ds.detailed_df) # List[PlotDataItem]
+        #     timeline.plots.render_detail_graphics_objects[a_track_name] = graphics_objects
 
-        except (ValueError, AttributeError, KeyError, IndexError) as e:
-            print(f'\tERROR for a_track_name: "{a_track_name}" while trying to add `a_detail_renderer.render_detail(...) {e}')
+        # except (ValueError, AttributeError, KeyError, IndexError) as e:
+        #     print(f'\tERROR for a_track_name: "{a_track_name}" while trying to add `a_detail_renderer.render_detail(...) {e}')
         
 
     ## END for datasource in active_datasource_list...

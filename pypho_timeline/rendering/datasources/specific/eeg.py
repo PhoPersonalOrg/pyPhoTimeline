@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 # from qtpy import QtWidgets, QtCore
-from typing import Dict, List, Tuple, Optional, Callable, Union, Any
+from typing import Dict, List, Tuple, Optional, Callable, Union, Any, Sequence
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
 
 
@@ -12,6 +12,10 @@ import pyphoplacecellanalysis.External.pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
+from pypho_timeline.rendering.helpers import (
+    ChannelNormalizationMode,
+    normalize_channels,
+)
 
 
 ## NOTE: Currently inherits directly from DetailRenderer protocol. GenericPlotDetailRenderer is designed
@@ -27,7 +31,10 @@ class EEGPlotDetailRenderer(DetailRenderer):
 
     """
     
-    def __init__(self, pen_width=2, channel_names=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'], pen_colors=None):
+    def __init__(self, pen_width=2, channel_names=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'], pen_colors=None,
+                 fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
+                 normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
+                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None):
         """Initialize the eeg plot renderer.
         
         Args:
@@ -39,7 +46,10 @@ class EEGPlotDetailRenderer(DetailRenderer):
         self.pen_colors = pen_colors
         self.pen_width = pen_width
         self.channel_names = channel_names
-        
+        self.fallback_normalization_mode = fallback_normalization_mode
+        self.normalization_mode_dict = normalization_mode_dict
+        self.arbitrary_bounds = arbitrary_bounds
+
         # Generate distinct colors for each channel
         if (channel_names is not None) and (pen_colors is None):
             # Predefined palette of distinct colors
@@ -105,14 +115,14 @@ class EEGPlotDetailRenderer(DetailRenderer):
         found_channel_names: List[str] = [k for k in self.channel_names if (k in df_sorted.columns)]
         found_all_channel_names: bool = len(found_channel_names) == len(self.channel_names)
         assert found_all_channel_names
-        # Normalize all channel columns between 0.0 and 1.0 across all found_channel_names
-        channel_df = df_sorted[found_channel_names].astype(float)
-        min_vals = channel_df.min(skipna=True)
-        max_vals = channel_df.max(skipna=True)
-        ranges = max_vals - min_vals
-        # Replace 0 and NaN in ranges with 1 to avoid division by zero/NaN
-        ranges = ranges.replace(0, 1).fillna(1)
-        normalized_channel_df = (channel_df - min_vals) / ranges
+        # Normalize channel columns using shared helper
+        normalized_channel_df = normalize_channels(
+            df_sorted,
+            found_channel_names,
+            default_mode=self.fallback_normalization_mode,
+            normalization_mode_dict=self.normalization_mode_dict,
+            arbitrary_bounds=self.arbitrary_bounds,
+        )
 
         # Plot each channel with its distinct color
         for a_found_channel_name in found_channel_names:
@@ -230,7 +240,10 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
         from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
     """
     
-    def __init__(self, intervals_df: pd.DataFrame, eeg_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True):
+    def __init__(self, intervals_df: pd.DataFrame, eeg_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
+                 fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
+                 normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
+                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None):
         """Initialize with eeg data and intervals.
         
         Args:
@@ -243,6 +256,10 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
         if custom_datasource_name is None:
             custom_datasource_name = "EEGTrack"
         super().__init__(intervals_df, detailed_df=eeg_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling)
+
+        self.fallback_normalization_mode = fallback_normalization_mode
+        self.normalization_mode_dict = normalization_mode_dict
+        self.arbitrary_bounds = arbitrary_bounds
         
         # Override visualization properties (parent sets blue, we want blue too, but keep same height)
         # Parent already sets series_height=1.0, which is what we want, so no change needed
@@ -252,8 +269,18 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
         """Get detail renderer for eeg data."""
         if self.detailed_df is None:
             print(f'WARN: self.detailed_df is None!')
-            return EEGPlotDetailRenderer(pen_width=2)
-        return EEGPlotDetailRenderer(pen_width=2)
+            return EEGPlotDetailRenderer(
+                pen_width=2,
+                fallback_normalization_mode=self.fallback_normalization_mode,
+                normalization_mode_dict=self.normalization_mode_dict,
+                arbitrary_bounds=self.arbitrary_bounds,
+            )
+        return EEGPlotDetailRenderer(
+            pen_width=2,
+            fallback_normalization_mode=self.fallback_normalization_mode,
+            normalization_mode_dict=self.normalization_mode_dict,
+            arbitrary_bounds=self.arbitrary_bounds,
+        )
 
 
     def get_detail_cache_key(self, interval: pd.Series) -> str:

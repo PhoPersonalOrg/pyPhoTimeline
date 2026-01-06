@@ -1,10 +1,15 @@
 """GenericPlotDetailRenderer - Generic renderer for arbitrary plot data."""
-from typing import List, Tuple, Any, Callable, Optional
+from typing import List, Tuple, Any, Callable, Optional, Dict, Sequence
 import numpy as np
 import pandas as pd
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
+from pypho_timeline.rendering.helpers import (
+    ChannelNormalizationMode,
+    normalize_channels,
+)
+
 
 class GenericPlotDetailRenderer(DetailRenderer):
     """Generic detail renderer that uses a custom render function.
@@ -200,6 +205,8 @@ class IntervalPlotDetailRenderer(DetailRenderer):
 
 
 
+
+
 class DataframePlotDetailRenderer(DetailRenderer):
     """Detail renderer for dataframe tracks that displays dataframe channels as line plots.
     
@@ -219,7 +226,10 @@ class DataframePlotDetailRenderer(DetailRenderer):
         renderer = DataframePlotDetailRenderer(channel_names=['AccX', 'AccY'], normalize=False)
     """
     
-    def __init__(self, pen_width=2, channel_names: Optional[List[str]]=None, pen_colors=None, pen_color='white', normalize: bool = True):
+    def __init__(self, pen_width=2, channel_names: Optional[List[str]]=None, pen_colors=None, pen_color='white', normalize: bool = True,
+                 fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
+                 normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
+                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None):
         """Initialize the dataframe plot renderer.
         
         Args:
@@ -234,7 +244,10 @@ class DataframePlotDetailRenderer(DetailRenderer):
         self.pen_width = pen_width
         self.channel_names = channel_names
         self.normalize = normalize
-        
+        self.fallback_normalization_mode = fallback_normalization_mode
+        self.normalization_mode_dict = normalization_mode_dict
+        self.arbitrary_bounds = arbitrary_bounds
+
         # Generate distinct colors for each channel if channel_names is provided
         # (If None, colors will be generated during render_detail when channels are auto-detected)
         if (channel_names is not None) and (pen_colors is None):
@@ -327,14 +340,13 @@ class DataframePlotDetailRenderer(DetailRenderer):
 
         # Normalize channels if requested
         if self.normalize:
-            # Normalize all channel columns between 0.0 and 1.0 across all channel_names_to_use
-            channel_df = df_sorted[channel_names_to_use].astype(float)
-            min_vals = channel_df.min(skipna=True)
-            max_vals = channel_df.max(skipna=True)
-            ranges = max_vals - min_vals
-            # Replace 0 and NaN in ranges with 1 to avoid division by zero/NaN
-            ranges = ranges.replace(0, 1).fillna(1)
-            normalized_channel_df = (channel_df - min_vals) / ranges
+            normalized_channel_df = normalize_channels(
+                df_sorted,
+                channel_names_to_use,
+                default_mode=self.fallback_normalization_mode,
+                normalization_mode_dict=self.normalization_mode_dict,
+                arbitrary_bounds=self.arbitrary_bounds,
+            )
             use_normalized = True
         else:
             use_normalized = False

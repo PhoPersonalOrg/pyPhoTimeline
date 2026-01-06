@@ -1,11 +1,16 @@
 """MotionPlotDetailRenderer - Renders motion data as line plots."""
-from typing import List, Tuple, Any
+from typing import List, Optional, Tuple, Any, Dict, Sequence
 import numpy as np
 import pandas as pd
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
+from pypho_timeline.rendering.helpers import (
+    ChannelNormalizationMode,
+    normalize_channels,
+)
+
 
 ## TODO: should inherit from `GenericPlotDetailRenderer`
 class MotionPlotDetailRenderer(DetailRenderer):
@@ -19,7 +24,10 @@ class MotionPlotDetailRenderer(DetailRenderer):
         from pypho_timeline.rendering.detail_renderers.motion_plot_renderer import MotionPlotDetailRenderer
     """
     
-    def __init__(self, pen_width=2, channel_names=['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'], pen_colors=None):
+    def __init__(self, pen_width=2, channel_names=['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'], pen_colors=None,
+                 fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
+                 normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
+                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None):
         """Initialize the motion plot renderer.
         
         Args:
@@ -30,7 +38,10 @@ class MotionPlotDetailRenderer(DetailRenderer):
         self.pen_colors = pen_colors
         self.pen_width = pen_width
         self.channel_names = channel_names
-        
+        self.fallback_normalization_mode = fallback_normalization_mode
+        self.normalization_mode_dict = normalization_mode_dict
+        self.arbitrary_bounds = arbitrary_bounds
+
         # Generate distinct colors for each channel
         if (channel_names is not None) and (pen_colors is None):
             # Predefined palette of distinct colors
@@ -88,9 +99,18 @@ class MotionPlotDetailRenderer(DetailRenderer):
         found_all_channel_names: bool = len(found_channel_names) == len(self.channel_names)
         assert found_all_channel_names
 
+        # Normalize channels using shared helper to support per-group modes
+        normalized_channel_df = normalize_channels(
+            df_sorted,
+            found_channel_names,
+            default_mode=self.fallback_normalization_mode,
+            normalization_mode_dict=self.normalization_mode_dict,
+            arbitrary_bounds=self.arbitrary_bounds,
+        )
+
         # Plot each channel with its distinct color
         for a_found_channel_name in found_channel_names:
-            y_values = df_sorted[a_found_channel_name].values
+            y_values = normalized_channel_df[a_found_channel_name].values
             # Get the color for this channel based on its index in channel_names
             channel_index = self.channel_names.index(a_found_channel_name)
             channel_color = self.pen_colors[channel_index]

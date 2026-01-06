@@ -221,8 +221,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
 
 
     @pyqtExceptionPrintingSlot(float, float)
-    def TrackRenderingMixin_on_window_update(self, new_start: Optional[float] = None, 
-                                             new_end: Optional[float] = None):
+    def TrackRenderingMixin_on_window_update(self, new_start: Optional[float] = None, new_end: Optional[float] = None):
         """Called when the viewport window changes. Updates all track renderers.
         
         Args:
@@ -236,6 +235,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
         for track_renderer in self.track_renderers.values():
             track_renderer.update_viewport(new_start, new_end)
     
+    
     def get_track(self, name: str) -> Optional[TrackRenderer]:
         """Get a track renderer by name.
         
@@ -247,6 +247,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
         """
         return self.track_renderers.get(name, None)
     
+
     def get_all_track_names(self) -> List[str]:
         """Get list of all track names.
         

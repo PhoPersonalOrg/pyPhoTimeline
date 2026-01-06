@@ -5,6 +5,8 @@ from qtpy import QtCore, QtWidgets
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pyphocorehelpers.DataStructure.general_parameter_containers import VisualizationParameters
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
+from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
+
 
 class TimeSynchronizedPlotterBase(QtWidgets.QWidget):
     """ Subclasses generally display time-dependent results produced by a PfND_TimeDependent instance in a manner synchronized with another plotter/renderer.
@@ -110,7 +112,7 @@ class TimeSynchronizedPlotterBase(QtWidgets.QWidget):
     # QT Slots                                                                                                             #
     # ==================================================================================================================== #
     
-    @QtCore.Slot(float, float)
+    @pyqtExceptionPrintingSlot(float, float)
     def on_window_changed(self, start_t, end_t):
         # called when the window is updated
         if self.enable_debug_print:
@@ -126,7 +128,7 @@ class TimeSynchronizedPlotterBase(QtWidgets.QWidget):
     ##################################################
     ## For use with pg.SignalProxy
     # using signal proxy turns original arguments into a tuple
-    @QtCore.Slot(object)
+    @pyqtExceptionPrintingSlot(object)
     def on_window_changed_rate_limited(self, evt):
         self.on_window_changed(*evt)
         

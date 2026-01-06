@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 # from qtpy import QtWidgets, QtCore
-from typing import Dict, List, Tuple, Optional, Callable, Union, Any
+from typing import Dict, List, Tuple, Optional, Callable, Union, Any, Sequence
 # import pyphoplacecellanalysis.External.pyqtgraph as pg
 # from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 # from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
@@ -11,6 +11,7 @@ from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 # from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.detail_renderers.motion_plot_renderer import MotionPlotDetailRenderer
+from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 
 
 class MotionTrackDatasource(IntervalProvidingTrackDatasource):
@@ -24,7 +25,10 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource
     """
     
-    def __init__(self, intervals_df: pd.DataFrame, motion_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True):
+    def __init__(self, intervals_df: pd.DataFrame, motion_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
+                 fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
+                 normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
+                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None):
         """Initialize with motion data and intervals.
         
         Args:
@@ -37,6 +41,10 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         if custom_datasource_name is None:
             custom_datasource_name = "MotionTrack"
         super().__init__(intervals_df, detailed_df=motion_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling)
+
+        self.fallback_normalization_mode = fallback_normalization_mode
+        self.normalization_mode_dict = normalization_mode_dict
+        self.arbitrary_bounds = arbitrary_bounds
         
         # Override visualization properties (parent sets blue, we want blue too, but keep same height)
         # Parent already sets series_height=1.0, which is what we want, so no change needed
@@ -46,8 +54,18 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         """Get detail renderer for motion data."""
         if self.detailed_df is None:
             print(f'WARN: self.detailed_df is None!')
-            return MotionPlotDetailRenderer(pen_width=2)
-        return MotionPlotDetailRenderer(pen_width=2)
+            return MotionPlotDetailRenderer(
+                pen_width=2,
+                fallback_normalization_mode=self.fallback_normalization_mode,
+                normalization_mode_dict=self.normalization_mode_dict,
+                arbitrary_bounds=self.arbitrary_bounds,
+            )
+        return MotionPlotDetailRenderer(
+            pen_width=2,
+            fallback_normalization_mode=self.fallback_normalization_mode,
+            normalization_mode_dict=self.normalization_mode_dict,
+            arbitrary_bounds=self.arbitrary_bounds,
+        )
 
 
     def get_detail_cache_key(self, interval: pd.Series) -> str:

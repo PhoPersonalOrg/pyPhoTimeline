@@ -18,6 +18,7 @@ from pypho_timeline.rendering.datasources.track_datasource import IntervalProvid
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, PositionTrackDatasource, VideoTrackDatasource
 from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
+from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 
 
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
@@ -370,8 +371,29 @@ modality_sfreq_dict = {'EEG': 128, 'MOTION': 16,
                         'GENERIC': 128, 'LOG': -1,
 }
 
+## Default modality normalization modes:
+modality_channels_normalization_mode_dict = {
+    'EEG': {
+        ('AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'): ChannelNormalizationMode.INDIVIDUAL,
+    },
+    'MOTION': {
+        ('AccX', 'AccY', 'AccZ'): ChannelNormalizationMode.GROUPMINMAXRANGE,
+        ('GyroX', 'GyroY', 'GyroZ'): ChannelNormalizationMode.GROUPMINMAXRANGE,
+    },
+    'GENERIC': {
+        ('AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'): ChannelNormalizationMode.GROUPMINMAXRANGE,
+    },
+    'LOG': {
+        ('msg',): ChannelNormalizationMode.NONE,
+    },
+}
+
+
 
 def perform_process_all_streams(streams):
+    """ main function! Processes streams to build datasources, and thus tracks.
+
+    """
     all_streams = {}
     all_streams_datasources = {}
     for i, s in enumerate(streams):
@@ -426,7 +448,16 @@ def perform_process_all_streams(streams):
             time_series_df = pd.DataFrame(time_series, columns=modality_channels_dict['MOTION']) # ['AccelX', 'AccelY', 'AccelZ', 'GyroX', 'GyroY', 'GyroZ']
             time_series_df['t'] = timestamps
             # High-frequency motion data: use 1000 points/second for downsampling
-            datasource = MotionTrackDatasource(motion_df=time_series_df, intervals_df=intervals_df, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True)
+            motion_norm_dict = modality_channels_normalization_mode_dict.get('MOTION')
+            datasource = MotionTrackDatasource(
+                motion_df=time_series_df,
+                intervals_df=intervals_df,
+                custom_datasource_name=f"MOTION_{stream_name}",
+                max_points_per_second=10.0,
+                enable_downsampling=True,
+                fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE,
+                normalization_mode_dict=motion_norm_dict,
+            )
             datasource.custom_datasource_name = f"MOTION_{stream_name}"
 
         elif (stream_type.upper() in ['RAW']) and (' eQuality' in stream_name): #  and ('Epoc X' in stream_name)
@@ -435,8 +466,13 @@ def perform_process_all_streams(streams):
 
             from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
             channel_names = modality_channels_dict['EEG']
+            eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
 
-            a_detail_renderer: DataframePlotDetailRenderer = DataframePlotDetailRenderer(channel_names=channel_names)
+            a_detail_renderer: DataframePlotDetailRenderer = DataframePlotDetailRenderer(
+                channel_names=channel_names,
+                fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL,
+                normalization_mode_dict=eeg_norm_dict,
+            )
             
             n_t_stamps, n_columns = np.shape(time_series)
             assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
@@ -456,7 +492,16 @@ def perform_process_all_streams(streams):
             time_series_df = pd.DataFrame(time_series, columns=modality_channels_dict['EEG']) # ['AccelX', 'AccelY', 'AccelZ', 'GyroX', 'GyroY', 'GyroZ']
             time_series_df['t'] = timestamps
             # High-frequency EEG data: use 1000 points/second for downsampling
-            datasource = EEGTrackDatasource(intervals_df=intervals_df, eeg_df=time_series_df, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True)
+            eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
+            datasource = EEGTrackDatasource(
+                intervals_df=intervals_df,
+                eeg_df=time_series_df,
+                custom_datasource_name=f"EEG_{stream_name}",
+                max_points_per_second=10.0,
+                enable_downsampling=True,
+                fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL,
+                normalization_mode_dict=eeg_norm_dict,
+            )
             # datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"EEG_{stream_name}")
             # datasource.custom_datasource_name = f"EEG_{stream_name}"
 

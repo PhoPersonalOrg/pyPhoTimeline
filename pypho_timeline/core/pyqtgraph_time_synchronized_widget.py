@@ -20,7 +20,7 @@ from pyphocorehelpers.function_helpers import function_attributes
 from pyphocorehelpers.plotting.mixins.plotting_backend_mixin import PlottingBackendSpecifyingMixin, PlottingBackendType, PlotImageExportableMixin
 from pypho_timeline.mixins.crosshairs_tracing_mixin import CrosshairsTracingMixin
 from pypho_timeline.widgets.custom_graphics_layout_widget import CustomViewBox, CustomGraphicsLayoutWidget
-
+from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 
 
 
@@ -261,7 +261,7 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
     # QT Slots                                                                                                             #
     # ==================================================================================================================== #
     
-    @QtCore.Slot(float, float)
+    @pyqtExceptionPrintingSlot(float, float)
     def on_window_changed(self, start_t, end_t):
         # called when the window is updated
         if self.enable_debug_print:

@@ -151,9 +151,7 @@ class TrackRenderer(QtCore.QObject):
                     t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
                     t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
                     logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' (t_start={t_start_str}, t_duration={t_duration_str}) - cache MISS, requesting async fetch")
-                    self.async_fetcher.fetch_detail_async(
-                        self.track_id, interval_series, self.datasource
-                    )
+                    self.async_fetcher.fetch_detail_async(self.track_id, interval_series, self.datasource) ## I believe after this asynchronously completes, `self._on_detail_data_ready` is called.
             else:
                 already_visible += 1
         

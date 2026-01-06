@@ -393,6 +393,7 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """Get overview intervals."""
         return self.intervals_df
     
+
     def fetch_detailed_data(self, interval: pd.Series) -> pd.DataFrame:
         """Fetch position data for an interval with optional downsampling."""
         if self.detailed_df is None:
@@ -403,22 +404,25 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         result_df = self.detailed_df[mask].copy()
         
         # Apply downsampling if enabled
-        if self.enable_downsampling and self.max_points_per_second is not None and len(result_df) > 0:
+        if self.enable_downsampling and (self.max_points_per_second is not None) and (len(result_df) > 0):
             # Calculate target point count based on interval duration
-            t_duration = interval.get('t_duration', t_end - t_start)
-            max_points = int(t_duration * self.max_points_per_second)
-            
+            t_duration: float = interval.get('t_duration', (t_end - t_start))
+            max_allowed_points: int = int(t_duration * self.max_points_per_second) ## compute the max allowed points in the current interval
+            curr_df_points_per_sec: float = float(len(result_df['t']))/t_duration
+
             # Only downsample if we have more points than target
-            if len(result_df) > max_points:
+            if len(result_df) > max_allowed_points:
                 from pypho_timeline.utils.downsampling import downsample_dataframe
-                result_df = downsample_dataframe(result_df, max_points=max_points, time_col='t')
-        
+                result_df = downsample_dataframe(result_df, max_points=max_allowed_points, time_col='t')
+                curr_downsampled_points_per_sec = float(len(result_df['t']))/t_duration
+
         return result_df
     
+
     def get_detail_renderer(self):
         """Get detail renderer for position data."""
         if self._detail_renderer is None:
-            from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer, IntervalPlotDetailRenderer
+            from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import IntervalPlotDetailRenderer
             if self.detailed_df is None:
                 return IntervalPlotDetailRenderer(pen_color='cyan', pen_width=2)
             return IntervalPlotDetailRenderer(pen_color='cyan', pen_width=2)
