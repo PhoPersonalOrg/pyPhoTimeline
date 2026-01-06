@@ -1,0 +1,45 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		// {
+		// 	"path": "H:/TEMP/Spike3DEnv_ExploreUpgrade/Spike3DWorkEnv/pyPhoTimeline"
+		// },
+		// {
+		// 	"path": "C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/vispy_timeline"
+		// },
+		// {
+		// 	"path": "C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/stream_viewer"
+		// },
+		{
+			"path": "C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/PhoPyMNEHelper"
+		}
+	],
+	"settings": {
+		"workbench.colorCustomizations": {
+			"editor.lineHighlightBackground": "#E67E002d",
+			"editor.lineHighlightBorder": "#C8E6C91f",
+			"activityBar.background": "#CC6600",
+			"titleBar.activeBackground": "#D97700",
+			"titleBar.activeForeground": "#C5E1A5",
+			"scrollbarSlider.background": "#C8E6C957",
+			"scrollbarSlider.hoverBackground": "#A5D6A782",
+			"scrollbarSlider.activeBackground": "#C5E1A5df",
+			"activityBar.inactiveForeground": "#C8E6C93c",
+			"activityBar.foreground": "#C5E1A5",
+			"notebook.outputContainerBackgroundColor": "#D9770050",
+			"notebook.outputContainerBorderColor": "#E67E00",
+			"notebook.focusedCellBorder": "#C8E6C9da",
+			"notebook.focusedEditorBorder": "#C5E1A5",
+			"notebook.inactiveFocusedCellBorder": "#C8E6C963",
+			"titleBar.inactiveBackground": "#E67E008e",
+			"tab.activeBorder": "#C8E6C9",
+			"statusBar.background": "#CC6600",
+			"statusBar.foreground": "#C5E1A5",
+			"sideBarSectionHeader.border": "#C8E6C9"
+		},
+		"git.ignoreLimitWarning": true,
+		"python.languageServer": "None"
+	}
+}

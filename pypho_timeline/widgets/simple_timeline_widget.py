@@ -463,10 +463,12 @@ def perform_process_all_streams(streams):
         elif (stream_type.upper() in ['MARKERS']) and (stream_name in ['EventBoard', 'TextLogger']): #  and ('Epoc X' in stream_name)
             ## Text log datasource:
             assert has_valid_intervals
-            from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
+            from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
+        
+
             channel_names = modality_channels_dict['LOG']
 
-            a_detail_renderer: DataframePlotDetailRenderer = DataframePlotDetailRenderer(channel_names=channel_names)
+            a_detail_renderer: LogTextDataFramePlotDetailRenderer = LogTextDataFramePlotDetailRenderer(text_color='white', text_size=10, channel_names=channel_names)
             
             n_t_stamps, n_columns = np.shape(time_series)
             assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"

@@ -459,4 +459,3 @@ class DataframePlotDetailRenderer(DetailRenderer):
 
 
 __all__ = ['GenericPlotDetailRenderer', 'IntervalPlotDetailRenderer', 'DataframePlotDetailRenderer']
-

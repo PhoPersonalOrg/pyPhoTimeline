@@ -1,5 +1,5 @@
 """LogTextDataFramePlotDetailRenderer - Renders text log events as text labels."""
-from typing import List, Tuple, Any
+from typing import List, Optional, Tuple, Any
 import numpy as np
 import pandas as pd
 import pyphoplacecellanalysis.External.pyqtgraph as pg
@@ -19,7 +19,7 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
         renderer = LogTextDataFramePlotDetailRenderer(text_color='white', text_size=10)
     """
     
-    def __init__(self, text_color='white', text_size=10, text_rotation=90, y_position=0.5, anchor=(0, 0.5)):
+    def __init__(self, channel_names: Optional[List[str]]=None, text_color='white', text_size=10, text_rotation=90, y_position=0.5, anchor=(0, 0.5)):
         """Initialize the text log plot renderer.
         
         Args:
@@ -29,8 +29,11 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
             y_position: Y-coordinate for text placement (default: 0.5)
             anchor: Text anchor point as (x, y) tuple (default: (0, 0.5) for left-center)
         """
+        if channel_names is None:
+            channel_names = ['message']
+
         # Initialize parent with minimal params to skip line plotting logic
-        super().__init__(pen_width=1, channel_names=None, normalize=False)
+        super().__init__(pen_width=1, channel_names=channel_names, normalize=False)
         self.text_color = text_color
         self.text_size = text_size
         self.text_rotation = text_rotation
@@ -93,6 +96,7 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
         
         return graphics_objects
     
+
     def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
         """Get bounds for the text log plot.
         
