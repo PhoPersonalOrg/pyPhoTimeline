@@ -10,24 +10,32 @@ from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import Data
 class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
     """Detail renderer for text log events that displays messages as text labels.
     
-    Expects detail_data to be a DataFrame with columns ['t', 'message'].
+    Expects detail_data to be a DataFrame with columns ['t'] and channel columns (default: ['message']).
     Text labels are positioned at their time coordinates and displayed vertically.
     
     Usage:
         from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
         
+        # Use default channel 'message'
         renderer = LogTextDataFramePlotDetailRenderer(text_color='white', text_size=10)
+        
+        # Use custom channel names
+        renderer = LogTextDataFramePlotDetailRenderer(channel_names=['log_message', 'level'], text_color='white', text_size=10)
     """
     
-    def __init__(self, channel_names: Optional[List[str]]=None, text_color='white', text_size=10, text_rotation=90, y_position=0.5, anchor=(0, 0.5)):
+    def __init__(self, channel_names: Optional[List[str]]=None, text_color='white', text_size=10, text_rotation=90, y_position=0.5, anchor=(0, 0.5), line_color=None, line_width=1, enable_lines=True):
         """Initialize the text log plot renderer.
         
         Args:
+            channel_names: Optional list of channel names to display. If None, defaults to ['message'] (default: None)
             text_color: Color for text labels (default: 'white')
             text_size: Font size in points (default: 10)
             text_rotation: Rotation angle in degrees (default: 90 for vertical)
             y_position: Y-coordinate for text placement (default: 0.5)
             anchor: Text anchor point as (x, y) tuple (default: (0, 0.5) for left-center)
+            line_color: Color for vertical lines. If None, defaults to text_color (default: None)
+            line_width: Width of vertical lines in pixels (default: 1)
+            enable_lines: Whether to draw vertical lines at message times (default: True)
         """
         if channel_names is None:
             channel_names = ['message']
@@ -39,17 +47,20 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
         self.text_rotation = text_rotation
         self.y_position = y_position
         self.anchor = anchor
+        self.line_color = line_color if line_color is not None else text_color
+        self.line_width = line_width
+        self.enable_lines = enable_lines
     
     def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
-        """Render text log events as text labels.
+        """Render text log events as text labels with optional vertical lines.
         
         Args:
             plot_item: The pyqtgraph PlotItem to render into
             interval: The interval DataFrame (single row) with 't_start' and 't_duration'
-            detail_data: DataFrame with columns ['t', 'message']
+            detail_data: DataFrame with columns ['t'] and channel columns (default: ['message'])
             
         Returns:
-            List of GraphicsObject items added (TextItem)
+            List of GraphicsObject items added (InfiniteLine and TextItem)
         """
         if detail_data is None or len(detail_data) == 0:
             return []
@@ -60,16 +71,52 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
         graphics_objects = []
         
         # Check required columns
-        if 't' not in detail_data.columns or 'message' not in detail_data.columns:
+        if 't' not in detail_data.columns:
             return []
+        
+        # Determine which channel columns to use
+        channel_names_to_use = self.channel_names
+        if channel_names_to_use is None:
+            # Auto-detect: all non-numeric columns except 't'
+            non_numeric_cols = detail_data.select_dtypes(exclude=[np.number]).columns.tolist()
+            channel_names_to_use = [col for col in non_numeric_cols if col != 't']
+            if len(channel_names_to_use) == 0:
+                return []  # No channels found
+        else:
+            # Use explicitly provided channel names
+            found_channel_names: List[str] = [k for k in channel_names_to_use if (k in detail_data.columns)]
+            # Only assert all channels required when channel_names was explicitly provided
+            found_all_channel_names: bool = len(found_channel_names) == len(channel_names_to_use)
+            if not found_all_channel_names:
+                missing_channels = set(channel_names_to_use) - set(found_channel_names)
+                raise ValueError(f"Missing channels: {missing_channels}")
+            channel_names_to_use = found_channel_names
         
         # Sort by time
         df_sorted = detail_data.sort_values('t')
         
-        # Create a TextItem for each message
+        # Create a TextItem for each row, displaying all channel values
         for idx, row in df_sorted.iterrows():
             t_value = float(row['t'])
-            message = str(row['message'])
+            
+            # Create vertical line at message time if enabled
+            if self.enable_lines:
+                vline = pg.InfiniteLine(angle=90, movable=False, pos=t_value)
+                vline.setPen(pg.mkPen(color=self.line_color, width=self.line_width))
+                vline.setZValue(-10)  # Render lines behind text labels
+                plot_item.addItem(vline, ignoreBounds=True)
+                graphics_objects.append(vline)
+            
+            # Combine all channel values into a single text string
+            text_parts = []
+            for channel_name in channel_names_to_use:
+                channel_value = str(row[channel_name])
+                if len(channel_names_to_use) > 1:
+                    text_parts.append(f"{channel_name}: {channel_value}")
+                else:
+                    text_parts.append(channel_value)
+            
+            message = " | ".join(text_parts)
             
             # Create text item
             text_item = pg.TextItem(
@@ -102,7 +149,7 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
         
         Args:
             interval: The interval DataFrame (single row) with 't_start' and 't_duration'
-            detail_data: DataFrame with text log data (columns: 't' and 'message')
+            detail_data: DataFrame with text log data (columns: 't' and channel columns)
             
         Returns:
             Tuple of (x_min, x_max, y_min, y_max) where x is time and y is fixed (0.0 to 1.0)
