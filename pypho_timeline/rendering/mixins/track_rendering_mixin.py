@@ -168,6 +168,27 @@ class TrackRenderingMixin(EpochRenderingMixin):
         # Store renderer
         self.track_renderers[name] = track_renderer
         
+        # Connect track renderer to widget if plot_item belongs to a PyqtgraphTimeSynchronizedWidget
+        # This enables the options panel functionality
+        # TODO 2025-01-06 - does this enable a strong reference cycle? _______________________________________________________________________________________________________________________________________________________________________________________________________________________ #
+        try:
+            from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
+            # Try to find the parent widget that contains this plot_item
+            # The plot_item is part of a GraphicsLayoutWidget, which is part of PyqtgraphTimeSynchronizedWidget
+            graphics_layout = plot_item.parentItem()
+            if graphics_layout is not None:
+                # Find the widget by traversing up the parent chain or searching
+                # Actually, we can search for widgets in the timeline that match the track name
+                if hasattr(self, 'ui') and hasattr(self.ui, 'matplotlib_view_widgets'):
+                    widget_name = name
+                    if widget_name in self.ui.matplotlib_view_widgets:
+                        widget = self.ui.matplotlib_view_widgets[widget_name]
+                        if isinstance(widget, PyqtgraphTimeSynchronizedWidget):
+                            widget.set_track_renderer(track_renderer)
+        except (ImportError, AttributeError, KeyError):
+            # If widget connection fails, continue without options panel
+            pass
+        
         # Initial viewport update
         if viewbox is not None:
             x_range, y_range = viewbox.viewRange()

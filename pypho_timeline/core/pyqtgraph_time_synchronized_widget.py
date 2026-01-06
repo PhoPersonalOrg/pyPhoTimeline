@@ -536,6 +536,58 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                 print(f'\tdone.')
         else:
             print(f'\tno change!')
+    
+    @property
+    def optionsPanel(self):
+        """Property to support camelCase naming convention for dock compatibility."""
+        return self.options_panel
+    
+    @optionsPanel.setter
+    def optionsPanel(self, value):
+        """Property setter to support camelCase naming convention for dock compatibility."""
+        self.options_panel = value
+    
+    ## Overrides `TrackOptionsPanelOwningMixin.getOptionalPanel(...)`
+    def getOptionsPanel(self):
+        """Get the options panel for this widget.
+        
+        Returns:
+            QWidget with options panel, or None if not applicable
+        """
+        # Only create options panel if we have a track renderer
+        if self._track_renderer is None:
+            return None
+        
+        # Create options panel if not already created
+        if self.options_panel is None:
+            detail_renderer = self._track_renderer.detail_renderer
+            
+            # Check if detail renderer has channel_names (channel-based renderer)
+            if hasattr(detail_renderer, 'channel_names') and detail_renderer.channel_names is not None:
+                # Create channel visibility panel for tracks with channels
+                from pypho_timeline.widgets.track_options_panels import TrackChannelVisibilityOptionsPanel
+                
+                channel_names = detail_renderer.channel_names
+                initial_visibility = self._track_renderer.channel_visibility.copy()
+                
+                self.options_panel = TrackChannelVisibilityOptionsPanel(
+                    channel_names=channel_names,
+                    initial_visibility=initial_visibility
+                )
+                
+                # Connect panel signals to track renderer
+                self.options_panel.channelVisibilityChanged.connect(
+                    self._track_renderer.update_channel_visibility
+                )
+                
+                # Store reference in track renderer for bidirectional updates
+                self._track_renderer.set_options_panel(self.options_panel)
+            else:
+                # Create basic options panel for tracks without channels
+                from pypho_timeline.widgets.track_options_panels import OptionsPanel
+                self.options_panel = OptionsPanel()
+        
+        return self.options_panel
             
 
 # included_epochs = None

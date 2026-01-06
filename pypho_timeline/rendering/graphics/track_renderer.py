@@ -52,6 +52,16 @@ class TrackRenderer(QtCore.QObject):
         self.detail_graphics: Dict[str, List[pg.GraphicsObject]] = {}  # cache_key -> graphics objects
         self.visible_intervals: Set[str] = set()  # Set of cache keys currently in viewport
         
+        # Channel visibility state (for channel-based renderers)
+        self.channel_visibility: Dict[str, bool] = {}
+        self._options_panel = None  # Reference to options panel if available
+        
+        # Initialize channel visibility from detail renderer if it has channel_names
+        if hasattr(self.detail_renderer, 'channel_names') and self.detail_renderer.channel_names is not None:
+            channel_names = self.detail_renderer.channel_names
+            self.channel_visibility = {channel: True for channel in channel_names}
+            logger.debug(f"TrackRenderer[{self.track_id}] Initialized channel visibility for {len(channel_names)} channels")
+        
         # Log initialization
         datasource_type = type(datasource).__name__
         detail_renderer_type = type(self.detail_renderer).__name__ if self.detail_renderer is not None else "None"
@@ -231,6 +241,10 @@ class TrackRenderer(QtCore.QObject):
             detail_renderer_type = type(self.detail_renderer).__name__ if self.detail_renderer is not None else "None"
             logger.debug(f"TrackRenderer[{self.track_id}] _render_detail() - using detail_renderer type={detail_renderer_type}")
             
+            # Set channel visibility on renderer if it supports it
+            if hasattr(self.detail_renderer, 'channel_visibility'):
+                self.detail_renderer.channel_visibility = self.channel_visibility
+            
             graphics_objects = self.detail_renderer.render_detail(
                 self.plot_item, interval, detail_data
             )
@@ -309,6 +323,52 @@ class TrackRenderer(QtCore.QObject):
         
         rect = self.overview_rects_item.boundingRect()
         return (rect.left(), rect.right(), rect.top(), rect.bottom())
+    
+    def update_channel_visibility(self, channel_name: str, is_visible: bool):
+        """Update visibility state for a channel and re-render visible intervals.
+        
+        Args:
+            channel_name: Name of the channel
+            is_visible: True to show channel, False to hide
+        """
+        if channel_name not in self.channel_visibility:
+            logger.warning(f"TrackRenderer[{self.track_id}] update_channel_visibility() - channel '{channel_name}' not found in channel_visibility")
+            return
+        
+        old_visible = self.channel_visibility[channel_name]
+        if old_visible == is_visible:
+            return  # No change
+        
+        self.channel_visibility[channel_name] = is_visible
+        logger.info(f"TrackRenderer[{self.track_id}] Channel '{channel_name}' visibility changed to {is_visible}")
+        
+        # Update options panel if available
+        if self._options_panel is not None:
+            self._options_panel.set_visibility_state({channel_name: is_visible}, emit_signals=False)
+        
+        # Clear all visible detail graphics
+        visible_cache_keys = list(self.visible_intervals)
+        logger.debug(f"TrackRenderer[{self.track_id}] Clearing {len(visible_cache_keys)} intervals for re-render after visibility change")
+        
+        for cache_key in visible_cache_keys:
+            self._clear_detail(cache_key)
+        
+        # Trigger viewport update to re-render with new visibility
+        # This will re-fetch intervals and render with filtered channels
+        if self.plot_item is not None:
+            viewbox = self.plot_item.getViewBox()
+            if viewbox is not None:
+                x_range, y_range = viewbox.viewRange()
+                if len(x_range) == 2:
+                    self.update_viewport(x_range[0], x_range[1])
+    
+    def set_options_panel(self, options_panel):
+        """Set the options panel reference for bidirectional updates.
+        
+        Args:
+            options_panel: TrackChannelVisibilityOptionsPanel instance
+        """
+        self._options_panel = options_panel
 
 
 __all__ = ['TrackRenderer']

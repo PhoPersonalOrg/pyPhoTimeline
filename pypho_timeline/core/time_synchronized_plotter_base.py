@@ -6,7 +6,7 @@ import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pyphocorehelpers.DataStructure.general_parameter_containers import VisualizationParameters
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
-from pypho_timeline.widgets.track_channel_visibility_options_panel import TrackChannelVisibilityOptionsPanel, TrackOptionsPanelOwningMixin
+from pypho_timeline.widgets.track_options_panels import TrackChannelVisibilityOptionsPanel, TrackOptionsPanelOwningMixin
 
 
 class TimeSynchronizedPlotterBase(TrackOptionsPanelOwningMixin, QtWidgets.QWidget):
