@@ -3,9 +3,10 @@
 This module provides async data fetching using Qt QThreadPool for fetching detailed
 data when intervals scroll into the viewport.
 """
-from typing import Dict, List, Optional, Callable, Any
+from typing import Dict, List, Optional, Callable, Any, Tuple
 from collections import OrderedDict
 from threading import Lock
+from queue import Queue
 import logging
 import pandas as pd
 from qtpy import QtCore, QtWidgets
@@ -20,13 +21,13 @@ class DetailFetchWorker(QtCore.QRunnable):
     """Worker runnable for fetching detailed data in a background thread."""
     
     def __init__(self, track_id: str, interval: pd.Series, datasource: TrackDatasource, 
-                 cache_key: str, callback: Callable):
+                 cache_key: str, fetcher: 'AsyncDetailFetcher'):
         super().__init__()
         self.track_id = track_id
         self.interval = interval
         self.datasource = datasource
         self.cache_key = cache_key
-        self.callback = callback
+        self.fetcher = fetcher  # Reference to AsyncDetailFetcher (QObject on main thread)
         self._cancelled = False
         self._lock = Lock()
         
@@ -77,25 +78,22 @@ class DetailFetchWorker(QtCore.QRunnable):
             if not self.is_cancelled():
                 # Convert Series to DataFrame for DetailRenderer compatibility
                 interval_df = self.interval.to_frame().T
-                logger.debug(f"DetailFetchWorker[{self.track_id}] run() - scheduling callback for cache_key='{self.cache_key}'")
-                # Use QTimer.singleShot to ensure callback runs on main thread
-                QtCore.QTimer.singleShot(0, lambda: self.callback(
-                    self.track_id, self.cache_key, interval_df, detail_data, None
-                ))
-                logger.debug(f"DetailFetchWorker[{self.track_id}] run() - callback scheduled for cache_key='{self.cache_key}'")
+                logger.debug(f"DetailFetchWorker[{self.track_id}] run() - putting result in queue for cache_key='{self.cache_key}'")
+                # Put result in thread-safe queue - will be processed by main thread timer
+                self.fetcher._result_queue.put((self.track_id, self.cache_key, interval_df, detail_data, None))
+                logger.debug(f"DetailFetchWorker[{self.track_id}] run() - result queued for cache_key='{self.cache_key}'")
             else:
-                logger.debug(f"DetailFetchWorker[{self.track_id}] run() - cancelled after fetch, not scheduling callback")
+                logger.debug(f"DetailFetchWorker[{self.track_id}] run() - cancelled after fetch, not queuing result")
         except Exception as e:
             logger.error(f"DetailFetchWorker[{self.track_id}] run() - error fetching data for cache_key='{self.cache_key}': {e}", exc_info=True)
             if not self.is_cancelled():
                 # Convert Series to DataFrame for DetailRenderer compatibility
                 interval_df = self.interval.to_frame().T
-                logger.debug(f"DetailFetchWorker[{self.track_id}] run() - scheduling error callback for cache_key='{self.cache_key}'")
-                QtCore.QTimer.singleShot(0, lambda: self.callback(
-                    self.track_id, self.cache_key, interval_df, None, e
-                ))
+                logger.debug(f"DetailFetchWorker[{self.track_id}] run() - putting error result in queue for cache_key='{self.cache_key}'")
+                # Put error result in thread-safe queue
+                self.fetcher._result_queue.put((self.track_id, self.cache_key, interval_df, None, e))
             else:
-                logger.debug(f"DetailFetchWorker[{self.track_id}] run() - cancelled after error, not scheduling error callback")
+                logger.debug(f"DetailFetchWorker[{self.track_id}] run() - cancelled after error, not queuing result")
 
 
 class AsyncDetailFetcher(QtCore.QObject):
@@ -119,10 +117,19 @@ class AsyncDetailFetcher(QtCore.QObject):
         self.max_cache_size = max_cache_size
         self._cache: OrderedDict[str, Any] = OrderedDict()
         self._pending_workers: Dict[str, Dict[str, DetailFetchWorker]] = {}  # track_id -> {cache_key -> worker}
+        self._pending_callbacks: Dict[str, Optional[Callable]] = {}  # cache_key -> callback or None
         self._lock = Lock()
         self._thread_pool = QtCore.QThreadPool.globalInstance()
         max_threads = max(4, self._thread_pool.maxThreadCount())
         self._thread_pool.setMaxThreadCount(max_threads)
+        
+        # Thread-safe queue for worker results (worker thread -> main thread)
+        self._result_queue: Queue[Tuple[str, str, pd.DataFrame, Any, Optional[Exception]]] = Queue()
+        
+        # Timer to process results from queue on main thread
+        self._process_timer = QtCore.QTimer(self)
+        self._process_timer.timeout.connect(self._process_result_queue)
+        self._process_timer.start(10)  # Check every 10ms
         
         logger.info(f"AsyncDetailFetcher __init__ - initialized with max_cache_size={max_cache_size}, max_threads={max_threads}")
     
@@ -167,19 +174,13 @@ class AsyncDetailFetcher(QtCore.QObject):
         
         logger.debug(f"AsyncDetailFetcher.fetch_detail_async() - cache MISS for cache_key='{cache_key}', creating worker")
         
-        # Create worker
-        # Note: callback will receive DataFrame (converted in worker.run())
-        if callback:
-            worker_callback = callback
-            logger.debug(f"AsyncDetailFetcher.fetch_detail_async() - using provided callback for cache_key='{cache_key}'")
-        else:
-            def signal_emitter(tid, ck, iv, d, e):
-                logger.debug(f"AsyncDetailFetcher - worker callback emitting detail_data_ready signal for track_id={tid}, cache_key='{ck}'")
-                self.detail_data_ready.emit(tid, ck, iv, d, e)
-            worker_callback = signal_emitter
-            logger.debug(f"AsyncDetailFetcher.fetch_detail_async() - using signal emitter for cache_key='{cache_key}'")
+        # Store callback for later use in _on_worker_finished
+        with self._lock:
+            self._pending_callbacks[cache_key] = callback
         
-        worker = DetailFetchWorker(track_id, interval, datasource, cache_key, worker_callback)
+        # Create worker (pass self as fetcher reference for result queue access)
+        worker = DetailFetchWorker(track_id, interval, datasource, cache_key, self)
+        logger.debug(f"AsyncDetailFetcher.fetch_detail_async() - created worker for cache_key='{cache_key}'")
         
         # Track pending worker
         with self._lock:
@@ -192,17 +193,38 @@ class AsyncDetailFetcher(QtCore.QObject):
         logger.debug(f"AsyncDetailFetcher.fetch_detail_async() - starting worker for cache_key='{cache_key}', activeThreads={active_threads}")
         self._thread_pool.start(worker)
     
-    def _on_detail_fetched(self, track_id: str, cache_key: str, interval: pd.DataFrame, 
+    def _process_result_queue(self):
+        """Process results from worker queue (called by QTimer on main thread)."""
+        # Process all available results (non-blocking)
+        processed = 0
+        while not self._result_queue.empty():
+            try:
+                track_id, cache_key, interval_df, detail_data, error = self._result_queue.get_nowait()
+                self._on_worker_finished(track_id, cache_key, interval_df, detail_data, error)
+                processed += 1
+            except:
+                break  # Queue empty or error
+        if processed > 0:
+            logger.debug(f"AsyncDetailFetcher._process_result_queue() - processed {processed} results")
+    
+    def _on_worker_finished(self, track_id: str, cache_key: str, interval: pd.DataFrame, 
                           detail_data: Any, error: Optional[Exception]):
-        """Handle when detail data is fetched (called from worker callback)."""
-        logger.debug(f"AsyncDetailFetcher._on_detail_fetched(track_id={track_id}, cache_key='{cache_key}', error={error is not None})")
+        """Handle when worker finishes fetching data (called from _process_result_queue on main thread).
         
+        This method is called by _process_result_queue which runs on the main thread via QTimer,
+        ensuring it runs on the main thread even though results are queued from worker threads.
+        """
+        logger.debug(f"AsyncDetailFetcher._on_worker_finished(track_id={track_id}, cache_key='{cache_key}', error={error is not None})")
+        
+        # Get callback for this cache_key
+        callback = None
         with self._lock:
-            # Remove from pending
+            callback = self._pending_callbacks.pop(cache_key, None)
+            # Remove from pending workers
             if track_id in self._pending_workers:
                 if cache_key in self._pending_workers[track_id]:
                     del self._pending_workers[track_id][cache_key]
-                    logger.debug(f"AsyncDetailFetcher._on_detail_fetched() - removed from pending workers for cache_key='{cache_key}'")
+                    logger.debug(f"AsyncDetailFetcher._on_worker_finished() - removed from pending workers for cache_key='{cache_key}'")
                     if not self._pending_workers[track_id]:
                         del self._pending_workers[track_id]
             
@@ -210,7 +232,7 @@ class AsyncDetailFetcher(QtCore.QObject):
             if error is None and detail_data is not None:
                 self._cache[cache_key] = detail_data
                 self._cache.move_to_end(cache_key)
-                logger.debug(f"AsyncDetailFetcher._on_detail_fetched() - cached data for cache_key='{cache_key}', cache_size={len(self._cache)}")
+                logger.debug(f"AsyncDetailFetcher._on_worker_finished() - cached data for cache_key='{cache_key}', cache_size={len(self._cache)}")
                 
                 # Evict if cache too large
                 evicted_count = 0
@@ -218,7 +240,18 @@ class AsyncDetailFetcher(QtCore.QObject):
                     self._cache.popitem(last=False)  # Remove oldest
                     evicted_count += 1
                 if evicted_count > 0:
-                    logger.debug(f"AsyncDetailFetcher._on_detail_fetched() - evicted {evicted_count} entries from cache")
+                    logger.debug(f"AsyncDetailFetcher._on_worker_finished() - evicted {evicted_count} entries from cache")
+        
+        # Call callback or emit signal (on main thread now)
+        if callback:
+            logger.debug(f"AsyncDetailFetcher._on_worker_finished() - calling callback for cache_key='{cache_key}'")
+            try:
+                callback(track_id, cache_key, interval, detail_data, error)
+            except Exception as e:
+                logger.error(f"AsyncDetailFetcher._on_worker_finished() - error in callback for cache_key='{cache_key}': {e}", exc_info=True)
+        else:
+            logger.debug(f"AsyncDetailFetcher._on_worker_finished() - emitting detail_data_ready signal for cache_key='{cache_key}'")
+            self.detail_data_ready.emit(track_id, cache_key, interval, detail_data, error)
     
     def cancel_pending_fetches(self, track_id: str, interval_keys: List[str]):
         """Cancel pending fetches for specific intervals.
@@ -240,6 +273,9 @@ class AsyncDetailFetcher(QtCore.QObject):
                     worker = self._pending_workers[track_id][cache_key]
                     worker.cancel()
                     del self._pending_workers[track_id][cache_key]
+                    # Clean up pending callback
+                    if cache_key in self._pending_callbacks:
+                        del self._pending_callbacks[cache_key]
                     cancelled_count += 1
                     logger.debug(f"AsyncDetailFetcher.cancel_pending_fetches() - cancelled worker for cache_key='{cache_key}'")
             
@@ -261,16 +297,24 @@ class AsyncDetailFetcher(QtCore.QObject):
                 # Cancel all
                 total_cancelled = 0
                 for track_workers in self._pending_workers.values():
-                    for worker in track_workers.values():
+                    for cache_key, worker in track_workers.items():
                         worker.cancel()
+                        # Clean up pending callback
+                        if cache_key in self._pending_callbacks:
+                            del self._pending_callbacks[cache_key]
                         total_cancelled += 1
                 self._pending_workers.clear()
+                self._pending_callbacks.clear()
                 logger.debug(f"AsyncDetailFetcher.cancel_all_pending_fetches() - cancelled all {total_cancelled} workers across all tracks")
             else:
                 if track_id in self._pending_workers:
-                    cancelled_count = len(self._pending_workers[track_id])
-                    for worker in self._pending_workers[track_id].values():
+                    cancelled_count = 0
+                    for cache_key, worker in self._pending_workers[track_id].items():
                         worker.cancel()
+                        # Clean up pending callback
+                        if cache_key in self._pending_callbacks:
+                            del self._pending_callbacks[cache_key]
+                        cancelled_count += 1
                     del self._pending_workers[track_id]
                     logger.debug(f"AsyncDetailFetcher.cancel_all_pending_fetches() - cancelled {cancelled_count} workers for track_id={track_id}")
                 else:

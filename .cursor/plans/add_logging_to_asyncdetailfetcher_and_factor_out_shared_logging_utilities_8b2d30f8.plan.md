@@ -147,4 +147,3 @@ After implementation, logs should reveal:
 
 - Whether workers are being created and started
 - Whether `fetch_detailed_data()` is being called
-- Whether data is being returned
