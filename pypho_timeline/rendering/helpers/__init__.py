@@ -7,6 +7,7 @@ from pypho_timeline.rendering.helpers.normalization import (
     ChannelNormalizationMode,
     build_channel_mode_map,
     normalize_channels,
+    ChannelNormalizationModeNormalizingMixin,
 )
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     'ChannelNormalizationMode',
     'build_channel_mode_map',
     'normalize_channels',
+    'ChannelNormalizationModeNormalizingMixin',
 ]
 
 
