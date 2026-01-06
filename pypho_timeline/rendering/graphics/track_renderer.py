@@ -1,5 +1,6 @@
 """TrackRenderer - Manages overview rectangles and detail overlays for timeline tracks."""
 from typing import Dict, List, Optional, Set, Any
+import logging
 import pandas as pd
 from qtpy import QtCore
 import pyphoplacecellanalysis.External.pyqtgraph as pg
@@ -8,6 +9,8 @@ from pypho_timeline.rendering.datasources.track_datasource import TrackDatasourc
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem
 from pypho_timeline.rendering.async_detail_fetcher import AsyncDetailFetcher
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
+
+logger = logging.getLogger(__name__)
 
 
 class TrackRenderer(QtCore.QObject):
@@ -48,38 +51,58 @@ class TrackRenderer(QtCore.QObject):
         self.detail_graphics: Dict[str, List[pg.GraphicsObject]] = {}  # cache_key -> graphics objects
         self.visible_intervals: Set[str] = set()  # Set of cache keys currently in viewport
         
+        # Log initialization
+        datasource_type = type(datasource).__name__
+        detail_renderer_type = type(self.detail_renderer).__name__ if self.detail_renderer is not None else "None"
+        logger.info(f"TrackRenderer[{self.track_id}] Initialized with datasource type={datasource_type}, detail_renderer={detail_renderer_type}")
+        
         # Connect to async fetcher
         self.async_fetcher.detail_data_ready.connect(self._on_detail_data_ready)
+        logger.debug(f"TrackRenderer[{self.track_id}] Connected to async_fetcher.detail_data_ready signal")
         
         # Initialize overview rendering
         self._update_overview()
     
+
     def _update_overview(self):
         """Update the overview interval rectangles."""
-        # Get overview intervals
-        overview_df = self.datasource.get_overview_intervals()
-        
-        # Build IntervalRectsItem from overview data
-        # The datasource should provide visualization columns, but if not, we need to add them
-        if 'series_vertical_offset' not in overview_df.columns:
-            # Default vertical positioning
-            overview_df = overview_df.copy()
-            overview_df['series_vertical_offset'] = 0.0
-            overview_df['series_height'] = 1.0
-        
-        # Build the interval rects item
-        self.overview_rects_item = Render2DEventRectanglesHelper.build_IntervalRectsItem_from_interval_datasource(
-            self.datasource
-        )
-        
-        # Remove old overview if exists
-        if self.overview_rects_item is not None and self.overview_rects_item in self.plot_item.listDataItems():
-            self.plot_item.removeItem(self.overview_rects_item)
-        
-        # Add new overview
-        if self.overview_rects_item is not None:
-            self.plot_item.addItem(self.overview_rects_item)
+        logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - starting")
+        try:
+            # Get overview intervals
+            overview_df = self.datasource.get_overview_intervals()
+            num_intervals = len(overview_df)
+            logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - found {num_intervals} intervals in overview")
+            
+            # Build IntervalRectsItem from overview data
+            # The datasource should provide visualization columns, but if not, we need to add them
+            if 'series_vertical_offset' not in overview_df.columns:
+                # Default vertical positioning
+                overview_df = overview_df.copy()
+                overview_df['series_vertical_offset'] = 0.0
+                overview_df['series_height'] = 1.0
+                logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - added default visualization columns")
+            
+            # Build the interval rects item
+            self.overview_rects_item = Render2DEventRectanglesHelper.build_IntervalRectsItem_from_interval_datasource(
+                self.datasource
+            )
+            
+            # Remove old overview if exists
+            if self.overview_rects_item is not None and self.overview_rects_item in self.plot_item.listDataItems():
+                self.plot_item.removeItem(self.overview_rects_item)
+                logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - removed old overview item")
+            
+            # Add new overview
+            if self.overview_rects_item is not None:
+                self.plot_item.addItem(self.overview_rects_item)
+                logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - added new overview item")
+            else:
+                logger.warning(f"TrackRenderer[{self.track_id}] _update_overview() - overview_rects_item is None after build")
+        except Exception as e:
+            logger.error(f"TrackRenderer[{self.track_id}] _update_overview() - error: {e}", exc_info=True)
+            raise
     
+
     def update_viewport(self, viewport_start: float, viewport_end: float):
         """Update viewport and trigger detail fetches for visible intervals.
         
@@ -87,11 +110,19 @@ class TrackRenderer(QtCore.QObject):
             viewport_start: Start time of viewport
             viewport_end: End time of viewport
         """
+        logger.debug(f"TrackRenderer[{self.track_id}] update_viewport(start={viewport_start:.3f}, end={viewport_end:.3f})")
+        
         # Get intervals in viewport
         intervals_df = self.datasource.get_updated_data_window(viewport_start, viewport_end)
+        num_intervals = len(intervals_df)
+        logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - found {num_intervals} intervals in viewport")
         
         # Determine which intervals are now visible
         new_visible_keys = set()
+        cache_hits = 0
+        cache_misses = 0
+        already_visible = 0
+        
         for idx, interval_series in intervals_df.iterrows():
             # Convert Series to single-row DataFrame for DetailRenderer methods
             interval_df = intervals_df.iloc[[idx]]
@@ -104,17 +135,34 @@ class TrackRenderer(QtCore.QObject):
                 cached_data = self.async_fetcher.get_cached_data(cache_key)
                 if cached_data is not None:
                     # Use cached data immediately
+                    cache_hits += 1
+                    t_start = interval_series.get('t_start', None)
+                    t_duration = interval_series.get('t_duration', None)
+                    t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
+                    t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
+                    logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' (t_start={t_start_str}, t_duration={t_duration_str}) - cache HIT, rendering immediately")
                     self._render_detail(interval_df, cache_key, cached_data)
                 else:
                     # Fetch asynchronously (still pass Series for datasource compatibility)
+                    cache_misses += 1
+                    t_start = interval_series.get('t_start', None)
+                    t_duration = interval_series.get('t_duration', None)
+                    t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
+                    t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
+                    logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' (t_start={t_start_str}, t_duration={t_duration_str}) - cache MISS, requesting async fetch")
                     self.async_fetcher.fetch_detail_async(
                         self.track_id, interval_series, self.datasource
                     )
+            else:
+                already_visible += 1
+        
+        logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - intervals: {already_visible} already visible, {cache_hits} cache hits, {cache_misses} cache misses")
         
         # Cancel fetches for intervals that left viewport
         intervals_that_left = self.visible_intervals - new_visible_keys
         if intervals_that_left:
             interval_keys_list = list(intervals_that_left)
+            logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - {len(intervals_that_left)} intervals leaving viewport: {interval_keys_list}")
             self.async_fetcher.cancel_pending_fetches(self.track_id, interval_keys_list)
             
             # Clear detail graphics for intervals that left
@@ -123,7 +171,9 @@ class TrackRenderer(QtCore.QObject):
         
         # Update visible intervals set
         self.visible_intervals = new_visible_keys
+        logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - visible_intervals count: {len(self.visible_intervals)}")
     
+
     def _on_detail_data_ready(self, track_id: str, cache_key: str, interval: pd.DataFrame, 
                              detail_data: Any, error: Optional[Exception]):
         """Handle when detail data is ready (called from async fetcher signal).
@@ -135,18 +185,25 @@ class TrackRenderer(QtCore.QObject):
             detail_data: The fetched detail data
             error: Error if fetch failed, None otherwise
         """
+        logger.debug(f"TrackRenderer[{self.track_id}] _on_detail_data_ready(track_id={track_id}, cache_key='{cache_key}')")
+        
         if track_id != self.track_id:
+            logger.debug(f"TrackRenderer[{self.track_id}] _on_detail_data_ready() - data for wrong track (expected {self.track_id}, got {track_id}), ignoring")
             return  # Not for this track
         
         if error is not None:
-            print(f"Error fetching detail data for interval {cache_key}: {error}")
+            logger.error(f"TrackRenderer[{self.track_id}] Error fetching detail data for interval cache_key='{cache_key}': {error}", exc_info=error)
             return
         
         # Only render if still in viewport
         if cache_key in self.visible_intervals:
+            logger.debug(f"TrackRenderer[{self.track_id}] Detail data ready for cache_key='{cache_key}' - interval still visible, rendering")
             self._render_detail(interval, cache_key, detail_data)
             self.detail_loaded.emit(self.track_id, interval, detail_data)
+        else:
+            logger.warning(f"TrackRenderer[{self.track_id}] Detail data arrived for cache_key='{cache_key}' but interval no longer visible (not in visible_intervals), skipping render")
     
+
     def _render_detail(self, interval: pd.DataFrame, cache_key: str, detail_data: Any):
         """Render detailed view for an interval.
         
@@ -155,50 +212,92 @@ class TrackRenderer(QtCore.QObject):
             cache_key: Cache key for this interval
             detail_data: The detail data to render
         """
+        if len(interval) > 0:
+            t_start = interval.iloc[0].get('t_start', None)
+            t_duration = interval.iloc[0].get('t_duration', None)
+            t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
+            t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
+        else:
+            t_start_str = "?"
+            t_duration_str = "?"
+        logger.debug(f"TrackRenderer[{self.track_id}] _render_detail(cache_key='{cache_key}', t_start={t_start_str}, t_duration={t_duration_str}) - starting")
+        
         # Clear any existing detail for this interval
         if cache_key in self.detail_graphics:
+            logger.debug(f"TrackRenderer[{self.track_id}] _render_detail() - clearing existing detail for cache_key='{cache_key}'")
             self._clear_detail(cache_key)
         
-        # Render using detail renderer
-        graphics_objects = self.detail_renderer.render_detail(
-            self.plot_item, interval, detail_data
-        )
-        
-        # Store graphics objects for cleanup
-        self.detail_graphics[cache_key] = graphics_objects
+        try:
+            # Render using detail renderer
+            detail_renderer_type = type(self.detail_renderer).__name__ if self.detail_renderer is not None else "None"
+            logger.debug(f"TrackRenderer[{self.track_id}] _render_detail() - using detail_renderer type={detail_renderer_type}")
+            
+            graphics_objects = self.detail_renderer.render_detail(
+                self.plot_item, interval, detail_data
+            )
+            
+            num_graphics = len(graphics_objects) if graphics_objects is not None else 0
+            logger.debug(f"TrackRenderer[{self.track_id}] Rendered detail for cache_key='{cache_key}' - created {num_graphics} graphics objects")
+            
+            # Store graphics objects for cleanup
+            self.detail_graphics[cache_key] = graphics_objects
+        except Exception as e:
+            logger.error(f"TrackRenderer[{self.track_id}] _render_detail() - error rendering detail for cache_key='{cache_key}': {e}", exc_info=True)
+            raise
     
+
     def _clear_detail(self, cache_key: str):
         """Clear detailed view for an interval.
         
         Args:
             cache_key: Cache key for the interval to clear
         """
+        logger.debug(f"TrackRenderer[{self.track_id}] _clear_detail(cache_key='{cache_key}') - starting")
+        
         if cache_key in self.detail_graphics:
             graphics_objects = self.detail_graphics[cache_key]
+            num_graphics = len(graphics_objects) if graphics_objects is not None else 0
+            logger.debug(f"TrackRenderer[{self.track_id}] _clear_detail() - clearing {num_graphics} graphics objects for cache_key='{cache_key}'")
             self.detail_renderer.clear_detail(self.plot_item, graphics_objects)
             del self.detail_graphics[cache_key]
+        else:
+            logger.debug(f"TrackRenderer[{self.track_id}] _clear_detail() - cache_key='{cache_key}' not found in detail_graphics, nothing to clear")
     
+
     def clear_all_details(self):
         """Clear all detail graphics."""
+        num_intervals = len(self.detail_graphics)
+        logger.info(f"TrackRenderer[{self.track_id}] clear_all_details() - clearing {num_intervals} intervals")
+        
         for cache_key in list(self.detail_graphics.keys()):
             self._clear_detail(cache_key)
+        
         self.visible_intervals.clear()
+        logger.debug(f"TrackRenderer[{self.track_id}] clear_all_details() - cleared visible_intervals set")
     
+
     def remove(self):
         """Remove this track renderer and clean up all graphics."""
+        logger.info(f"TrackRenderer[{self.track_id}] remove() - starting track removal")
+        
         # Clear all details
         self.clear_all_details()
         
         # Remove overview
         if self.overview_rects_item is not None:
+            logger.debug(f"TrackRenderer[{self.track_id}] remove() - removing overview item")
             self.plot_item.removeItem(self.overview_rects_item)
             self.overview_rects_item = None
         
         # Disconnect from async fetcher
         try:
             self.async_fetcher.detail_data_ready.disconnect(self._on_detail_data_ready)
-        except (TypeError, RuntimeError):
-            pass  # Already disconnected
+            logger.debug(f"TrackRenderer[{self.track_id}] remove() - disconnected from async_fetcher signal")
+        except (TypeError, RuntimeError) as e:
+            logger.debug(f"TrackRenderer[{self.track_id}] remove() - signal already disconnected: {e}")
+        
+        logger.info(f"TrackRenderer[{self.track_id}] remove() - track removal complete")
+    
     
     def get_overview_bounds(self) -> Optional[tuple]:
         """Get the bounds of the overview rectangles.

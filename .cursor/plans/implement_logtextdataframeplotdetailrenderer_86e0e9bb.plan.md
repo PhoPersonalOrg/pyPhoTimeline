@@ -1,9 +1,3 @@
----
-name: Implement LogTextDataFramePlotDetailRenderer
-overview: Create a new `LogTextDataFramePlotDetailRenderer` class that inherits from `DataframePlotDetailRenderer` to render text log events as vertical text labels positioned at their time coordinates in the timeline plot.
-todos: []
----
-
 # Implement LogTextDataFramePlotDetailRenderer
 
 ## Overview
@@ -85,7 +79,7 @@ The `LogTextDataFramePlotDetailRenderer` class will:
 
 ### Code Structure
 
-```python
+````python
 class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
     """Detail renderer for text log events that displays messages as text labels.
     
@@ -129,4 +123,5 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
 1. [`pypho_timeline/rendering/detail_renderers/generic_plot_renderer.py`](pypho_timeline/rendering/detail_renderers/generic_plot_renderer.py)
 
 - Add `LogTextDataFramePlotDetailRenderer` class
-- Update `__all__` export list
+
+````

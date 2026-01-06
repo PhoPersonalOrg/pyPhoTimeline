@@ -5,6 +5,7 @@ import pandas as pd
 from qtpy import QtCore
 
 from pyphoplacecellanalysis.External.pyqtgraph.dockarea.Dock import Dock
+import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pyphocorehelpers.function_helpers import function_attributes
 
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
@@ -121,6 +122,39 @@ class SpecificDockWidgetManipulatingMixin:
         if sync_mode is not None:
             ## sync up the widgets
             self.sync_matplotlib_render_plot_widget(identifier=name, sync_mode=sync_mode)
+            
+            # Link X-axes for synchronized zooming across tracks in TO_GLOBAL_DATA mode
+            if sync_mode == SynchronizedPlotMode.TO_GLOBAL_DATA:
+                # Find the first TO_GLOBAL_DATA track to use as the master for X-axis linking
+                # All TO_GLOBAL_DATA tracks will be linked together for synchronized zooming
+                master_plot_item = None
+                for other_name, other_widget in self.ui.matplotlib_view_widgets.items():
+                    if other_name != name:  # Don't link to itself
+                        other_plot_item = other_widget.getRootPlotItem()
+                        if other_plot_item is not None:
+                            # Check if this track is already linked to a master
+                            # linkedView is on the ViewBox, not the PlotItem
+                            other_viewbox = other_plot_item.getViewBox()
+                            if other_viewbox is not None:
+                                linked_viewbox = other_viewbox.linkedView(pg.ViewBox.XAxis)
+                                if linked_viewbox is not None:
+                                    # This track is already linked, find the master PlotItem
+                                    # Search for the PlotItem that contains this ViewBox
+                                    for search_name, search_widget in self.ui.matplotlib_view_widgets.items():
+                                        search_plot = search_widget.getRootPlotItem()
+                                        if search_plot is not None and search_plot.getViewBox() == linked_viewbox:
+                                            master_plot_item = search_plot
+                                            break
+                                    if master_plot_item is not None:
+                                        break
+                            # Use this track as potential master (first TO_GLOBAL_DATA track found)
+                            if master_plot_item is None:
+                                master_plot_item = other_plot_item
+                
+                # Link this track's X-axis to the master (or it becomes the master if first)
+                if master_plot_item is not None:
+                    plot_item.setXLink(master_plot_item)
+                # If no master found, this track becomes the master (no linking needed)
             
         return self.ui.matplotlib_view_widgets[name], root_graphics_layout_widget, plot_item, dDisplayItem
     

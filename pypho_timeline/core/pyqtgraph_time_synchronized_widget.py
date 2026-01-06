@@ -203,7 +203,7 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         # self.ui.root_plot.setLimits(xMin=self.params.x_range[0], xMax=self.params.x_range[-1], yMin=self.params.y_range[0], yMax=self.params.y_range[-1],
         #                             minXRange=_width, maxXRange=_width, minYRange=_height, maxYRange=_height)
         
-        self.ui.root_plot.setMouseEnabled(x=False, y=False)
+        self.ui.root_plot.setMouseEnabled(x=True, y=False)
         self.ui.root_plot.setMenuEnabled(enableMenu=False)
         
         # ## Optional Interactive Color Bar:

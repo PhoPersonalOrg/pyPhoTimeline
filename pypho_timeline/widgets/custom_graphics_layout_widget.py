@@ -261,4 +261,16 @@ class CustomViewBox(ReprPrintableItemMixin, pg.ViewBox):
             ev.accept()
             # super().mouseDragEvent(ev, axis=axis)  # only if you want default drag/pan
         
+    def wheelEvent(self, ev, axis=None):
+        """Handle mouse wheel events for zooming.
+        
+        Uses pyqtgraph's default wheel zoom behavior which zooms centered on mouse position.
+        """
+        if self._debug_print:
+            print(f'CustomViewBox.wheelEvent(ev: {ev}, axis={axis})')
+        
+        # Use default pyqtgraph wheel zoom behavior
+        # This will zoom centered on the mouse position
+        super().wheelEvent(ev, axis=axis)
+        ev.accept()
 
