@@ -185,3 +185,4 @@ def downsample_dataframe(df: pd.DataFrame, max_points: int, time_col: str = 't')
 __all__ = ['lttb_downsample', 'downsample_dataframe']
 
 
+
