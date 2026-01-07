@@ -643,26 +643,9 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                 self.options_panel.onOptionsRejected.connect(self.TrackOptionsPanelOwningMixin_onOptionsRejected)
                 
                 # Build desired connections only if track_renderer exists and has the methods
-                # Connect through widget's signals (which are forwarded from panel) to track_renderer
+                # Connect mixin signals (which are forwarded from panel) to track_renderer
                 desired_connections = {}
                 if track_renderer is not None:
-
-                    if hasattr(track_renderer, 'on_options_changed'):
-                        desired_connections['on_options_changed'] = (self.TrackOptionsPanelOwningMixin_optionsChanged, track_renderer.on_options_changed)
-                    if hasattr(track_renderer, 'on_options_accepted'):
-                        desired_connections['on_options_accepted'] = (self.TrackOptionsPanelOwningMixin_onOptionsAccepted, track_renderer.on_options_accepted)
-                    if hasattr(track_renderer, 'on_options_rejected'):
-                        desired_connections['on_options_rejected'] = (self.TrackOptionsPanelOwningMixin_onOptionsRejected, track_renderer.on_options_rejected)
-
-
-                    # if hasattr(track_renderer, 'on_options_changed'):
-                    #     desired_connections['on_options_changed'] = (self.options_panel.optionsChanged, track_renderer.on_options_changed)
-                    # if hasattr(track_renderer, 'on_options_accepted'):
-                    #     desired_connections['on_options_accepted'] = (self.options_panel.onOptionsAccepted, track_renderer.on_options_accepted)
-                    # if hasattr(track_renderer, 'on_options_rejected'):
-                    #     desired_connections['on_options_rejected'] = (self.options_panel.onOptionsRejected, track_renderer.on_options_rejected)
-
-
                     if hasattr(track_renderer, 'on_options_changed'):
                         desired_connections['on_options_changed'] = (self.optionsChanged, track_renderer.on_options_changed)
                     if hasattr(track_renderer, 'on_options_accepted'):
@@ -672,7 +655,8 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
 
                 # Connect panel signals to track renderer if available
                 if track_renderer is not None and hasattr(track_renderer, 'update_channel_visibility'):
-                    desired_connections['update_channel_visibility'] = (self.options_panel.channelVisibilityChanged, track_renderer.update_channel_visibility)
+                    # desired_connections['update_channel_visibility'] = (self.options_panel.channelVisibilityChanged, track_renderer.update_channel_visibility)
+                    self.ui.connections['update_channel_visibility'] = self.options_panel.channelVisibilityChanged.connect(track_renderer.update_channel_visibility)
                     # Store reference in track renderer for bidirectional updates
                     if hasattr(track_renderer, 'set_options_panel'):
                         track_renderer.set_options_panel(self.options_panel)
@@ -688,26 +672,9 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                 self.options_panel.onOptionsRejected.connect(self.TrackOptionsPanelOwningMixin_onOptionsRejected)
 
                 # Build desired connections only if track_renderer exists and has the methods
-                # Connect through widget's signals (which are forwarded from panel) to track_renderer
+                # Connect mixin signals (which are forwarded from panel) to track_renderer
                 desired_connections = {}
                 if track_renderer is not None:
-
-                    if hasattr(track_renderer, 'on_options_changed'):
-                        desired_connections['on_options_changed'] = (self.TrackOptionsPanelOwningMixin_optionsChanged, track_renderer.on_options_changed)
-                    if hasattr(track_renderer, 'on_options_accepted'):
-                        desired_connections['on_options_accepted'] = (self.TrackOptionsPanelOwningMixin_onOptionsAccepted, track_renderer.on_options_accepted)
-                    if hasattr(track_renderer, 'on_options_rejected'):
-                        desired_connections['on_options_rejected'] = (self.TrackOptionsPanelOwningMixin_onOptionsRejected, track_renderer.on_options_rejected)
-
-                    
-                    # if hasattr(track_renderer, 'on_options_changed'):
-                    #     desired_connections['on_options_changed'] = (self.options_panel.optionsChanged, track_renderer.on_options_changed)
-                    # if hasattr(track_renderer, 'on_options_accepted'):
-                    #     desired_connections['on_options_accepted'] = (self.options_panel.onOptionsAccepted, track_renderer.on_options_accepted)
-                    # if hasattr(track_renderer, 'on_options_rejected'):
-                    #     desired_connections['on_options_rejected'] = (self.options_panel.onOptionsRejected, track_renderer.on_options_rejected)
-
-
                     if hasattr(track_renderer, 'on_options_changed'):
                         desired_connections['on_options_changed'] = (self.optionsChanged, track_renderer.on_options_changed)
                     if hasattr(track_renderer, 'on_options_accepted'):
