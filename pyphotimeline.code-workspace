@@ -3,15 +3,6 @@
 		{
 			"path": "."
 		},
-		// {
-		// 	"path": "H:/TEMP/Spike3DEnv_ExploreUpgrade/Spike3DWorkEnv/pyPhoTimeline"
-		// },
-		// {
-		// 	"path": "C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/vispy_timeline"
-		// },
-		// {
-		// 	"path": "C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/stream_viewer"
-		// },
 		{
 			"path": "C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/PhoPyMNEHelper"
 		}

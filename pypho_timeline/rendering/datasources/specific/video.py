@@ -1,16 +1,64 @@
 import numpy as np
 import pandas as pd
-# from qtpy import QtWidgets, QtCore
+from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 import pyphoplacecellanalysis.External.pyqtgraph as pg
-# from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
-# from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
-# from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
-# from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, NamedColorScheme
-# from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
-# from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
+
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+
+from pypho_timeline.rendering.datasources.specific.video_metadata import VideoMetadataParser
+
+
+# ==================================================================================================================================================================================================================================================================================== #
+# Helper function to convert VideoMetadataParser output to intervals_df format                                                                                                                                                                                                       #
+# ==================================================================================================================================================================================================================================================================================== #
+
+def video_metadata_to_intervals_df(video_df: pd.DataFrame, reference_timestamp: Optional[float] = None) -> pd.DataFrame:
+    """Convert VideoMetadataParser output to intervals_df format.
+    
+    Args:
+        video_df: DataFrame from VideoMetadataParser.parse_video_folder()
+        reference_timestamp: Optional reference timestamp (Unix epoch seconds). 
+                           If None, uses first video's start time as t=0.
+    
+    Returns:
+        DataFrame with columns ['t_start', 't_duration', 'video_file_path', ...]
+    """
+    if video_df.empty:
+        return pd.DataFrame()
+    
+    # Convert datetime to Unix timestamp (float seconds)
+    if 'video_start_datetime' not in video_df.columns:
+        return pd.DataFrame()
+    
+    # Convert datetime to timestamp
+    timestamps = video_df['video_start_datetime'].values.astype('datetime64[ns]').astype(np.float64) / 1e9
+    
+    # Calculate t_start relative to reference or first video
+    if reference_timestamp is None:
+        reference_timestamp = float(timestamps[0])
+    
+    t_start_values = timestamps - reference_timestamp
+    
+    # Create intervals_df
+    intervals_df = pd.DataFrame({
+        't_start': t_start_values,
+        't_duration': video_df['video_duration'].values if 'video_duration' in video_df.columns else 0.0,
+        'video_file_path': video_df['video_file_path'].values if 'video_file_path' in video_df.columns else '',
+    })
+    
+    # Preserve all other metadata columns
+    metadata_cols = [col for col in video_df.columns if col not in ['video_start_datetime', 'video_end_datetime', 'video_duration', 'video_file_path']]
+    for col in metadata_cols:
+        intervals_df[col] = video_df[col].values
+    
+    return intervals_df
 
 
 # ==================================================================================================================================================================================================================================================================================== #
@@ -28,15 +76,17 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
     - A dictionary with 'frames' key containing frame data and optional 'timestamps' key
     """
     
-    def __init__(self, thumbnail_height: float = 50.0, spacing: float = 0.1):
+    def __init__(self, thumbnail_height: float = 50.0, spacing: float = 0.1, thumbnail_size: Optional[Tuple[int, int]] = None):
         """Initialize the video thumbnail renderer.
         
         Args:
             thumbnail_height: Height of each thumbnail in plot coordinates (default: 50.0)
             spacing: Spacing between thumbnails as fraction of interval duration (default: 0.1)
+            thumbnail_size: Optional (width, height) tuple for resizing frames. If None, uses original size.
         """
         self.thumbnail_height = thumbnail_height
         self.spacing = spacing
+        self.thumbnail_size = thumbnail_size
     
     def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render video frames as thumbnails.
@@ -125,10 +175,10 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         """Prepare a frame for display as an image.
         
         Args:
-            frame: Frame data as numpy array
+            frame: Frame data as numpy array (BGR from cv2 or RGB)
             
         Returns:
-            Image array ready for ImageItem, or None if invalid
+            Image array ready for ImageItem (RGB format), or None if invalid
         """
         if not isinstance(frame, np.ndarray):
             return None
@@ -142,15 +192,30 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
                 # Grayscale with channel dimension
                 img = frame
             elif frame.shape[2] == 3:
-                # RGB
-                img = frame
+                # Assume BGR from cv2, convert to RGB
+                if CV2_AVAILABLE:
+                    img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                else:
+                    img = frame
             elif frame.shape[2] == 4:
-                # RGBA
-                img = frame
+                # RGBA - assume BGRA from cv2, convert to RGBA
+                if CV2_AVAILABLE:
+                    img = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA)
+                else:
+                    img = frame
             else:
                 return None
         else:
             return None
+        
+        # Resize if thumbnail_size is specified
+        if self.thumbnail_size is not None and CV2_AVAILABLE:
+            width, height = self.thumbnail_size
+            if img.ndim == 3:
+                img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+            elif img.ndim == 2:
+                img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+                img = img[:, :, np.newaxis]
         
         # Normalize to 0-255 if needed
         if img.dtype != np.uint8:
@@ -201,7 +266,7 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
 # ==================================================================================================================================================================================================================================================================================== #
 
 class VideoTrackDatasource(IntervalProvidingTrackDatasource):
-    """Example TrackDatasource for video data.
+    """TrackDatasource for video data.
     
     Inherits from IntervalProvidingTrackDatasource and implements video-specific
     detail rendering for displaying video intervals with async detail loading.
@@ -209,49 +274,163 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
     Usage:
 
         from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
+        from pathlib import Path
+        
+        # Option 1: Parse from folder
+        video_ds = VideoTrackDatasource(video_folder_path=Path("path/to/videos"))
+        
+        # Option 2: Use pre-parsed DataFrame
+        video_df = VideoMetadataParser.parse_video_folder(Path("path/to/videos"))
+        video_ds = VideoTrackDatasource(video_df=video_df)
+        
+        # Option 3: Use intervals DataFrame directly
+        video_ds = VideoTrackDatasource(video_intervals_df=intervals_df)
     """
     
-    def __init__(self, video_intervals_df: pd.DataFrame, custom_datasource_name: Optional[str]=None):
+    def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128)):
         """Initialize with video intervals.
         
         Args:
-            video_intervals_df: DataFrame with columns ['t_start', 't_duration', 'video_path']
+            video_intervals_df: DataFrame with columns ['t_start', 't_duration', 'video_file_path'] (optional, if provided, other args ignored)
+            video_folder_path: Path to folder containing videos (will be parsed using VideoMetadataParser)
+            video_df: Pre-parsed DataFrame from VideoMetadataParser.parse_video_folder() (optional)
+            custom_datasource_name: Custom name for this datasource (optional)
+            reference_timestamp: Optional reference timestamp for time conversion (default: first video start time)
+            frames_per_second: Target frame rate for thumbnail extraction (default: 10.0)
+            thumbnail_size: Optional (width, height) tuple for resizing frames (default: (128, 128))
         """
+        # Determine which input method to use
+        if video_intervals_df is not None:
+            # Direct intervals DataFrame provided
+            intervals_df = video_intervals_df.copy()
+        elif video_folder_path is not None:
+            # Parse from folder
+            if not CV2_AVAILABLE:
+                raise ImportError("opencv-python is required for video parsing. Install with: pip install opencv-python")
+            video_df_parsed = VideoMetadataParser.parse_video_folder(video_folder_path)
+            if video_df_parsed.empty:
+                intervals_df = pd.DataFrame()
+            else:
+                intervals_df = video_metadata_to_intervals_df(video_df_parsed, reference_timestamp=reference_timestamp)
+        elif video_df is not None:
+            # Use pre-parsed DataFrame
+            intervals_df = video_metadata_to_intervals_df(video_df, reference_timestamp=reference_timestamp)
+        else:
+            raise ValueError("Must provide one of: video_intervals_df, video_folder_path, or video_df")
+        
         if custom_datasource_name is None:
             custom_datasource_name = "VideoTrack"
-        super().__init__(video_intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name)
+        super().__init__(intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name)
 
-        # Override visualization properties (parent sets blue, we want green; parent sets height=1.0, we want 50.0)
+        # Override visualization properties (parent sets blue, we want blue; parent sets height=1.0, we want 50.0)
         self.intervals_df['series_height'] = 50.0
         
-        # Create pens and brushes with green color
-        color = pg.mkColor('green')
-        color.setAlphaF(0.3)
+        # Create pens and brushes with blue color (matching PhoOfflineEEGAnalysis)
+        color = pg.mkColor(100, 150, 200, 255)
+        color.setAlphaF(0.588)  # 150/255 ≈ 0.588
         pen = pg.mkPen(color, width=1)
         brush = pg.mkBrush(color)
         self.intervals_df['pen'] = [pen] * len(self.intervals_df)
         self.intervals_df['brush'] = [brush] * len(self.intervals_df)
+        
+        # Store configuration for frame loading
+        self.frames_per_second = frames_per_second
+        self.thumbnail_size = thumbnail_size
     
     def fetch_detailed_data(self, interval: pd.Series) -> dict:
-        """Fetch video frames for an interval (simulated with random images)."""
-        # In a real implementation, this would load video frames
-        # For demo, generate synthetic frame data
-        n_frames = max(1, int(interval['t_duration'] * 10))  # 10 fps
-        frames = []
-        for i in range(n_frames):
-            # Generate a simple colored frame
-            frame = np.random.randint(0, 255, (64, 64, 3), dtype=np.uint8)
-            frames.append(frame)
-        return {'frames': frames, 'timestamps': np.linspace(interval['t_start'], interval['t_start'] + interval['t_duration'], n_frames)}
+        """Fetch video frames for an interval using cv2.VideoCapture.
+        
+        Args:
+            interval: Series with at least 't_start', 't_duration', and 'video_file_path'
+            
+        Returns:
+            Dictionary with 'frames' (list of numpy arrays) and 'timestamps' (array)
+        """
+        if not CV2_AVAILABLE:
+            # Fallback to synthetic frames if cv2 not available
+            n_frames = max(1, int(interval['t_duration'] * self.frames_per_second))
+            frames = []
+            for i in range(n_frames):
+                frame = np.random.randint(0, 255, (64, 64, 3), dtype=np.uint8)
+                frames.append(frame)
+            return {'frames': frames, 'timestamps': np.linspace(interval['t_start'], interval['t_start'] + interval['t_duration'], n_frames)}
+        
+        # Get video file path
+        video_file_path = interval.get('video_file_path', '')
+        if not video_file_path:
+            return {'frames': [], 'timestamps': np.array([])}
+        
+        video_path = Path(video_file_path)
+        if not video_path.exists():
+            return {'frames': [], 'timestamps': np.array([])}
+        
+        try:
+            # Open video
+            cap = cv2.VideoCapture(str(video_path))
+            if not cap.isOpened():
+                return {'frames': [], 'timestamps': np.array([])}
+            
+            # Get video properties
+            video_fps = cap.get(cv2.CAP_PROP_FPS)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            
+            if video_fps <= 0 or total_frames == 0:
+                cap.release()
+                return {'frames': [], 'timestamps': np.array([])}
+            
+            # Calculate frame extraction parameters
+            interval_start = interval['t_start']
+            interval_duration = interval['t_duration']
+            target_n_frames = max(1, int(interval_duration * self.frames_per_second))
+            
+            # Calculate frame indices to extract
+            frame_indices = np.linspace(0, total_frames - 1, target_n_frames, dtype=int)
+            
+            # Extract frames
+            frames = []
+            timestamps = []
+            
+            for frame_idx in frame_indices:
+                # Seek to frame
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                
+                if ret and frame is not None:
+                    # Resize if thumbnail_size is specified
+                    if self.thumbnail_size is not None:
+                        width, height = self.thumbnail_size
+                        frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
+                    
+                    frames.append(frame)
+                    # Calculate timestamp relative to interval start
+                    frame_time_in_video = frame_idx / video_fps
+                    timestamps.append(interval_start + frame_time_in_video)
+            
+            cap.release()
+            
+            return {'frames': frames, 'timestamps': np.array(timestamps)}
+            
+        except Exception as e:
+            # Return empty frames on error
+            return {'frames': [], 'timestamps': np.array([])}
     
     def get_detail_renderer(self):
         """Get detail renderer for video."""
-        return VideoThumbnailDetailRenderer(thumbnail_height=50.0, spacing=0.1)
+        return VideoThumbnailDetailRenderer(thumbnail_height=50.0, spacing=0.1, thumbnail_size=self.thumbnail_size)
     
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
+        video_path = interval.get('video_file_path', '')
+        if video_path:
+            # Include file path and modification time in cache key for better cache invalidation
+            try:
+                path_obj = Path(video_path)
+                if path_obj.exists():
+                    mtime = path_obj.stat().st_mtime
+                    return f"video_{video_path}_{mtime:.3f}_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+            except Exception:
+                pass
         return f"video_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
 
 
-__all__ = ['VideoThumbnailDetailRenderer', 'VideoTrackDatasource']
-
+__all__ = ['VideoThumbnailDetailRenderer', 'VideoTrackDatasource', 'video_metadata_to_intervals_df']

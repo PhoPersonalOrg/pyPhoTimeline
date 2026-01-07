@@ -19,6 +19,7 @@ dependencies = [
     "awkward>=2.8.11",
     "pyxdf>=1.16.8",
     "scipy>=1.13.1",
+    "opencv-python>=4.5.0",
 ]
 
 [tool.uv.sources]
