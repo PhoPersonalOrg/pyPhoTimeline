@@ -2,7 +2,9 @@
 from typing import Any, List, Dict, Optional
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 from qtpy import QtCore, QtWidgets
+from pypho_timeline.utils.logging_util import get_rendering_logger
 
+logger = get_rendering_logger(__name__)
 
 # Base Options Panel _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
 class OptionsPanel(QtWidgets.QWidget):
@@ -303,21 +305,28 @@ class TrackOptionsPanelOwningMixin:
     @pyqtExceptionPrintingSlot()
     def TrackOptionsPanelOwningMixin_optionsChanged(self):
         """Emit optionsChanged signal when options change."""
-        self.optionsChanged.emit()
+        logger.info(f"TrackOptionsPanelOwningMixin[{self}] TrackOptionsPanelOwningMixin_optionsChanged()")
         print(f'TrackOptionsPanelOwningMixin_optionsChanged()')
+        self.optionsChanged.emit()
+        logger.info(f"\t emitted self.optionsChanged()")
+
 
     @pyqtExceptionPrintingSlot()
     def TrackOptionsPanelOwningMixin_onOptionsAccepted(self):
         """Emit onOptionsAccepted signal when options are accepted."""
+        logger.info(f"TrackOptionsPanelOwningMixin[{self}] TrackOptionsPanelOwningMixin_onOptionsAccepted()")
         print(f'TrackOptionsPanelOwningMixin_onOptionsAccepted()')
         self.onOptionsAccepted.emit()
+        logger.info(f"\t emitted self.onOptionsAccepted()")
 
 
     @pyqtExceptionPrintingSlot()
     def TrackOptionsPanelOwningMixin_onOptionsRejected(self):
         """Emit onOptionsRejected signal when options are rejected."""
+        logger.info(f"TrackOptionsPanelOwningMixin[{self}] TrackOptionsPanelOwningMixin_onOptionsRejected()")
         print(f'TrackOptionsPanelOwningMixin_onOptionsRejected()')
         self.onOptionsRejected.emit()
+        logger.info(f"\t emitted self.onOptionsRejected()")
 
 
 

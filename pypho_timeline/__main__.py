@@ -38,7 +38,7 @@ from pypho_timeline.rendering.datasources.track_datasource import TrackDatasourc
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, PositionTrackDatasource, VideoTrackDatasource
 from pypho_timeline.rendering.detail_renderers import MotionPlotDetailRenderer, PositionPlotDetailRenderer, VideoThumbnailDetailRenderer, GenericPlotDetailRenderer
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
-from pypho_timeline.utils.logging_util import configure_rendering_logging
+from pypho_timeline.utils.logging_util import configure_logging
 
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData, RenderPlots
@@ -57,17 +57,17 @@ def main():
     print("pyPhoTimeline Example")
     print("=" * 60)
     
-    # Configure logging for rendering components (outputs to both stdout and file)
+    # Configure logging for all pypho_timeline components (outputs to both stdout and file)
     import logging
     from pathlib import Path
     log_file = Path("timeline_rendering.log")
-    configure_rendering_logging(
+    configure_logging(
         log_level=logging.DEBUG,
         log_file=log_file,
         log_to_console=True,
         log_to_file=True
     )
-    print(f"Rendering logging configured - output to console and {log_file}")
+    print(f"Logging configured for all pypho_timeline modules - output to console and {log_file}")
     
     # Create Qt application
     app = pg.mkQApp("pyPhoTimelineExample")
@@ -250,16 +250,16 @@ def main_all_modalities_from_xdf_file_example(xdf_file_path: Path):
     print(f"pyPhoTimeline - Load all modalities from XDF: {xdf_file_path}")
     print("=" * 60)
 
-    # Configure logging for rendering components (outputs to both stdout and file)
+    # Configure logging for all pypho_timeline components (outputs to both stdout and file)
     import logging
     log_file = Path("timeline_rendering.log")
-    configure_rendering_logging(
+    configure_logging(
         log_level=logging.DEBUG,
         log_file=log_file,
         log_to_console=True,
         log_to_file=True
     )
-    print(f"Rendering logging configured - output to console and {log_file}")
+    print(f"Logging configured for all pypho_timeline modules - output to console and {log_file}")
 
     # --- 1. Load the XDF file (using pyxdf) ---
     import pyxdf

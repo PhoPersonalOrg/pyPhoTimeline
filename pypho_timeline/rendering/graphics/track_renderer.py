@@ -415,6 +415,8 @@ class TrackRenderer(QtCore.QObject):
             channel_name: Name of the channel
             is_visible: True to show channel, False to hide
         """
+        logger.info(f"TrackRenderer[{self.track_id}] update_channel_visibility(channel_name: {channel_name}, is_visible: {is_visible})")
+
         if channel_name not in self.channel_visibility:
             logger.warning(f"TrackRenderer[{self.track_id}] update_channel_visibility() - channel '{channel_name}' not found in channel_visibility")
             return
