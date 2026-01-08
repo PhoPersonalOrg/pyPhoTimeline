@@ -14,7 +14,7 @@ class VideoMetadataParser:
     Parses video folders and extracts metadata including datetime from filenames.
     
     Usage:
-        from pypho_timeline.rendering.datasources.specific.video_metadata import VideoMetadataParser
+        from pypho_timeline.utils.video_metadata import VideoMetadataParser
         
         folder_path = Path(r"M:\\ScreenRecordings\\EyeTrackerVR_Recordings")
         df = VideoMetadataParser.parse_video_folder(folder_path)

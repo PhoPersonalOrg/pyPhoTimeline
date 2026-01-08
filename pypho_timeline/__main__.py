@@ -45,6 +45,7 @@ from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPl
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
 
 from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams, modality_channels_dict, modality_sfreq_dict
+from pypho_timeline.timeline_builder import TimelineBuilder
 
 
 # ==================================================================================================================================================================================================================================================================================== #
@@ -117,145 +118,54 @@ def main():
 
 def main_all_modalities_from_xdf_file_example(xdf_file_path: Path):
     """Main function demonstrating pyPhoTimeline usage with all EEG modalities from an XDF file."""
-    print("=" * 60)
-    print(f"pyPhoTimeline - Load all modalities from XDF: {xdf_file_path}")
-    print("=" * 60)
-
-    # Configure logging for all pypho_timeline components (outputs to both stdout and file)
-    import logging
-    log_file = Path("timeline_rendering.log")
-    configure_logging(
-        log_level=logging.DEBUG,
-        log_file=log_file,
-        log_to_console=True,
-        log_to_file=True
-    )
-    print(f"Logging configured for all pypho_timeline modules - output to console and {log_file}")
-
-    # --- 1. Load the XDF file (using pyxdf) ---
-    import pyxdf
-
-    print(f"Loading XDF file: {xdf_file_path} ...")
-    streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
-    print(f"Streams loaded: {[s['info']['name'][0] for s in streams]}")
-    print(f"File Header: {file_header}")
-
-    # --- 2. Inspect and extract EEG/continuous data streams ---
-    all_streams, all_streams_datasources = perform_process_all_streams(streams=streams)
-
-    if not all_streams:
-        print("No streams found in XDF file.")
-        return
-
-    print(f"Found {len(all_streams)} streams: {[a_name for a_name in list(all_streams_datasources.keys())]}")
+    builder = TimelineBuilder()
+    return builder.build_from_xdf_file(xdf_file_path)
 
     
-    active_datasources_dict = {k:v for k, v in all_streams_datasources.items() if v is not None}
-    active_datasource_list = list(active_datasources_dict.values())
-    print(f"\tbuild active_datasources: {len(active_datasource_list)} datasources.")
-
-    total_start_time: float = np.nanmin([ds.total_df_start_end_times[0] for ds in active_datasource_list])
-    total_end_time: float = np.nanmax([ds.total_df_start_end_times[1] for ds in active_datasource_list])
-    # window_duration: float = 10.0
-    window_duration: float = total_end_time - total_start_time
-    window_duration = max(window_duration, 10.0)
-
-    # --- 4. Create the timeline widget and add EEG tracks ---
-    timeline = SimpleTimelineWidget(
-        total_start_time=total_start_time,
-        total_end_time=total_end_time,
-        window_duration=window_duration,
-        window_start_time=total_start_time,
-        add_example_tracks=False  # Don't add example tracks for XDF data
-    )
-
-    # Create plot widgets for each EEG stream and add tracks
-    for datasource in active_datasource_list:
-        # Create a plot widget for this track
-        a_detail_renderer = datasource.get_detail_renderer()
-
-        # The getOptionsPanel() method will be called by the dock when needed
-        # No need to set optionsPanel attribute if getOptionsPanel() is implemented
-
-        ## if we provide a valid `optionsPanel: Optional[QWidget]` here on the widget the button will automatically show up on the dock
-        track_widget, a_root_graphics, a_plot_item, a_dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
-            name=datasource.custom_datasource_name,
-            dockSize=(500, 80),
+    
+def add_video_track(self, track_name: str, video_datasource: VideoTrackDatasource, dockSize: Tuple[int, int] = (500, 80), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA):
+        """Add a video track to the timeline.
+        
+        This is a convenience method that creates a plot widget and adds the video track.
+        
+        Args:
+            track_name: Unique name for this video track
+            video_datasource: VideoTrackDatasource instance
+            dockSize: Size of the dock widget (width, height). Default: (500, 80)
+            sync_mode: Synchronization mode for the plot. Default: TO_GLOBAL_DATA
+            
+        Returns:
+            Tuple of (widget, root_graphics, plot_item, dock) from add_new_embedded_pyqtgraph_render_plot_widget
+        """
+        # Create plot widget
+        video_widget, root_graphics, plot_item, dock = self.add_new_embedded_pyqtgraph_render_plot_widget(
+            name=track_name,
+            dockSize=dockSize,
             dockAddLocationOpts=['bottom'],
-            sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA
+            sync_mode=sync_mode
         )
         
-        assert a_detail_renderer is not None
-        track_widget.set_track_renderer(a_detail_renderer)
-        # Explicitly set the attribute (not just rely on getOptionsPanel())
-        track_widget.optionsPanel = track_widget.getOptionsPanel()
-
-        # Try to force dock to update button visibility
-        a_dock.updateWidgetsHaveOptionsPanel()
-
-        a_dock.update()  # May refresh the title bar
-        # Or if available:
-        if hasattr(a_dock, 'updateTitleBar') or hasattr(a_dock, 'refresh'):
-            a_dock.updateTitleBar()  # or refresh()
-
+        # Get time range from datasource
+        t_start, t_end = video_datasource.total_df_start_end_times
+        if t_start == t_end:
+            # Default range if no data
+            t_start = self.total_data_start_time
+            t_end = self.total_data_end_time
         
-
-        # Set the plot to show the full time range
-        a_plot_item.setXRange(
-            timeline.total_data_start_time, 
-            timeline.total_data_end_time, 
-            padding=0
-        )
-        a_plot_item.setYRange(0, 1, padding=0)
-        a_plot_item.setLabel('bottom', 'Time', units='s')
-        a_plot_item.setLabel('left', datasource.custom_datasource_name)
-        a_plot_item.hideAxis('left')  # Hide Y-axis for cleaner look
+        # Set plot ranges
+        plot_item.setXRange(t_start, t_end, padding=0)
+        plot_item.setYRange(0, 60, padding=0)
+        plot_item.setLabel('bottom', 'Time', units='s')
+        plot_item.setLabel('left', track_name)
+        plot_item.hideAxis('left')
         
-        # Add the track to the plot
-        a_track_name: str = datasource.custom_datasource_name
-        timeline.add_track(
-            datasource,
-            name=a_track_name,
-            plot_item=a_plot_item
-        )
-
-        # ## after adding the track, try to add/render the detailed data if possible (currently hardcoded). 
-        # try:
-        #     a_renderer = timeline.track_renderers[a_track_name]
-        #     a_detail_renderer = a_renderer.detail_renderer # MotionPlotDetailRenderer 
-        #     a_ds = timeline.track_datasources[a_track_name]
-        #     # interval = a_ds.intervals_df
-        #     interval = a_ds.get_overview_intervals()
-
-        #     extant_graphics_objects = timeline.plots.render_detail_graphics_objects.get(a_track_name, [])
-        #     if extant_graphics_objects:
-        #         ## remove existing
-        #         a_detail_renderer.clear_detail(plot_item=a_plot_item, graphics_objects=extant_graphics_objects)
-
-
-        #     graphics_objects = a_detail_renderer.render_detail(plot_item=a_plot_item, interval=interval, detail_data=a_ds.detailed_df) # List[PlotDataItem]
-        #     timeline.plots.render_detail_graphics_objects[a_track_name] = graphics_objects
-
-        # except (ValueError, AttributeError, KeyError, IndexError) as e:
-        #     print(f'\tERROR for a_track_name: "{a_track_name}" while trying to add `a_detail_renderer.render_detail(...) {e}')
+        # Ensure TrackRenderingMixin is initialized
+        self.TrackRenderingMixin_on_buildUI()
         
-
-    ## END for datasource in active_datasource_list...
-
-    timeline.setWindowTitle(f"pyPhoTimeline - ALL Modalities from XDF: {xdf_file_path.name}")
-    timeline.resize(1000, 800)
-    timeline.show()
-
-    print("\nTimeline widget created with tracks from XDF:")
-    for ds in active_datasource_list:
-        print(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
-
-    print("\nScroll on the timeline to see loaded EEG intervals for each stream.")
-    print("Close the window to exit.\n")
-    return timeline
-
-    
-
+        # Add track
+        self.add_track(video_datasource, name=track_name, plot_item=plot_item)
+        
+        return video_widget, root_graphics, plot_item, dock
 
 
 

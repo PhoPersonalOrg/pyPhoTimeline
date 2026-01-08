@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
@@ -12,7 +13,7 @@ try:
 except ImportError:
     CV2_AVAILABLE = False
 
-from pypho_timeline.rendering.datasources.specific.video_metadata import VideoMetadataParser
+from pypho_timeline.utils.video_metadata import VideoMetadataParser
 
 
 # ==================================================================================================================================================================================================================================================================================== #
@@ -285,15 +286,19 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         
         # Option 3: Use intervals DataFrame directly
         video_ds = VideoTrackDatasource(video_intervals_df=intervals_df)
+        
+        # Option 4: Use list of video file paths
+        video_ds = VideoTrackDatasource(video_paths=[Path("video1.mp4"), Path("video2.mp4")])
     """
     
-    def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128)):
+    def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, video_paths: Optional[List[Union[Path, str]]] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128)):
         """Initialize with video intervals.
         
         Args:
             video_intervals_df: DataFrame with columns ['t_start', 't_duration', 'video_file_path'] (optional, if provided, other args ignored)
             video_folder_path: Path to folder containing videos (will be parsed using VideoMetadataParser)
             video_df: Pre-parsed DataFrame from VideoMetadataParser.parse_video_folder() (optional)
+            video_paths: List of video file paths (Path objects or strings) to parse individually
             custom_datasource_name: Custom name for this datasource (optional)
             reference_timestamp: Optional reference timestamp for time conversion (default: first video start time)
             frames_per_second: Target frame rate for thumbnail extraction (default: 10.0)
@@ -303,6 +308,54 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         if video_intervals_df is not None:
             # Direct intervals DataFrame provided
             intervals_df = video_intervals_df.copy()
+        elif video_paths is not None:
+            # Parse from list of video file paths
+            if not CV2_AVAILABLE:
+                raise ImportError("opencv-python is required for video parsing. Install with: pip install opencv-python")
+            # Parse each video file individually
+            results = []
+            for video_path in video_paths:
+                video_path = Path(video_path)
+                if not video_path.exists():
+                    continue
+                # Extract datetime from filename
+                video_start_datetime = VideoMetadataParser.extract_datetime_from_filename(video_path.name)
+                if video_start_datetime is None:
+                    # If no datetime in filename, use file modification time as fallback
+                    try:
+                        video_start_datetime = datetime.fromtimestamp(video_path.stat().st_mtime)
+                    except Exception:
+                        continue
+                # Extract video metadata
+                metadata = VideoMetadataParser.extract_video_metadata(video_path)
+                if metadata is None:
+                    continue
+                # Get file metadata
+                file_metadata = VideoMetadataParser.get_file_metadata(video_path)
+                # Calculate end datetime
+                video_end_datetime = video_start_datetime + timedelta(seconds=metadata['video_duration'])
+                # Build result row
+                result = {
+                    'video_start_datetime': video_start_datetime,
+                    'video_duration': metadata['video_duration'],
+                    'video_end_datetime': video_end_datetime,
+                    'video_num_frames': metadata['video_num_frames'],
+                    'video_fps': metadata['video_fps'],
+                    'video_width': metadata['video_width'],
+                    'video_height': metadata['video_height'],
+                    'video_file_path': str(video_path.resolve()),
+                    'video_file_size': metadata['video_file_size'],
+                    'cache_file_size': file_metadata['file_size'],
+                    'cache_file_mtime': file_metadata['file_mtime'],
+                }
+                results.append(result)
+            if not results:
+                intervals_df = pd.DataFrame()
+            else:
+                # Create DataFrame and convert to intervals_df format
+                video_df_parsed = pd.DataFrame(results)
+                video_df_parsed = video_df_parsed.sort_values('video_start_datetime').reset_index(drop=True)
+                intervals_df = video_metadata_to_intervals_df(video_df_parsed, reference_timestamp=reference_timestamp)
         elif video_folder_path is not None:
             # Parse from folder
             if not CV2_AVAILABLE:
@@ -316,7 +369,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
             # Use pre-parsed DataFrame
             intervals_df = video_metadata_to_intervals_df(video_df, reference_timestamp=reference_timestamp)
         else:
-            raise ValueError("Must provide one of: video_intervals_df, video_folder_path, or video_df")
+            raise ValueError("Must provide one of: video_intervals_df, video_folder_path, video_df, or video_paths")
         
         if custom_datasource_name is None:
             custom_datasource_name = "VideoTrack"

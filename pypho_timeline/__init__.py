@@ -29,6 +29,8 @@ from pypho_timeline.widgets.custom_graphics_layout_widget import (
     CustomViewBox,
 )
 
+from pypho_timeline.timeline_builder import TimelineBuilder
+
 from pypho_timeline.mixins.crosshairs_tracing_mixin import CrosshairsTracingMixin
 
 # Rendering (interval/epoch rendering)
@@ -69,6 +71,7 @@ __all__ = [
     # Widgets
     'CustomGraphicsLayoutWidget',
     'CustomViewBox',
+    'TimelineBuilder',
     # Mixins
     'CrosshairsTracingMixin',
     # Rendering

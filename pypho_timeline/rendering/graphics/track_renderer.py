@@ -120,11 +120,14 @@ class TrackRenderer(QtCore.QObject):
         Args:
             viewport_start: Start time of viewport
             viewport_end: End time of viewport
+
+        TODO 2025-01-07 -- This is where I think I should remove the details if the detail view widget is too dense/too small.
+
         """
         logger.debug(f"TrackRenderer[{self.track_id}] update_viewport(start={viewport_start:.3f}, end={viewport_end:.3f})")
         
         # Get intervals in viewport
-        intervals_df = self.datasource.get_updated_data_window(viewport_start, viewport_end)
+        intervals_df = self.datasource.get_updated_data_window(viewport_start, viewport_end) # TODO 2025-01-07 - Not all datasources use dataframes
         num_intervals = len(intervals_df)
         logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - found {num_intervals} intervals in viewport")
         
@@ -164,7 +167,7 @@ class TrackRenderer(QtCore.QObject):
                     self.async_fetcher.fetch_detail_async(self.track_id, interval_series, self.datasource) ## I believe after this asynchronously completes, `self._on_detail_data_ready` is called.
             else:
                 already_visible += 1
-        
+        ## END for idx, interval_series in intervals_df.iterrows()...
         logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - intervals: {already_visible} already visible, {cache_hits} cache hits, {cache_misses} cache misses")
         
         # Cancel fetches for intervals that left viewport
@@ -176,7 +179,7 @@ class TrackRenderer(QtCore.QObject):
             
             # Clear detail graphics for intervals that left
             for cache_key in intervals_that_left:
-                self._clear_detail(cache_key)
+                self._clear_detail(cache_key) ## this is this being called for all intervals?
         
         # Update visible intervals set
         self.visible_intervals = new_visible_keys
@@ -398,6 +401,10 @@ class TrackRenderer(QtCore.QObject):
         for cache_key in visible_cache_keys:
             self._clear_detail(cache_key)
         
+        # Clear visible_intervals so update_viewport() will treat all intervals as new and re-fetch/re-render them
+        self.visible_intervals.clear()
+        logger.debug(f"TrackRenderer[{self.track_id}] Cleared visible_intervals to force re-fetch on next update_viewport()")
+        
         # Trigger viewport update to re-render with new visibility
         # This will re-fetch intervals and render with filtered channels
         if self.plot_item is not None:
@@ -406,6 +413,7 @@ class TrackRenderer(QtCore.QObject):
                 x_range, y_range = viewbox.viewRange()
                 if len(x_range) == 2:
                     self.update_viewport(x_range[0], x_range[1])
+
 
 
     def update_channel_visibility(self, channel_name: str, is_visible: bool):
