@@ -386,6 +386,12 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         self.intervals_df['pen'] = [pen] * len(self.intervals_df)
         self.intervals_df['brush'] = [brush] * len(self.intervals_df)
         
+        # Add label column with filename extracted from video_file_path
+        if 'video_file_path' in self.intervals_df.columns:
+            self.intervals_df['label'] = self.intervals_df['video_file_path'].apply(lambda path: Path(path).name if path else '')
+        else:
+            self.intervals_df['label'] = ''
+        
         # Store configuration for frame loading
         self.frames_per_second = frames_per_second
         self.thumbnail_size = thumbnail_size

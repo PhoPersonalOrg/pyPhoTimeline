@@ -6,7 +6,7 @@ data when intervals scroll into the viewport.
 from typing import Dict, List, Optional, Callable, Any, Tuple
 from collections import OrderedDict
 from threading import Lock
-from queue import Queue
+from queue import Queue, Empty
 import logging
 import pandas as pd
 from qtpy import QtCore, QtWidgets
@@ -197,15 +197,34 @@ class AsyncDetailFetcher(QtCore.QObject):
         """Process results from worker queue (called by QTimer on main thread)."""
         # Process all available results (non-blocking)
         processed = 0
-        while not self._result_queue.empty():
+        errors = 0
+        max_iterations = 1000  # Prevent infinite loop if queue keeps getting items
+        iteration = 0
+        while iteration < max_iterations:
+            iteration += 1
             try:
                 track_id, cache_key, interval_df, detail_data, error = self._result_queue.get_nowait()
+            except Empty:
+                # Queue is empty, normal exit
+                break
+            except Exception as e:
+                # Unexpected error getting from queue
+                logger.error(f"AsyncDetailFetcher._process_result_queue() - error getting result from queue: {e}", exc_info=True)
+                errors += 1
+                break  # Can't continue if we can't get items from queue
+            
+            # Process the result
+            try:
                 self._on_worker_finished(track_id, cache_key, interval_df, detail_data, error)
                 processed += 1
-            except:
-                break  # Queue empty or error
-        if processed > 0:
-            logger.debug(f"AsyncDetailFetcher._process_result_queue() - processed {processed} results")
+            except Exception as e:
+                # Log the error but continue processing other items
+                logger.error(f"AsyncDetailFetcher._process_result_queue() - error processing result for cache_key='{cache_key}': {e}", exc_info=True)
+                errors += 1
+                # Continue processing other items instead of breaking
+        
+        if processed > 0 or errors > 0:
+            logger.debug(f"AsyncDetailFetcher._process_result_queue() - processed {processed} results, {errors} errors")
     
     def _on_worker_finished(self, track_id: str, cache_key: str, interval: pd.DataFrame, 
                           detail_data: Any, error: Optional[Exception]):

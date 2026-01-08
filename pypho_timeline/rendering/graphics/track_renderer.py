@@ -6,10 +6,16 @@ from qtpy import QtCore
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, DetailRenderer
-from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem
+from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 from pypho_timeline.rendering.async_detail_fetcher import AsyncDetailFetcher
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.utils.logging_util import get_rendering_logger
+
+# Import VideoTrackDatasource for type checking
+try:
+    from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
+except ImportError:
+    VideoTrackDatasource = None
 
 logger = get_rendering_logger(__name__)
 
@@ -93,9 +99,19 @@ class TrackRenderer(QtCore.QObject):
                 overview_df['series_height'] = 1.0
                 logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - added default visualization columns")
             
+            # Create format_label_fn for video tracks to display filename
+            format_label_fn = None
+            if VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource):
+                def video_label_formatter(rect_index: int, rect_data_tuple) -> str:
+                    """Format label for video track intervals - extracts filename from label field."""
+                    if isinstance(rect_data_tuple, IntervalRectsItemData):
+                        return rect_data_tuple.label if rect_data_tuple.label else ''
+                    return ''
+                format_label_fn = video_label_formatter
+            
             # Build the interval rects item
             self.overview_rects_item = Render2DEventRectanglesHelper.build_IntervalRectsItem_from_interval_datasource(
-                self.datasource
+                self.datasource, format_label_fn=format_label_fn
             )
             
             # Remove old overview if exists

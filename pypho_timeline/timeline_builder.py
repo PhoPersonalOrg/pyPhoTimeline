@@ -6,14 +6,21 @@ from different data sources such as XDF files, pre-loaded streams, or existing d
 """
 
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union
 import logging
 import numpy as np
+import pandas as pd
 import pyxdf
 from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource
 from pypho_timeline.utils.logging_util import configure_logging
+
+# Import VideoTrackDatasource for video-only timeline building
+try:
+    from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
+except ImportError:
+    VideoTrackDatasource = None
 
 
 class TimelineBuilder:
@@ -23,11 +30,14 @@ class TimelineBuilder:
     - XDF files (via build_from_xdf_file)
     - Pre-loaded streams (via build_from_streams)
     - Existing datasources (via build_from_datasources)
+    - Video tracks only (via build_from_video)
     - Updating existing timeline widgets (via update_timeline)
     
     Example usage:
         builder = TimelineBuilder()
         timeline = builder.build_from_xdf_file(Path("data.xdf"))
+        # Or build from video only:
+        timeline = builder.build_from_video(video_folder_path=Path("path/to/videos"))
     """
     
     def __init__(self, log_level: int = logging.DEBUG, log_file: Optional[Path] = None, log_to_console: bool = True, log_to_file: bool = True):
@@ -81,6 +91,67 @@ class TimelineBuilder:
         
         # Process streams and build timeline
         return self.build_from_streams(streams=streams, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title or f"pyPhoTimeline - ALL Modalities from XDF: {xdf_file_path.name}", window_size=window_size)
+    
+    def build_from_video(self, video_datasource: Optional[VideoTrackDatasource] = None, video_folder_path: Optional[Path] = None, video_paths: Optional[List[Union[Path, str]]] = None, video_df: Optional[pd.DataFrame] = None, video_intervals_df: Optional[pd.DataFrame] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128)) -> SimpleTimelineWidget:
+        """Build a timeline widget from video files only (no XDF file required).
+        
+        Args:
+            video_datasource: Existing VideoTrackDatasource instance (optional, if provided, other video args ignored)
+            video_folder_path: Path to folder containing videos (optional)
+            video_paths: List of video file paths (Path objects or strings) (optional)
+            video_df: Pre-parsed DataFrame from VideoMetadataParser (optional)
+            video_intervals_df: DataFrame with video intervals (optional)
+            custom_datasource_name: Custom name for the video datasource (optional)
+            reference_timestamp: Optional reference timestamp for time conversion (default: first video start time)
+            window_duration: Duration of the time window (default: auto-calculated from video data)
+            window_start_time: Start time of the window (default: auto-calculated from video data)
+            window_title: Custom window title (default: "pyPhoTimeline - Video Track")
+            window_size: Window size as (width, height) tuple (default: (1000, 800))
+            frames_per_second: Target frame rate for thumbnail extraction (default: 10.0)
+            thumbnail_size: Optional (width, height) tuple for resizing frames (default: (128, 128))
+            
+        Returns:
+            SimpleTimelineWidget instance with video track
+            
+        Example:
+            builder = TimelineBuilder()
+            # Option 1: From folder
+            timeline = builder.build_from_video(video_folder_path=Path("path/to/videos"))
+            # Option 2: From list of video files
+            timeline = builder.build_from_video(video_paths=[Path("video1.mp4"), Path("video2.mp4")])
+            # Option 3: From existing datasource
+            video_ds = VideoTrackDatasource(video_folder_path=Path("path/to/videos"))
+            timeline = builder.build_from_video(video_datasource=video_ds)
+        """
+        if VideoTrackDatasource is None:
+            raise ImportError("VideoTrackDatasource is not available. Make sure video dependencies are installed.")
+        
+        # Create VideoTrackDatasource if not provided
+        if video_datasource is None:
+            video_datasource = VideoTrackDatasource(
+                video_intervals_df=video_intervals_df,
+                video_folder_path=video_folder_path,
+                video_df=video_df,
+                video_paths=video_paths,
+                custom_datasource_name=custom_datasource_name,
+                reference_timestamp=reference_timestamp,
+                frames_per_second=frames_per_second,
+                thumbnail_size=thumbnail_size
+            )
+        
+        # Check if datasource has any intervals
+        if video_datasource.intervals_df.empty:
+            raise ValueError("VideoTrackDatasource has no video intervals. Check that video files exist and are valid.")
+        
+        # Build timeline from the single video datasource
+        return self.build_from_datasources(
+            datasources=[video_datasource],
+            window_duration=window_duration,
+            window_start_time=window_start_time,
+            add_example_tracks=False,
+            window_title=window_title or f"pyPhoTimeline - Video Track: {video_datasource.custom_datasource_name}",
+            window_size=window_size
+        )
     
 
     
