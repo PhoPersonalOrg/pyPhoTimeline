@@ -11,7 +11,7 @@ import logging
 import numpy as np
 import pandas as pd
 import pyxdf
-from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams
+from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams, perform_process_all_streams_multi_xdf
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource
 from pypho_timeline.utils.logging_util import configure_logging
@@ -79,18 +79,83 @@ class TimelineBuilder:
         Returns:
             SimpleTimelineWidget instance, or None if no streams found
         """
+        # Use multi-file method for backward compatibility
+        return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size)
+    
+    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
+        """Build a timeline widget from multiple XDF files, merging streams by name.
+        
+        Streams with the same name across different files will be merged into a single track.
+        Timestamps are preserved as absolute values (no time shifting).
+        
+        Args:
+            xdf_file_paths: List of paths to XDF files
+            window_duration: Duration of the time window (default: auto-calculated from data)
+            window_start_time: Start time of the window (default: auto-calculated from data)
+            add_example_tracks: Whether to add example tracks (default: False)
+            window_title: Custom window title (default: auto-generated from filenames)
+            window_size: Window size as (width, height) tuple (default: (1000, 800))
+            
+        Returns:
+            SimpleTimelineWidget instance, or None if no streams found
+            
+        Example:
+            builder = TimelineBuilder()
+            timeline = builder.build_from_xdf_files([
+                Path("file1.xdf"),
+                Path("file2.xdf")
+            ])
+        """
+        if not xdf_file_paths:
+            raise ValueError("xdf_file_paths list cannot be empty")
+        
         print("=" * 60)
-        print(f"pyPhoTimeline - Load all modalities from XDF: {xdf_file_path}")
+        if len(xdf_file_paths) == 1:
+            print(f"pyPhoTimeline - Load all modalities from XDF: {xdf_file_paths[0]}")
+        else:
+            print(f"pyPhoTimeline - Load all modalities from {len(xdf_file_paths)} XDF files:")
+            for path in xdf_file_paths:
+                print(f"  - {path}")
         print("=" * 60)
         
-        # Load the XDF file
-        print(f"Loading XDF file: {xdf_file_path} ...")
-        streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
-        print(f"Streams loaded: {[s['info']['name'][0] for s in streams]}")
-        print(f"File Header: {file_header}")
+        # Load all XDF files
+        all_streams_by_file = []
+        all_file_headers = []
+        for xdf_file_path in xdf_file_paths:
+            print(f"Loading XDF file: {xdf_file_path} ...")
+            streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+            print(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
+            all_streams_by_file.append(streams)
+            all_file_headers.append(file_header)
         
-        # Process streams and build timeline
-        return self.build_from_streams(streams=streams, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title or f"pyPhoTimeline - ALL Modalities from XDF: {xdf_file_path.name}", window_size=window_size)
+        # Process streams from all files and merge by stream name
+        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths)
+        
+        if not all_streams:
+            print("No streams found.")
+            return None
+        
+        print(f"Found {len(all_streams)} unique stream names after merging: {[a_name for a_name in list(all_streams_datasources.keys())]}")
+        
+        # Get active datasources
+        active_datasources_dict = {k: v for k, v in all_streams_datasources.items() if v is not None}
+        active_datasource_list = list(active_datasources_dict.values())
+        print(f"\tbuild active_datasources: {len(active_datasource_list)} datasources.")
+        
+        if not active_datasource_list:
+            print("No valid datasources found.")
+            return None
+        
+        # Generate window title if not provided
+        if window_title is None:
+            if len(xdf_file_paths) == 1:
+                window_title = f"pyPhoTimeline - ALL Modalities from XDF: {xdf_file_paths[0].name}"
+            else:
+                file_names = ", ".join([p.name for p in xdf_file_paths])
+                window_title = f"pyPhoTimeline - ALL Modalities from {len(xdf_file_paths)} XDF files: {file_names}"
+        
+        # Build timeline from merged datasources
+        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size)
     
     def build_from_video(self, video_datasource: Optional[VideoTrackDatasource] = None, video_folder_path: Optional[Path] = None, video_paths: Optional[List[Union[Path, str]]] = None, video_df: Optional[pd.DataFrame] = None, video_intervals_df: Optional[pd.DataFrame] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128)) -> SimpleTimelineWidget:
         """Build a timeline widget from video files only (no XDF file required).

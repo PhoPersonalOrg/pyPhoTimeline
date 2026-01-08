@@ -440,6 +440,44 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """Get cache key for interval."""
         return f"{self.custom_datasource_name}_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
 
+    @classmethod
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: Optional[List[pd.DataFrame]] = None, custom_datasource_name: Optional[str] = None, detail_renderer: Optional['DetailRenderer'] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True) -> 'IntervalProvidingTrackDatasource':
+        """Create an IntervalProvidingTrackDatasource by merging data from multiple sources.
+        
+        Args:
+            intervals_dfs: List of interval DataFrames to merge (each with columns ['t_start', 't_duration'])
+            detailed_dfs: Optional list of detailed DataFrames to merge (each with column 't' and data columns)
+            custom_datasource_name: Custom name for this datasource (optional)
+            detail_renderer: Custom detail renderer (optional)
+            max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
+            enable_downsampling: Whether to enable downsampling. Default: True
+            
+        Returns:
+            IntervalProvidingTrackDatasource instance with merged data
+        """
+        if not intervals_dfs:
+            raise ValueError("intervals_dfs list cannot be empty")
+        
+        # Merge intervals
+        merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start')
+        
+        # Merge detailed data if provided
+        merged_detailed_df = None
+        if detailed_dfs:
+            filtered_detailed_dfs = [df for df in detailed_dfs if df is not None and len(df) > 0]
+            if filtered_detailed_dfs:
+                merged_detailed_df = pd.concat(filtered_detailed_dfs, ignore_index=True).sort_values('t')
+        
+        # Create instance with merged data
+        return cls(
+            intervals_df=merged_intervals_df,
+            detailed_df=merged_detailed_df,
+            custom_datasource_name=custom_datasource_name,
+            detail_renderer=detail_renderer,
+            max_points_per_second=max_points_per_second,
+            enable_downsampling=enable_downsampling
+        )
+
 
 __all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource', 'IntervalProvidingTrackDatasource']
 
