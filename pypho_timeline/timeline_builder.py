@@ -64,6 +64,7 @@ class TimelineBuilder:
         if self.log_to_console or self.log_to_file:
             print(f"Logging configured for TimelineBuilder - console: {self.log_to_console}, file: {self.log_to_file} ({self.log_file})")
     
+    
     ## MAIN FUNCTION
     def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from an XDF file.
@@ -82,6 +83,7 @@ class TimelineBuilder:
         # Use multi-file method for backward compatibility
         return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size)
     
+
     def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from multiple XDF files, merging streams by name.
         
@@ -121,6 +123,7 @@ class TimelineBuilder:
         # Load all XDF files
         all_streams_by_file = []
         all_file_headers = []
+        
         for xdf_file_path in xdf_file_paths:
             print(f"Loading XDF file: {xdf_file_path} ...")
             streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
@@ -157,6 +160,7 @@ class TimelineBuilder:
         # Build timeline from merged datasources
         return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size)
     
+
     def build_from_video(self, video_datasource: Optional[VideoTrackDatasource] = None, video_folder_path: Optional[Path] = None, video_paths: Optional[List[Union[Path, str]]] = None, video_df: Optional[pd.DataFrame] = None, video_intervals_df: Optional[pd.DataFrame] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128)) -> SimpleTimelineWidget:
         """Build a timeline widget from video files only (no XDF file required).
         
