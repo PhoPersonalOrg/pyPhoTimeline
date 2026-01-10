@@ -1,5 +1,6 @@
 from copy import deepcopy
 from typing import Optional
+from datetime import datetime
 import numpy as np
 import pandas as pd
 from qtpy import QtCore, QtWidgets
@@ -8,6 +9,7 @@ import nptyping as ND
 from nptyping import NDArray
 import numpy as np
 import pyphoplacecellanalysis.External.pyqtgraph as pg
+from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, create_am_pm_date_axis
 # from pyphoplacecellanalysis.External.pyqtgraph.Qt import QtCore, QtGui
 from pyphocorehelpers.DataStructure.general_parameter_containers import VisualizationParameters, RenderPlotsData, RenderPlots
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
@@ -93,7 +95,7 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
     
 
 
-    def __init__(self, name='PyqtgraphTimeSynchronizedWidget', plot_function_name=None, scrollable_figure=True, application_name=None, window_name=None, parent=None, **kwargs):
+    def __init__(self, name='PyqtgraphTimeSynchronizedWidget', plot_function_name=None, scrollable_figure=True, application_name=None, window_name=None, parent=None, reference_datetime: Optional[datetime] = None, **kwargs):
         """_summary_
         , disable_toolbar=True, size=(5.0, 4.0), dpi=72
         ## allows toggling between the various computed occupancies: such as raw counts,  normalized location, and seconds_occupancy
@@ -124,6 +126,9 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         self.params.scrollAreaContents_MinimumHeight = kwargs.pop('scrollAreaContents_MinimumHeight', None)
         self.params.verticalScrollBarPolicy = kwargs.pop('verticalScrollBarPolicy', pg.QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.params.horizontalScrollBarPolicy = kwargs.pop('horizontalScrollBarPolicy', pg.QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        # Reference datetime for datetime axis alignment (set before setup/buildUI so _buildGraphics can access it)
+        self.reference_datetime = reference_datetime
         
         # self.last_window_index = None
         # self.last_window_time = None
@@ -202,8 +207,16 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         self.ui.root_plot_viewBox = CustomViewBox()
         self.ui.root_plot_viewBox.setObjectName('RootPlotCustomViewBox')
         
+        # Configure datetime axis if reference_datetime is available
+        axis_items = {}
+        if self.reference_datetime is not None:
+            # Create custom DateAxisItem with 12-hour AM/PM format
+            date_axis = create_am_pm_date_axis(orientation='bottom')
+            if date_axis is not None:
+                axis_items['bottom'] = date_axis
+        
         # self.ui.root_plot = self.ui.root_graphics_layout_widget.addPlot(row=0, col=0, title=None) # , name=f'PositionDecoder'
-        self.ui.root_plot = self.ui.root_graphics_layout_widget.addPlot(row=0, col=0, title=None, viewBox=self.ui.root_plot_viewBox)
+        self.ui.root_plot = self.ui.root_graphics_layout_widget.addPlot(row=0, col=0, title=None, viewBox=self.ui.root_plot_viewBox, axisItems=axis_items if axis_items else None)
         self.ui.root_plot.setObjectName('RootPlot')
         # self.ui.root_plot.addItem(self.ui.imv, defaultPadding=0.0)  # add ImageItem to PlotItem
         ## TODO: add item here
@@ -289,8 +302,18 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         # if self.enable_debug_print:
         #     profiler = pg.debug.Profiler(disabled=True, delayed=True)
 
-        if (start_t is not None) and (end_t is not None):            
-            self.getRootPlotItem().setXRange(start_t, end_t, padding=0) ## global frame
+        if (start_t is not None) and (end_t is not None):
+            # Convert to datetime then to Unix timestamp if reference_datetime is available
+            # PyQtGraph's DateAxisItem expects Unix timestamps (float) but displays them as dates
+            if self.reference_datetime is not None:
+                dt_start = float_to_datetime(start_t, self.reference_datetime)
+                dt_end = float_to_datetime(end_t, self.reference_datetime)
+                # Convert datetime to Unix timestamp for PyQtGraph (safely handles timezone)
+                unix_start = datetime_to_unix_timestamp(dt_start)
+                unix_end = datetime_to_unix_timestamp(dt_end)
+                self.getRootPlotItem().setXRange(unix_start, unix_end, padding=0)
+            else:
+                self.getRootPlotItem().setXRange(start_t, end_t, padding=0) ## global frame
 
         self.update(end_t, defer_render=False)
         # if self.enable_debug_print:

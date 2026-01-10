@@ -7,11 +7,13 @@ along with utility functions for processing stream data.
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Optional
+from datetime import datetime
 from pathlib import Path
 from qtpy import QtWidgets, QtCore
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
+from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
 from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
 from pypho_timeline.rendering.detail_renderers import DataframePlotDetailRenderer
@@ -63,7 +65,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         return plots
     
 
-    def __init__(self, total_start_time=0.0, total_end_time=100.0, window_duration=10.0, window_start_time=30.0, add_example_tracks=False, parent=None):
+    def __init__(self, total_start_time=0.0, total_end_time=100.0, window_duration=10.0, window_start_time=30.0, add_example_tracks=False, reference_datetime: Optional[datetime] = None, parent=None):
         super().__init__(parent)
         
         # Store whether to add example tracks
@@ -83,6 +85,12 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         self.total_data_end_time = total_end_time
         self.active_window_start_time = window_start_time
         self.active_window_end_time = window_start_time + window_duration
+        
+        # Reference datetime for datetime axis alignment (shared across all tracks)
+        if reference_datetime is None:
+            from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
+            reference_datetime = get_earliest_reference_datetime([], [])
+        self.reference_datetime = reference_datetime
         
         self.spikes_window = SimpleTimeWindow(
             total_start_time, total_end_time, window_duration, window_start_time
@@ -157,10 +165,19 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                 t_start = self.total_data_start_time
                 t_end = self.total_data_end_time
             
-            # Set plot ranges
-            plot_item.setXRange(t_start, t_end, padding=0)
+            # Set plot ranges (convert to datetime then Unix timestamp if reference available)
+            if self.reference_datetime is not None:
+                dt_start = float_to_datetime(t_start, self.reference_datetime)
+                dt_end = float_to_datetime(t_end, self.reference_datetime)
+                # Convert datetime to Unix timestamp for PyQtGraph (DateAxisItem expects timestamps but displays as dates)
+                unix_start = datetime_to_unix_timestamp(dt_start)
+                unix_end = datetime_to_unix_timestamp(dt_end)
+                plot_item.setXRange(unix_start, unix_end, padding=0)
+                plot_item.setLabel('bottom', 'Time')
+            else:
+                plot_item.setXRange(t_start, t_end, padding=0)
+                plot_item.setLabel('bottom', 'Time', units='s')
             plot_item.setYRange(0, 60, padding=0)
-            plot_item.setLabel('bottom', 'Time', units='s')
             plot_item.setLabel('left', track_name)
             plot_item.hideAxis('left')
             

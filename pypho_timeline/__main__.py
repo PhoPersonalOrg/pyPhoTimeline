@@ -152,10 +152,20 @@ def add_video_track(self, track_name: str, video_datasource: VideoTrackDatasourc
             t_start = self.total_data_start_time
             t_end = self.total_data_end_time
         
-        # Set plot ranges
-        plot_item.setXRange(t_start, t_end, padding=0)
+        # Set plot ranges (convert to datetime then Unix timestamp if reference available)
+        if hasattr(self, 'reference_datetime') and self.reference_datetime is not None:
+            from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp
+            dt_start = float_to_datetime(t_start, self.reference_datetime)
+            dt_end = float_to_datetime(t_end, self.reference_datetime)
+            # Convert datetime to Unix timestamp for PyQtGraph (DateAxisItem expects timestamps but displays as dates)
+            unix_start = datetime_to_unix_timestamp(dt_start)
+            unix_end = datetime_to_unix_timestamp(dt_end)
+            plot_item.setXRange(unix_start, unix_end, padding=0)
+            plot_item.setLabel('bottom', 'Time')
+        else:
+            plot_item.setXRange(t_start, t_end, padding=0)
+            plot_item.setLabel('bottom', 'Time', units='s')
         plot_item.setYRange(0, 60, padding=0)
-        plot_item.setLabel('bottom', 'Time', units='s')
         plot_item.setLabel('left', track_name)
         plot_item.hideAxis('left')
         
