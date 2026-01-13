@@ -189,11 +189,14 @@ class TrackRenderingMixin(EpochRenderingMixin):
             # If widget connection fails, continue without options panel
             pass
         
-        # Initial viewport update
+        # Defer initial viewport update to avoid blocking UI during initialization
+        # Use QTimer.singleShot(0) to schedule after current event loop iteration
         if viewbox is not None:
-            x_range, y_range = viewbox.viewRange()
-            if len(x_range) == 2:
-                track_renderer.update_viewport(x_range[0], x_range[1])
+            def deferred_viewport_update():
+                x_range, y_range = viewbox.viewRange()
+                if len(x_range) == 2:
+                    track_renderer.update_viewport(x_range[0], x_range[1])
+            QtCore.QTimer.singleShot(0, deferred_viewport_update)
         
         # Emit signal
         self.sigTrackAdded.emit(name)

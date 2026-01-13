@@ -3,3 +3,5 @@
 desktop.ini
 timeline_rendering.log
 debug.log
+*.log.*
+EXTERNAL/LOGGING
