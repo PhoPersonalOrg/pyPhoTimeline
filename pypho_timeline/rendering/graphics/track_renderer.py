@@ -147,36 +147,46 @@ class TrackRenderer(QtCore.QObject):
         num_intervals = len(intervals_df)
         logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - found {num_intervals} intervals in viewport")
         
+        # Optimize for video tracks: skip detail fetching entirely
+        is_video_track = VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource)
+        
         # Determine which intervals are now visible
         new_visible_keys = set()
         cache_hits = 0
         cache_misses = 0
         already_visible = 0
         
-        for idx, interval_series in intervals_df.iterrows():
-            # Convert Series to single-row DataFrame for DetailRenderer methods
-            interval_df = intervals_df.iloc[[idx]]
-            cache_key = self.datasource.get_detail_cache_key(interval_series)
-            new_visible_keys.add(cache_key)
-            
-            # If not already visible and not already loaded, fetch detail
-            if cache_key not in self.visible_intervals:
-                # Check cache first
-                cached_data = self.async_fetcher.get_cached_data(cache_key)
-                if cached_data is not None:
-                    # Use cached data immediately
-                    cache_hits += 1
-                    t_start = interval_series.get('t_start', None)
-                    t_duration = interval_series.get('t_duration', None)
-                    t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
-                    t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
-                    logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' (t_start={t_start_str}, t_duration={t_duration_str}) - cache HIT, rendering immediately")
-                    self._render_detail(interval_df, cache_key, cached_data)
+        if is_video_track:
+            # For video tracks, just build the set of visible keys without detail fetching
+            # This is much faster since we skip cache checks, logging, and detail fetching
+            for idx, interval_series in intervals_df.iterrows():
+                cache_key = self.datasource.get_detail_cache_key(interval_series)
+                new_visible_keys.add(cache_key)
+                if cache_key not in self.visible_intervals:
+                    cache_misses += 1
                 else:
-                    # Skip detail fetching for video tracks for now
-                    if VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource):
-                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' - skipping detail fetch for video track")
-                        cache_misses += 1
+                    already_visible += 1
+        else:
+            # For non-video tracks, do full detail fetching logic
+            for idx, interval_series in intervals_df.iterrows():
+                # Convert Series to single-row DataFrame for DetailRenderer methods
+                interval_df = intervals_df.iloc[[idx]]
+                cache_key = self.datasource.get_detail_cache_key(interval_series)
+                new_visible_keys.add(cache_key)
+                
+                # If not already visible and not already loaded, fetch detail
+                if cache_key not in self.visible_intervals:
+                    # Check cache first for non-video tracks
+                    cached_data = self.async_fetcher.get_cached_data(cache_key)
+                    if cached_data is not None:
+                        # Use cached data immediately
+                        cache_hits += 1
+                        t_start = interval_series.get('t_start', None)
+                        t_duration = interval_series.get('t_duration', None)
+                        t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
+                        t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
+                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' (t_start={t_start_str}, t_duration={t_duration_str}) - cache HIT, rendering immediately")
+                        self._render_detail(interval_df, cache_key, cached_data)
                     else:
                         # Fetch asynchronously (still pass Series for datasource compatibility)
                         cache_misses += 1
@@ -186,8 +196,8 @@ class TrackRenderer(QtCore.QObject):
                         t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
                         logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' (t_start={t_start_str}, t_duration={t_duration_str}) - cache MISS, requesting async fetch")
                         self.async_fetcher.fetch_detail_async(self.track_id, interval_series, self.datasource) ## I believe after this asynchronously completes, `self._on_detail_data_ready` is called.
-            else:
-                already_visible += 1
+                else:
+                    already_visible += 1
         ## END for idx, interval_series in intervals_df.iterrows()...
         logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - intervals: {already_visible} already visible, {cache_hits} cache hits, {cache_misses} cache misses")
         
