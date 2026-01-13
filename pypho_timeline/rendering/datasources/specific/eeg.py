@@ -312,6 +312,59 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
         """Get cache key for interval."""
         return f"eeg_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
 
+    @classmethod
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None) -> 'EEGTrackDatasource':
+        """Create an EEGTrackDatasource by merging data from multiple sources.
+        
+        Args:
+            intervals_dfs: List of interval DataFrames to merge (each with columns ['t_start', 't_duration'])
+            detailed_dfs: List of detailed DataFrames to merge (each with column 't' and EEG channel columns)
+            custom_datasource_name: Custom name for this datasource (optional)
+            max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
+            enable_downsampling: Whether to enable downsampling. Default: True
+            fallback_normalization_mode: Fallback normalization mode for channels
+            normalization_mode_dict: Dictionary mapping channel groups to normalization modes
+            arbitrary_bounds: Optional dictionary mapping channel names to (min, max) bounds
+            normalize: Whether to normalize channels. Default: True
+            normalize_over_full_data: Whether to normalize over full dataset. Default: True
+            normalization_reference_df: Optional reference DataFrame for normalization
+            
+        Returns:
+            EEGTrackDatasource instance with merged data
+        """
+        if not intervals_dfs:
+            raise ValueError("intervals_dfs list cannot be empty")
+        if not detailed_dfs:
+            raise ValueError("detailed_dfs list cannot be empty")
+        
+        # Merge intervals
+        merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start')
+        
+        # Merge detailed data
+        filtered_detailed_dfs = [df for df in detailed_dfs if df is not None and len(df) > 0]
+        if not filtered_detailed_dfs:
+            raise ValueError("No valid detailed DataFrames provided")
+        merged_detailed_df = pd.concat(filtered_detailed_dfs, ignore_index=True).sort_values('t')
+        
+        # Use merged data as normalization reference if not provided
+        if normalization_reference_df is None:
+            normalization_reference_df = merged_detailed_df
+        
+        # Create instance with merged data
+        return cls(
+            intervals_df=merged_intervals_df,
+            eeg_df=merged_detailed_df,
+            custom_datasource_name=custom_datasource_name,
+            max_points_per_second=max_points_per_second,
+            enable_downsampling=enable_downsampling,
+            fallback_normalization_mode=fallback_normalization_mode,
+            normalization_mode_dict=normalization_mode_dict,
+            arbitrary_bounds=arbitrary_bounds,
+            normalize=normalize,
+            normalize_over_full_data=normalize_over_full_data,
+            normalization_reference_df=normalization_reference_df
+        )
+
 
 __all__ = ['EEGPlotDetailRenderer', 'EEGTrackDatasource']
 

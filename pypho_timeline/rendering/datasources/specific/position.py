@@ -172,6 +172,39 @@ class PositionTrackDatasource(IntervalProvidingTrackDatasource):
         """Get cache key for interval."""
         return f"position_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
 
+    @classmethod
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None) -> 'PositionTrackDatasource':
+        """Create a PositionTrackDatasource by merging data from multiple sources.
+        
+        Args:
+            intervals_dfs: List of interval DataFrames to merge (each with columns ['t_start', 't_duration'])
+            detailed_dfs: List of detailed DataFrames to merge (each with column 't' and position columns ['x', 'y'] or ['x'])
+            custom_datasource_name: Custom name for this datasource (optional)
+            
+        Returns:
+            PositionTrackDatasource instance with merged data
+        """
+        if not intervals_dfs:
+            raise ValueError("intervals_dfs list cannot be empty")
+        if not detailed_dfs:
+            raise ValueError("detailed_dfs list cannot be empty")
+        
+        # Merge intervals
+        merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start')
+        
+        # Merge detailed data
+        filtered_detailed_dfs = [df for df in detailed_dfs if df is not None and len(df) > 0]
+        if not filtered_detailed_dfs:
+            raise ValueError("No valid detailed DataFrames provided")
+        merged_detailed_df = pd.concat(filtered_detailed_dfs, ignore_index=True).sort_values('t')
+        
+        # Create instance with merged data
+        return cls(
+            intervals_df=merged_intervals_df,
+            position_df=merged_detailed_df,
+            custom_datasource_name=custom_datasource_name
+        )
+
 
 __all__ = ['PositionPlotDetailRenderer', 'PositionTrackDatasource']
 

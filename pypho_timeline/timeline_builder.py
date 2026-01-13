@@ -7,14 +7,16 @@ from different data sources such as XDF files, pre-loaded streams, or existing d
 
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union
+from datetime import datetime, timezone
 import logging
 import numpy as np
 import pandas as pd
 import pyxdf
-from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams
+from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams, perform_process_all_streams_multi_xdf
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource
 from pypho_timeline.utils.logging_util import configure_logging
+from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
 
 # Import VideoTrackDatasource for video-only timeline building
 try:
@@ -64,6 +66,7 @@ class TimelineBuilder:
         if self.log_to_console or self.log_to_file:
             print(f"Logging configured for TimelineBuilder - console: {self.log_to_console}, file: {self.log_to_file} ({self.log_file})")
     
+    
     ## MAIN FUNCTION
     def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from an XDF file.
@@ -79,19 +82,94 @@ class TimelineBuilder:
         Returns:
             SimpleTimelineWidget instance, or None if no streams found
         """
-        print("=" * 60)
-        print(f"pyPhoTimeline - Load all modalities from XDF: {xdf_file_path}")
-        print("=" * 60)
-        
-        # Load the XDF file
-        print(f"Loading XDF file: {xdf_file_path} ...")
-        streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
-        print(f"Streams loaded: {[s['info']['name'][0] for s in streams]}")
-        print(f"File Header: {file_header}")
-        
-        # Process streams and build timeline
-        return self.build_from_streams(streams=streams, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title or f"pyPhoTimeline - ALL Modalities from XDF: {xdf_file_path.name}", window_size=window_size)
+        # Use multi-file method for backward compatibility
+        return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size)
     
+
+    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
+        """Build a timeline widget from multiple XDF files, merging streams by name.
+        
+        Streams with the same name across different files will be merged into a single track.
+        Timestamps are preserved as absolute values (no time shifting).
+        
+        Args:
+            xdf_file_paths: List of paths to XDF files
+            window_duration: Duration of the time window (default: auto-calculated from data)
+            window_start_time: Start time of the window (default: auto-calculated from data)
+            add_example_tracks: Whether to add example tracks (default: False)
+            window_title: Custom window title (default: auto-generated from filenames)
+            window_size: Window size as (width, height) tuple (default: (1000, 800))
+            
+        Returns:
+            SimpleTimelineWidget instance, or None if no streams found
+            
+        Example:
+            builder = TimelineBuilder()
+            timeline = builder.build_from_xdf_files([
+                Path("file1.xdf"),
+                Path("file2.xdf")
+            ])
+        """
+        if not xdf_file_paths:
+            raise ValueError("xdf_file_paths list cannot be empty")
+        
+        print("=" * 60)
+        if len(xdf_file_paths) == 1:
+            print(f"pyPhoTimeline - Load all modalities from XDF: {xdf_file_paths[0]}")
+        else:
+            print(f"pyPhoTimeline - Load all modalities from {len(xdf_file_paths)} XDF files:")
+            for path in xdf_file_paths:
+                print(f"  - {path}")
+        print("=" * 60)
+        
+        # Load all XDF files
+        all_streams_by_file = []
+        all_file_headers = []
+        
+        for xdf_file_path in xdf_file_paths:
+            print(f"Loading XDF file: {xdf_file_path} ...")
+            streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+            print(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
+            all_streams_by_file.append(streams)
+            all_file_headers.append(file_header)
+        
+        # Process streams from all files and merge by stream name
+        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths)
+        
+        if not all_streams:
+            print("No streams found.")
+            return None
+        
+        print(f"Found {len(all_streams)} unique stream names after merging: {[a_name for a_name in list(all_streams_datasources.keys())]}")
+        
+        # Get active datasources
+        active_datasources_dict = {k: v for k, v in all_streams_datasources.items() if v is not None}
+        active_datasource_list = list(active_datasources_dict.values())
+        print(f"\tbuild active_datasources: {len(active_datasource_list)} datasources.")
+        
+        if not active_datasource_list:
+            print("No valid datasources found.")
+            return None
+        
+        # Extract reference datetime from XDF headers (for datetime axis alignment)
+        reference_datetime = get_earliest_reference_datetime(all_file_headers, active_datasource_list)
+        if reference_datetime is not None:
+            print(f"Using reference datetime: {reference_datetime}")
+        else:
+            print("Warning: No reference datetime found, using Unix epoch")
+        
+        # Generate window title if not provided
+        if window_title is None:
+            if len(xdf_file_paths) == 1:
+                window_title = f"pyPhoTimeline - ALL Modalities from XDF: {xdf_file_paths[0].name}"
+            else:
+                file_names = ", ".join([p.name for p in xdf_file_paths])
+                window_title = f"pyPhoTimeline - ALL Modalities from {len(xdf_file_paths)} XDF files: {file_names}"
+        
+        # Build timeline from merged datasources with reference datetime
+        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, reference_datetime=reference_datetime)
+    
+
     def build_from_video(self, video_datasource: Optional[VideoTrackDatasource] = None, video_folder_path: Optional[Path] = None, video_paths: Optional[List[Union[Path, str]]] = None, video_df: Optional[pd.DataFrame] = None, video_intervals_df: Optional[pd.DataFrame] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128)) -> SimpleTimelineWidget:
         """Build a timeline widget from video files only (no XDF file required).
         
@@ -143,6 +221,16 @@ class TimelineBuilder:
         if video_datasource.intervals_df.empty:
             raise ValueError("VideoTrackDatasource has no video intervals. Check that video files exist and are valid.")
         
+        # Get reference datetime (use reference_timestamp if available, otherwise fallback)
+        from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
+        reference_datetime = None
+        if reference_timestamp is not None:
+            # Convert reference_timestamp (float) to datetime (assuming Unix epoch, UTC)
+            reference_datetime = datetime.fromtimestamp(reference_timestamp, tz=timezone.utc)
+        else:
+            # Fallback to earliest timestamp or Unix epoch
+            reference_datetime = get_earliest_reference_datetime([], [video_datasource])
+        
         # Build timeline from the single video datasource
         return self.build_from_datasources(
             datasources=[video_datasource],
@@ -150,7 +238,8 @@ class TimelineBuilder:
             window_start_time=window_start_time,
             add_example_tracks=False,
             window_title=window_title or f"pyPhoTimeline - Video Track: {video_datasource.custom_datasource_name}",
-            window_size=window_size
+            window_size=window_size,
+            reference_datetime=reference_datetime
         )
     
 
@@ -188,10 +277,14 @@ class TimelineBuilder:
             print("No valid datasources found.")
             return None
         
+        # Get reference datetime (fallback to earliest timestamp since no XDF headers available)
+        from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
+        reference_datetime = get_earliest_reference_datetime([], active_datasource_list)
+        
         # Build timeline from datasources
-        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title or "pyPhoTimeline", window_size=window_size)
+        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title or "pyPhoTimeline", window_size=window_size, reference_datetime=reference_datetime)
     
-    def build_from_datasources(self, datasources: List[TrackDatasource], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> SimpleTimelineWidget:
+    def build_from_datasources(self, datasources: List[TrackDatasource], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), reference_datetime: Optional[datetime] = None) -> SimpleTimelineWidget:
         """Build a timeline widget from existing datasources.
         
         Args:
@@ -201,6 +294,7 @@ class TimelineBuilder:
             add_example_tracks: Whether to add example tracks (default: False)
             window_title: Custom window title (default: "pyPhoTimeline")
             window_size: Window size as (width, height) tuple (default: (1000, 800))
+            reference_datetime: Reference datetime for datetime axis alignment (default: None, uses Unix epoch)
             
         Returns:
             SimpleTimelineWidget instance
@@ -221,13 +315,19 @@ class TimelineBuilder:
         if window_start_time is None:
             window_start_time = total_start_time
         
-        # Create the timeline widget
+        # Use Unix epoch as fallback if no reference datetime provided
+        if reference_datetime is None:
+            from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
+            reference_datetime = get_earliest_reference_datetime([], datasources)
+        
+        # Create the timeline widget with reference datetime
         timeline = SimpleTimelineWidget(
             total_start_time=total_start_time,
             total_end_time=total_end_time,
             window_duration=window_duration,
             window_start_time=window_start_time,
-            add_example_tracks=add_example_tracks
+            add_example_tracks=add_example_tracks,
+            reference_datetime=reference_datetime
         )
         
         # Add tracks to the timeline
@@ -330,10 +430,20 @@ class TimelineBuilder:
             if hasattr(a_dock, 'updateTitleBar') or hasattr(a_dock, 'refresh'):
                 a_dock.updateTitleBar()  # or refresh()
             
-            # Set the plot to show the full time range
-            a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0)
+            # Set the plot to show the full time range (convert to datetime then Unix timestamp if reference available)
+            if timeline.reference_datetime is not None:
+                from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp
+                dt_start = float_to_datetime(timeline.total_data_start_time, timeline.reference_datetime)
+                dt_end = float_to_datetime(timeline.total_data_end_time, timeline.reference_datetime)
+                # Convert datetime to Unix timestamp for PyQtGraph (DateAxisItem expects timestamps but displays as dates)
+                unix_start = datetime_to_unix_timestamp(dt_start)
+                unix_end = datetime_to_unix_timestamp(dt_end)
+                a_plot_item.setXRange(unix_start, unix_end, padding=0)
+                a_plot_item.setLabel('bottom', 'Time')
+            else:
+                a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0)
+                a_plot_item.setLabel('bottom', 'Time', units='s')
             a_plot_item.setYRange(0, 1, padding=0)
-            a_plot_item.setLabel('bottom', 'Time', units='s')
             a_plot_item.setLabel('left', datasource.custom_datasource_name)
             a_plot_item.hideAxis('left')  # Hide Y-axis for cleaner look
             

@@ -1,5 +1,8 @@
 # Purpose
 
+Currently a very good multi-track timeline for rendering the EEG/Motion/VideoFile/NoteMessages modalities that have been saved out to XDF.
+As of 2026-01-08, this is the most-promising way of seeing the data for analysis.
+
 This is an experimental independent attempt at extracting the pyqtgraph-based timeline functionality of pyPhoCorePlaceAnalysis and helpers into an independent (decoupled) library so it can be used in other projects (like EEG analysis).
 
 

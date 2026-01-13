@@ -80,7 +80,9 @@ class SpecificDockWidgetManipulatingMixin:
         if dDisplayItem is None:
             # No extant matplotlib_view_widget and display_dock currently, create a new one:
             ## TODO: hardcoded single-widget: used to be named `self.ui.matplotlib_view_widget`
-            self.ui.matplotlib_view_widgets[name] = PyqtgraphTimeSynchronizedWidget(name=name) # Matplotlib widget directly
+            # Get reference_datetime from parent if available (for datetime axis alignment)
+            reference_datetime = getattr(self, 'reference_datetime', None)
+            self.ui.matplotlib_view_widgets[name] = PyqtgraphTimeSynchronizedWidget(name=name, reference_datetime=reference_datetime) # Matplotlib widget directly
             self.ui.matplotlib_view_widgets[name].setObjectName(name)
 
             if display_config is None:
@@ -265,7 +267,17 @@ class SpecificDockWidgetManipulatingMixin:
                 intervals_overview_dock.setMaximumHeight(interval_dock_max_height)
             _interval_tracks_out_dict[overview_identifier_name] = (intervals_overview_dock_config, intervals_overview_dock, intervals_overview_time_sync_pyqtgraph_widget, intervals_overview_root_graphics_layout_widget, intervals_overview_plot_item)
             if hasattr(self, 'total_data_start_time') and hasattr(self, 'total_data_end_time'):
-                intervals_overview_plot_item.setXRange(self.total_data_start_time, self.total_data_end_time, padding=0) ## global frame
+                # Convert to datetime then Unix timestamp if reference_datetime is available
+                if hasattr(self, 'reference_datetime') and self.reference_datetime is not None:
+                    from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp
+                    dt_start = float_to_datetime(self.total_data_start_time, self.reference_datetime)
+                    dt_end = float_to_datetime(self.total_data_end_time, self.reference_datetime)
+                    # Convert datetime to Unix timestamp for PyQtGraph (DateAxisItem expects timestamps but displays as dates)
+                    unix_start = datetime_to_unix_timestamp(dt_start)
+                    unix_end = datetime_to_unix_timestamp(dt_end)
+                    intervals_overview_plot_item.setXRange(unix_start, unix_end, padding=0)
+                else:
+                    intervals_overview_plot_item.setXRange(self.total_data_start_time, self.total_data_end_time, padding=0) ## global frame
             
 
         ## Enables creating a new pyqtgraph-based track to display the intervals/epochs

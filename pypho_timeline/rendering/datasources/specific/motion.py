@@ -289,6 +289,49 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         """Get cache key for interval."""
         return f"motion_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
 
+    @classmethod
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None) -> 'MotionTrackDatasource':
+        """Create a MotionTrackDatasource by merging data from multiple sources.
+        
+        Args:
+            intervals_dfs: List of interval DataFrames to merge (each with columns ['t_start', 't_duration'])
+            detailed_dfs: List of detailed DataFrames to merge (each with column 't' and motion channel columns)
+            custom_datasource_name: Custom name for this datasource (optional)
+            max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
+            enable_downsampling: Whether to enable downsampling. Default: True
+            fallback_normalization_mode: Fallback normalization mode for channels
+            normalization_mode_dict: Dictionary mapping channel groups to normalization modes
+            arbitrary_bounds: Optional dictionary mapping channel names to (min, max) bounds
+            
+        Returns:
+            MotionTrackDatasource instance with merged data
+        """
+        if not intervals_dfs:
+            raise ValueError("intervals_dfs list cannot be empty")
+        if not detailed_dfs:
+            raise ValueError("detailed_dfs list cannot be empty")
+        
+        # Merge intervals
+        merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start')
+        
+        # Merge detailed data
+        filtered_detailed_dfs = [df for df in detailed_dfs if df is not None and len(df) > 0]
+        if not filtered_detailed_dfs:
+            raise ValueError("No valid detailed DataFrames provided")
+        merged_detailed_df = pd.concat(filtered_detailed_dfs, ignore_index=True).sort_values('t')
+        
+        # Create instance with merged data
+        return cls(
+            intervals_df=merged_intervals_df,
+            motion_df=merged_detailed_df,
+            custom_datasource_name=custom_datasource_name,
+            max_points_per_second=max_points_per_second,
+            enable_downsampling=enable_downsampling,
+            fallback_normalization_mode=fallback_normalization_mode,
+            normalization_mode_dict=normalization_mode_dict,
+            arbitrary_bounds=arbitrary_bounds
+        )
+
 
 __all__ = ['MotionPlotDetailRenderer', 'MotionTrackDatasource']
 
