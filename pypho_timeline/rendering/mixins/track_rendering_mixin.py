@@ -216,7 +216,10 @@ class TrackRenderingMixin(EpochRenderingMixin):
         
         x_range, y_range = evt
         if len(x_range) == 2:
-            self.track_renderers[track_name].update_viewport(x_range[0], x_range[1])
+            # Defer the update to avoid blocking the signal handler
+            def deferred_update():
+                self.track_renderers[track_name].update_viewport(x_range[0], x_range[1])
+            QtCore.QTimer.singleShot(0, deferred_update)
     
     
     def remove_track(self, name: str):
@@ -255,9 +258,15 @@ class TrackRenderingMixin(EpochRenderingMixin):
         if new_start is None or new_end is None:
             return
         
-        # Update all track renderers
-        for track_renderer in self.track_renderers.values():
-            track_renderer.update_viewport(new_start, new_end)
+        # Schedule each track's update asynchronously with small delays to prevent blocking
+        # This ensures the UI remains responsive even if one track is slow
+        for idx, (track_name, track_renderer) in enumerate(self.track_renderers.items()):
+            def make_update_fn(renderer, start, end):
+                def update_fn():
+                    renderer.update_viewport(start, end)
+                return update_fn
+            # Stagger updates by 1ms per track to allow event loop processing between tracks
+            QtCore.QTimer.singleShot(idx * 1, make_update_fn(track_renderer, new_start, new_end))
     
     
     def get_track(self, name: str) -> Optional[TrackRenderer]:

@@ -5,6 +5,11 @@ from pypho_timeline.widgets.custom_graphics_layout_widget import (
     CustomViewBox,
 )
 
+from pypho_timeline.widgets.log_widget import (
+    LogWidget,
+    QtLogHandler,
+)
+
 # Lazy import to avoid circular dependency
 # simple_timeline_widget imports from docking modules which import from core modules
 # that import from widgets.custom_graphics_layout_widget, creating a circular dependency
@@ -56,5 +61,7 @@ __all__ = [
     'modality_sfreq_dict',
     'perform_process_all_streams',
     'perform_process_all_streams_multi_xdf',
+    'LogWidget',
+    'QtLogHandler',
 ]
 

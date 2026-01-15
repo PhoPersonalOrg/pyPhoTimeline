@@ -15,7 +15,8 @@ import pyxdf
 from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams, perform_process_all_streams_multi_xdf
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource
-from pypho_timeline.utils.logging_util import configure_logging
+from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler
+from pypho_timeline.widgets import LogWidget
 from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
 
 # Import VideoTrackDatasource for video-only timeline building
@@ -42,7 +43,7 @@ class TimelineBuilder:
         timeline = builder.build_from_video(video_folder_path=Path("path/to/videos"))
     """
     
-    def __init__(self, log_level: int = logging.DEBUG, log_file: Optional[Path] = None, log_to_console: bool = True, log_to_file: bool = True):
+    def __init__(self, log_level: int = logging.DEBUG, log_file: Optional[Path] = None, log_to_console: bool = False, log_to_file: bool = True):
         """Initialize the TimelineBuilder with logging configuration.
         
         Args:
@@ -52,20 +53,33 @@ class TimelineBuilder:
             log_to_file: Whether to log to file (default: True)
         """
         self.log_level = log_level
-        self.log_file = log_file if log_file is not None else Path("timeline_rendering.log")
+        self.log_file = log_file if log_file is not None else Path('EXTERNAL/LOGGING').resolve().joinpath("timeline_rendering.log")
         self.log_to_console = log_to_console
         self.log_to_file = log_to_file
+        self.log_widget = None
         
+
+        # Create log widget
+        self.log_widget = LogWidget()
+
         # Configure logging
-        configure_logging(
+        logger = configure_logging(
             log_level=self.log_level,
             log_file=self.log_file,
             log_to_console=self.log_to_console,
             log_to_file=self.log_to_file
         )
+    
+        # Add Qt handler for widget display
+        add_qt_log_handler(logger, self.log_widget, log_level=logging.DEBUG)
+
+        # Show the widget
+        self.log_widget.show()
+
         if self.log_to_console or self.log_to_file:
             print(f"Logging configured for TimelineBuilder - console: {self.log_to_console}, file: {self.log_to_file} ({self.log_file})")
-    
+
+
     
     ## MAIN FUNCTION
     def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
@@ -338,6 +352,11 @@ class TimelineBuilder:
         timeline.resize(window_size[0], window_size[1])
         timeline.show()
         
+        # Dock log widget at bottom if it exists
+        if self.log_widget is not None:
+            timeline.ui.dynamic_docked_widget_container.add_display_dock(identifier='log_widget', widget=self.log_widget, dockSize=(800, 200), dockAddLocationOpts=['bottom'])
+            self.log_widget.hide()  # Hide standalone window since it's now docked
+        
         print("\nTimeline widget created with tracks:")
         for ds in datasources:
             print(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
@@ -451,4 +470,21 @@ class TimelineBuilder:
             a_track_name: str = datasource.custom_datasource_name
             timeline.add_track(datasource, name=a_track_name, plot_item=a_plot_item)
         ## END for datasource in datasources...
+        
+        # Hide x-axis labels for all tracks except the bottom-most one
+        if len(timeline.ui.matplotlib_view_widgets) > 1:
+            # Get all plot items
+            all_plot_items = []
+            for widget_name, widget in timeline.ui.matplotlib_view_widgets.items():
+                plot_item = widget.getRootPlotItem()
+                if plot_item is not None:
+                    all_plot_items.append((widget_name, plot_item))
+            
+            # Hide x-axis for all except the last one (bottom-most)
+            if len(all_plot_items) > 1:
+                # Hide x-axis for all tracks except the last one
+                for widget_name, plot_item in all_plot_items[:-1]:
+                    plot_item.hideAxis('bottom')
+                # Ensure the last track shows its x-axis
+                all_plot_items[-1][1].showAxis('bottom')
         

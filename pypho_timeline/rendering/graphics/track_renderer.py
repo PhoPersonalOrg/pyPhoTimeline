@@ -140,33 +140,33 @@ class TrackRenderer(QtCore.QObject):
         TODO 2025-01-07 -- This is where I think I should remove the details if the detail view widget is too dense/too small.
 
         """
-        logger.debug(f"TrackRenderer[{self.track_id}] update_viewport(start={viewport_start:.3f}, end={viewport_end:.3f})")
-        
-        # Get intervals in viewport
-        intervals_df = self.datasource.get_updated_data_window(viewport_start, viewport_end) # TODO 2025-01-07 - Not all datasources use dataframes
-        num_intervals = len(intervals_df)
-        logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - found {num_intervals} intervals in viewport")
-        
-        # Optimize for video tracks: skip detail fetching entirely
-        is_video_track = VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource)
-        
-        # Determine which intervals are now visible
-        new_visible_keys = set()
-        cache_hits = 0
-        cache_misses = 0
-        already_visible = 0
-        
-        if is_video_track:
-            # For video tracks, just build the set of visible keys without detail fetching
-            # This is much faster since we skip cache checks, logging, and detail fetching
-            for idx, interval_series in intervals_df.iterrows():
-                cache_key = self.datasource.get_detail_cache_key(interval_series)
-                new_visible_keys.add(cache_key)
-                if cache_key not in self.visible_intervals:
-                    cache_misses += 1
-                else:
-                    already_visible += 1
-        else:
+        # Defer the actual processing to avoid blocking the UI thread
+        # This allows other tracks to continue processing even if this one is slow
+        def process_viewport_update():
+            logger.debug(f"TrackRenderer[{self.track_id}] update_viewport(start={viewport_start:.3f}, end={viewport_end:.3f})")
+            
+            # Optimize for video tracks: skip detail fetching entirely
+            is_video_track = VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource)
+            
+            # For video tracks, skip all processing - they don't need detail fetching
+            if is_video_track:
+                # Just update visible_intervals to empty set to prevent any detail fetching
+                # Video tracks only show overview rectangles, no detail overlays
+                self.visible_intervals.clear()
+                logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - video track, skipping detail processing")
+                return
+            
+            # Get intervals in viewport (only for non-video tracks)
+            intervals_df = self.datasource.get_updated_data_window(viewport_start, viewport_end) # TODO 2025-01-07 - Not all datasources use dataframes
+            num_intervals = len(intervals_df)
+            logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - found {num_intervals} intervals in viewport")
+            
+            # Determine which intervals are now visible
+            new_visible_keys = set()
+            cache_hits = 0
+            cache_misses = 0
+            already_visible = 0
+            
             # For non-video tracks, do full detail fetching logic
             for idx, interval_series in intervals_df.iterrows():
                 # Convert Series to single-row DataFrame for DetailRenderer methods
@@ -198,27 +198,30 @@ class TrackRenderer(QtCore.QObject):
                         self.async_fetcher.fetch_detail_async(self.track_id, interval_series, self.datasource) ## I believe after this asynchronously completes, `self._on_detail_data_ready` is called.
                 else:
                     already_visible += 1
-        ## END for idx, interval_series in intervals_df.iterrows()...
-        logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - intervals: {already_visible} already visible, {cache_hits} cache hits, {cache_misses} cache misses")
-        
-        # Cancel fetches for intervals that left viewport
-        intervals_that_left = self.visible_intervals - new_visible_keys
-        if intervals_that_left:
-            interval_keys_list = list(intervals_that_left)
-            logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - {len(intervals_that_left)} intervals leaving viewport: {interval_keys_list}")
-            self.async_fetcher.cancel_pending_fetches(self.track_id, interval_keys_list)
+            ## END for idx, interval_series in intervals_df.iterrows()...
+            logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - intervals: {already_visible} already visible, {cache_hits} cache hits, {cache_misses} cache misses")
             
-            # Clear detail graphics for intervals that left
-            for cache_key in intervals_that_left:
-                self._clear_detail(cache_key) ## this is this being called for all intervals?
+            # Cancel fetches for intervals that left viewport
+            intervals_that_left = self.visible_intervals - new_visible_keys
+            if intervals_that_left:
+                interval_keys_list = list(intervals_that_left)
+                logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - {len(intervals_that_left)} intervals leaving viewport: {interval_keys_list}")
+                self.async_fetcher.cancel_pending_fetches(self.track_id, interval_keys_list)
+                
+                # Clear detail graphics for intervals that left
+                for cache_key in intervals_that_left:
+                    self._clear_detail(cache_key) ## this is this being called for all intervals?
+            
+            # Update visible intervals set
+            self.visible_intervals = new_visible_keys
+            logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - visible_intervals count: {len(self.visible_intervals)}")
         
-        # Update visible intervals set
-        self.visible_intervals = new_visible_keys
-        logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - visible_intervals count: {len(self.visible_intervals)}")
+        # Schedule the actual processing to run asynchronously
+        # Use QTimer.singleShot(0) to defer to next event loop iteration
+        QtCore.QTimer.singleShot(0, process_viewport_update)
     
 
-    def _on_detail_data_ready(self, track_id: str, cache_key: str, interval: pd.DataFrame, 
-                             detail_data: Any, error: Optional[Exception]):
+    def _on_detail_data_ready(self, track_id: str, cache_key: str, interval: pd.DataFrame, detail_data: Any, error: Optional[Exception]):
         """Handle when detail data is ready (called from async fetcher signal).
         
         Args:
@@ -321,7 +324,7 @@ class TrackRenderer(QtCore.QObject):
         for cache_key in list(self.detail_graphics.keys()):
             self._clear_detail(cache_key)
         
-        self.visible_intervals.clear()
+        self.visible_intervals.clear() ## cleared the visible intervals too
         logger.debug(f"TrackRenderer[{self.track_id}] clear_all_details() - cleared visible_intervals set")
     
 
@@ -433,7 +436,7 @@ class TrackRenderer(QtCore.QObject):
             self._clear_detail(cache_key)
         
         # Clear visible_intervals so update_viewport() will treat all intervals as new and re-fetch/re-render them
-        self.visible_intervals.clear()
+        self.visible_intervals.clear() ## this seems uneeded and relies on update_viewport to rebuild them
         logger.debug(f"TrackRenderer[{self.track_id}] Cleared visible_intervals to force re-fetch on next update_viewport()")
         
         # Trigger viewport update to re-render with new visibility
