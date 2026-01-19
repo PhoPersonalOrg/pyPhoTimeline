@@ -261,16 +261,48 @@ class CustomViewBox(ReprPrintableItemMixin, pg.ViewBox):
             ev.accept()
             # super().mouseDragEvent(ev, axis=axis)  # only if you want default drag/pan
         
+        
     def wheelEvent(self, ev, axis=None):
         """Handle mouse wheel events for zooming.
         
-        Uses pyqtgraph's default wheel zoom behavior which zooms centered on mouse position.
+        For VideoTracks, only adjusts x-value (horizontal zoom) and locks y-values.
+        For other tracks, uses pyqtgraph's default wheel zoom behavior.
         """
         if self._debug_print:
             print(f'CustomViewBox.wheelEvent(ev: {ev}, axis={axis})')
         
-        # Use default pyqtgraph wheel zoom behavior
-        # This will zoom centered on the mouse position
+        # # Check if this ViewBox is associated with a VideoTrack
+        # allow_zoom_x_only: bool = True
+        
+        # if allow_zoom_x_only:
+        #     # For VideoTracks, only zoom on x-axis (lock y-axis)
+        #     # Get current view range
+        #     current_range = self.viewRange()
+        #     x_range = current_range[0]
+        #     y_range = current_range[1]
+            
+        #     # Get mouse position in view coordinates
+        #     mouse_pos = self.mapSceneToView(ev.pos())
+            
+        #     # Calculate zoom factor (pyqtgraph uses 1.02 per step)
+        #     delta = ev.angleDelta().y()
+        #     if delta > 0:
+        #         zoom_factor = 1.02
+        #     else:
+        #         zoom_factor = 1.0 / 1.02
+            
+        #     # Calculate new x range centered on mouse position
+        #     x_center = mouse_pos.x()
+        #     x_width = x_range[1] - x_range[0]
+        #     new_x_width = x_width / zoom_factor
+        #     new_x_min = x_center - (x_center - x_range[0]) * (new_x_width / x_width)
+        #     new_x_max = new_x_min + new_x_width
+            
+        #     # Set new range (only x-axis changes, y-axis stays locked)
+        #     self.setRange(xRange=(new_x_min, new_x_max), yRange=y_range, padding=0)
+        # else:
+        # Use default pyqtgraph wheel zoom behavior for non-video tracks
         super().wheelEvent(ev, axis=axis)
+        
         ev.accept()
 

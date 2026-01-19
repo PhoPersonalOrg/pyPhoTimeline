@@ -117,6 +117,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         
         # Add to layout
         self.ui.layout.addWidget(self.ui.dynamic_docked_widget_container)
+
+        self.TrackRenderingMixin_on_buildUI()
         
         # Add some example tracks (only if requested)
         if self._add_example_tracks:

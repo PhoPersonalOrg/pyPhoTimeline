@@ -1,8 +1,9 @@
 """TrackRenderingMixin - Mixin for rendering timeline tracks with async detail loading."""
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple, Any
 import pandas as pd
 from qtpy import QtCore
 import pyphoplacecellanalysis.External.pyqtgraph as pg
+from pyphoplacecellanalysis.External.pyqtgraph import SignalProxy
 
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData
@@ -12,6 +13,8 @@ from pypho_timeline.rendering.datasources.track_datasource import TrackDatasourc
 from pypho_timeline.rendering.graphics.track_renderer import TrackRenderer
 from pypho_timeline.rendering.async_detail_fetcher import AsyncDetailFetcher
 from pypho_timeline.rendering.mixins.epoch_rendering_mixin import EpochRenderingMixin
+
+from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
 
 
 class TrackRenderingMixin(EpochRenderingMixin):
@@ -113,6 +116,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
         # Call parent destroy
         self.EpochRenderingMixin_on_destroy()
     
+
     def add_track(self, track_datasource: TrackDatasource, name: str, plot_item: Optional[pg.PlotItem] = None, **kwargs) -> TrackRenderer:
         """Add a new track to the timeline.
         
@@ -128,78 +132,82 @@ class TrackRenderingMixin(EpochRenderingMixin):
         Returns:
             TrackRenderer instance for this track
         """
-        # Get plot item
-        if plot_item is None:
-            interval_plots = self.interval_rendering_plots
-            if len(interval_plots) == 0:
-                raise ValueError("No interval rendering plots available. Override interval_rendering_plots property.")
-            plot_item = interval_plots[0]
-        
-        # Store datasource
-        self.track_datasources[name] = track_datasource
-        
-        # Create track renderer
-        track_renderer = TrackRenderer(
-            track_id=name,
-            datasource=track_datasource,
-            plot_item=plot_item,
-            async_fetcher=self.async_detail_fetcher
-        )
-        
-        # Connect signals
-        track_renderer.detail_loaded.connect(
-            lambda tid, iv, dd: self.sigTrackDetailLoaded.emit(tid, iv, dd)
-        )
-        
-        # Connect to viewport changes via PlotItem's ViewBox
-        viewbox = plot_item.getViewBox()
-        if viewbox is not None:
-            # Use SignalProxy to rate-limit viewport updates
-            from pyphoplacecellanalysis.External.pyqtgraph import SignalProxy
-            proxy_key = f'track_viewport_{name}'
-            if proxy_key not in self.ui.connections:
-                proxy = SignalProxy(
-                    viewbox.sigRangeChanged,
-                    rateLimit=30,  # Limit to 30 updates per second
-                    slot=lambda evt: self._on_plot_viewport_changed(name, evt)
-                )
-                self.ui.connections[proxy_key] = proxy
-        
-        # Store renderer
-        self.track_renderers[name] = track_renderer
-        
-        # Connect track renderer to widget if plot_item belongs to a PyqtgraphTimeSynchronizedWidget
-        # This enables the options panel functionality
-        # TODO 2025-01-06 - does this enable a strong reference cycle? _______________________________________________________________________________________________________________________________________________________________________________________________________________________ #
-        try:
-            from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
-            # Try to find the parent widget that contains this plot_item
-            # The plot_item is part of a GraphicsLayoutWidget, which is part of PyqtgraphTimeSynchronizedWidget
-            graphics_layout = plot_item.parentItem()
-            if graphics_layout is not None:
-                # Find the widget by traversing up the parent chain or searching
-                # Actually, we can search for widgets in the timeline that match the track name
-                if hasattr(self, 'ui') and hasattr(self.ui, 'matplotlib_view_widgets'):
-                    widget_name = name
-                    if widget_name in self.ui.matplotlib_view_widgets:
-                        widget = self.ui.matplotlib_view_widgets[widget_name]
-                        if isinstance(widget, PyqtgraphTimeSynchronizedWidget):
-                            widget.set_track_renderer(track_renderer)
-        except (ImportError, AttributeError, KeyError):
-            # If widget connection fails, continue without options panel
-            pass
-        
-        # Defer initial viewport update to avoid blocking UI during initialization
-        # Use QTimer.singleShot(0) to schedule after current event loop iteration
-        if viewbox is not None:
-            def deferred_viewport_update():
-                x_range, y_range = viewbox.viewRange()
-                if len(x_range) == 2:
-                    track_renderer.update_viewport(x_range[0], x_range[1])
-            QtCore.QTimer.singleShot(0, deferred_viewport_update)
-        
-        # Emit signal
-        self.sigTrackAdded.emit(name)
+        ## try to find existing items first:
+        extant_track_datasource: Optional[TrackDatasource] = self.track_datasources.get(name, None)
+        track_renderer: Optional[TrackRenderer] = self.track_renderers.get(name, None)
+        widget: PyqtgraphTimeSynchronizedWidget = self.ui.matplotlib_view_widgets.get(name, None)
+
+
+        does_item_exist: bool = (extant_track_datasource is not None) and (track_renderer is not None) and (widget is not None)
+        if (not does_item_exist):
+            # Get plot item
+            if plot_item is None:
+                interval_plots = self.interval_rendering_plots
+                if len(interval_plots) == 0:
+                    raise ValueError("No interval rendering plots available. Override interval_rendering_plots property.")
+                plot_item = interval_plots[0]
+            
+            # Store datasource
+            self.track_datasources[name] = track_datasource
+            
+            # Create track renderer
+            track_renderer = TrackRenderer(track_id=name, datasource=track_datasource, plot_item=plot_item, async_fetcher=self.async_detail_fetcher)
+            
+            # Connect signals
+            track_renderer.detail_loaded.connect(lambda tid, iv, dd: self.sigTrackDetailLoaded.emit(tid, iv, dd))
+            
+            # Connect track renderer to widget if plot_item belongs to a PyqtgraphTimeSynchronizedWidget
+            # This enables the options panel functionality
+            # TODO 2025-01-06 - does this enable a strong reference cycle? _______________________________________________________________________________________________________________________________________________________________________________________________________________________ #
+            # Connect to viewport changes via PlotItem's ViewBox
+            viewbox = plot_item.getViewBox()
+            if viewbox is not None:
+                # Enable panning/zooming only on the x-axis
+                viewbox.setMouseEnabled(x=True, y=False)
+                # Use SignalProxy to rate-limit viewport updates
+                
+                proxy_key = f'track_viewport_{name}'
+                if proxy_key not in self.ui.connections:
+                    proxy = SignalProxy(viewbox.sigRangeChanged, rateLimit=30, slot=lambda evt: self._on_plot_viewport_changed(name, evt)) # Limit to 30 updates per second
+                    self.ui.connections[proxy_key] = proxy
+            
+                    try:
+                        # Try to find the parent widget that contains this plot_item
+                        # The plot_item is part of a GraphicsLayoutWidget, which is part of PyqtgraphTimeSynchronizedWidget
+                        graphics_layout = plot_item.parentItem()
+                        if graphics_layout is not None:
+                            # Find the widget by traversing up the parent chain or searching
+                            # Actually, we can search for widgets in the timeline that match the track name
+                            if hasattr(self, 'ui') and hasattr(self.ui, 'matplotlib_view_widgets'):
+                                widget_name = name
+                                if widget_name in self.ui.matplotlib_view_widgets:
+                                    widget = self.ui.matplotlib_view_widgets[widget_name]
+                                    if isinstance(widget, PyqtgraphTimeSynchronizedWidget):
+                                        widget.set_track_renderer(track_renderer)
+
+                    except (ImportError, AttributeError, KeyError):
+                        # If widget connection fails, continue without options panel
+                        pass
+
+            # Store renderer
+            self.track_renderers[name] = track_renderer
+
+            # Defer initial viewport update to avoid blocking UI during initialization
+            # Use QTimer.singleShot(0) to schedule after current event loop iteration
+            if viewbox is not None:
+                def deferred_viewport_update():
+                    x_range, y_range = viewbox.viewRange()
+                    if len(x_range) == 2:
+                        track_renderer.update_viewport(x_range[0], x_range[1])
+                QtCore.QTimer.singleShot(0, deferred_viewport_update)
+
+            # Emit signal
+            self.sigTrackAdded.emit(name)
+
+        else:
+            print(f'WARN: item already exists!')
+
+
         
         return track_renderer
     
@@ -280,6 +288,23 @@ class TrackRenderingMixin(EpochRenderingMixin):
         """
         return self.track_renderers.get(name, None)
     
+
+
+    def get_track_tuple(self, name: str) -> Tuple[Optional[PyqtgraphTimeSynchronizedWidget], Optional[TrackRenderer], Optional[TrackDatasource]]:
+        """Get a track renderer by name.
+
+        Args:
+            name: Track name
+
+        Returns:
+            TrackRenderer instance or None if not found
+        """
+        extant_track_datasource: Optional[TrackDatasource] = self.track_datasources.get(name, None)
+        track_renderer: Optional[TrackRenderer] = self.track_renderers.get(name, None)
+        widget: Optional[PyqtgraphTimeSynchronizedWidget] = self.ui.matplotlib_view_widgets.get(name, None)
+        return widget, track_renderer, extant_track_datasource
+
+
 
     def get_all_track_names(self) -> List[str]:
         """Get list of all track names.
