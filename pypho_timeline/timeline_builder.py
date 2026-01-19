@@ -354,8 +354,12 @@ class TimelineBuilder:
         
         # Dock log widget at bottom if it exists
         if self.log_widget is not None:
-            timeline.ui.dynamic_docked_widget_container.add_display_dock(identifier='log_widget', widget=self.log_widget, dockSize=(800, 200), dockAddLocationOpts=['bottom'])
-            self.log_widget.hide()  # Hide standalone window since it's now docked
+            # Hide standalone window before adding to dock (so it doesn't show as separate window)
+            self.log_widget.hide()
+            # Add to dock - the dock will automatically show the widget
+            _, dock = timeline.ui.dynamic_docked_widget_container.add_display_dock(identifier='log_widget', widget=self.log_widget, dockSize=(800, 200), dockAddLocationOpts=['bottom'])
+            # Explicitly show the widget to ensure it's visible in the dock
+            self.log_widget.show()
         
         print("\nTimeline widget created with tracks:")
         for ds in datasources:
