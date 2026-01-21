@@ -138,7 +138,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
 
 
 
-    def add_video_track(self, track_name: str, video_datasource: VideoTrackDatasource, dockSize: Tuple[int, int] = (500, 80), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA):
+    def add_video_track(self, track_name: str, video_datasource: VideoTrackDatasource, dockSize: Tuple[int, int] = (500, 80), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA, use_vispy: bool = False):
             """Add a video track to the timeline.
             
             This is a convenience method that creates a plot widget and adds the video track.
@@ -148,6 +148,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                 video_datasource: VideoTrackDatasource instance
                 dockSize: Size of the dock widget (width, height). Default: (500, 80)
                 sync_mode: Synchronization mode for the plot. Default: TO_GLOBAL_DATA
+                use_vispy: If True, use high-performance vispy renderer instead of pyqtgraph (default: False)
                 
             Returns:
                 Tuple of (widget, root_graphics, plot_item, dock) from add_new_embedded_pyqtgraph_render_plot_widget
@@ -159,6 +160,10 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                 dockAddLocationOpts=['bottom'],
                 sync_mode=sync_mode
             )
+            
+            # Set vispy renderer flag on datasource if requested
+            if use_vispy:
+                video_datasource.use_vispy_renderer = True
             
             # Get time range from datasource
             t_start, t_end = video_datasource.total_df_start_end_times

@@ -17,6 +17,13 @@ try:
 except ImportError:
     VideoTrackDatasource = None
 
+# Import vispy renderer
+try:
+    from pypho_timeline.rendering.graphics.vispy_video_epoch_renderer import VispyVideoEpochRenderer, VISPY_AVAILABLE
+except ImportError:
+    VispyVideoEpochRenderer = None
+    VISPY_AVAILABLE = False
+
 logger = get_rendering_logger(__name__)
 
 
@@ -52,6 +59,8 @@ class TrackRenderer(QtCore.QObject):
         
         # Overview rendering
         self.overview_rects_item: Optional[IntervalRectsItem] = None
+        self.vispy_renderer: Optional[VispyVideoEpochRenderer] = None
+        self.use_vispy = False
         
         # Detail rendering state
         self.detail_renderer: DetailRenderer = datasource.get_detail_renderer()
@@ -73,6 +82,15 @@ class TrackRenderer(QtCore.QObject):
         detail_renderer_type = type(self.detail_renderer).__name__ if self.detail_renderer is not None else "None"
         logger.info(f"TrackRenderer[{self.track_id}] Initialized with datasource type={datasource_type}, detail_renderer={detail_renderer_type}")
         
+        # Check if we should use vispy renderer for video tracks
+        if VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource):
+            if hasattr(self.datasource, 'use_vispy_renderer') and self.datasource.use_vispy_renderer:
+                if VISPY_AVAILABLE and VispyVideoEpochRenderer is not None:
+                    self.use_vispy = True
+                    logger.info(f"TrackRenderer[{self.track_id}] Using vispy renderer for video track")
+                else:
+                    logger.warning(f"TrackRenderer[{self.track_id}] vispy requested but not available, falling back to pyqtgraph")
+        
         # Connect to async fetcher
         self.async_fetcher.detail_data_ready.connect(self._on_detail_data_ready)
         logger.debug(f"TrackRenderer[{self.track_id}] Connected to async_fetcher.detail_data_ready signal")
@@ -90,7 +108,77 @@ class TrackRenderer(QtCore.QObject):
             num_intervals = len(overview_df)
             logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - found {num_intervals} intervals in overview")
             
-            # Build IntervalRectsItem from overview data
+            # Use vispy renderer if enabled
+            if self.use_vispy and VispyVideoEpochRenderer is not None:
+                # Get reference datetime from plot_item's parent widget if available
+                reference_datetime = None
+                try:
+                    # Try to get reference_datetime from timeline widget
+                    parent_widget = self.plot_item.parentItem()
+                    if parent_widget is not None:
+                        # Traverse up to find timeline widget
+                        while parent_widget is not None:
+                            if hasattr(parent_widget, 'reference_datetime'):
+                                reference_datetime = parent_widget.reference_datetime
+                                break
+                            parent_widget = parent_widget.parentItem()
+                except Exception:
+                    pass
+                
+                # Create or update vispy renderer
+                if self.vispy_renderer is None:
+                    # Get reference datetime from timeline widget if available
+                    # Try to get from plot_item's parent hierarchy
+                    timeline_widget = None
+                    try:
+                        # Try to find timeline widget by traversing parent chain
+                        current = self.plot_item
+                        while current is not None:
+                            if hasattr(current, 'reference_datetime'):
+                                reference_datetime = current.reference_datetime
+                                timeline_widget = current
+                                break
+                            # Try to get parent
+                            if hasattr(current, 'parentItem'):
+                                current = current.parentItem()
+                            elif hasattr(current, 'parent'):
+                                current = current.parent()
+                            else:
+                                break
+                    except Exception as e:
+                        logger.debug(f"TrackRenderer[{self.track_id}] Could not find reference_datetime: {e}")
+                    
+                    # Get parent widget for embedding (vispy canvas needs Qt widget parent)
+                    parent_widget = None
+                    try:
+                        # Try to get the actual Qt widget from plot_item
+                        viewbox = self.plot_item.getViewBox()
+                        if viewbox is not None:
+                            # Get the GraphicsView widget
+                            if hasattr(viewbox, 'parent'):
+                                parent_widget = viewbox.parent()
+                            # Try alternative: get widget from plot_item
+                            if parent_widget is None and hasattr(self.plot_item, 'parent'):
+                                parent_widget = self.plot_item.parent()
+                    except Exception as e:
+                        logger.debug(f"TrackRenderer[{self.track_id}] Could not get parent widget: {e}")
+                    
+                    self.vispy_renderer = VispyVideoEpochRenderer(
+                        parent_widget=parent_widget,
+                        reference_datetime=reference_datetime,
+                        max_epochs=10000
+                    )
+                    logger.info(f"TrackRenderer[{self.track_id}] Created vispy renderer")
+                    
+                    # Note: The vispy canvas widget can be retrieved via get_canvas_widget() if needed
+                    # for custom embedding. For now, it's created but may need to be shown/embedded separately.
+                
+                # Update vispy renderer with intervals
+                self.vispy_renderer.update_epochs(overview_df)
+                logger.debug(f"TrackRenderer[{self.track_id}] Updated vispy renderer with {num_intervals} intervals")
+                return
+            
+            # Build IntervalRectsItem from overview data (pyqtgraph fallback)
             # The datasource should provide visualization columns, but if not, we need to add them
             if 'series_vertical_offset' not in overview_df.columns:
                 # Default vertical positioning
@@ -148,8 +236,12 @@ class TrackRenderer(QtCore.QObject):
             # Optimize for video tracks: skip detail fetching entirely
             is_video_track = VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource)
             
-            # For video tracks, skip all processing - they don't need detail fetching
+            # For video tracks, update vispy renderer viewport if using vispy
             if is_video_track:
+                if self.use_vispy and self.vispy_renderer is not None:
+                    # Update vispy renderer viewport
+                    self.vispy_renderer.set_viewport(viewport_start, viewport_end)
+                    logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - updated vispy renderer viewport")
                 # Just update visible_intervals to empty set to prevent any detail fetching
                 # Video tracks only show overview rectangles, no detail overlays
                 self.visible_intervals.clear()
@@ -335,6 +427,12 @@ class TrackRenderer(QtCore.QObject):
         # Clear all details
         self.clear_all_details()
         
+        # Remove vispy renderer if used
+        if self.vispy_renderer is not None:
+            logger.debug(f"TrackRenderer[{self.track_id}] remove() - removing vispy renderer")
+            self.vispy_renderer.remove()
+            self.vispy_renderer = None
+        
         # Remove overview
         if self.overview_rects_item is not None:
             logger.debug(f"TrackRenderer[{self.track_id}] remove() - removing overview item")
@@ -357,6 +455,18 @@ class TrackRenderer(QtCore.QObject):
         Returns:
             Tuple of (x_min, x_max, y_min, y_max) or None if no overview
         """
+        if self.use_vispy and self.vispy_renderer is not None:
+            # Get bounds from vispy renderer
+            if self.vispy_renderer.current_epochs_data:
+                epochs_df = pd.DataFrame(self.vispy_renderer.current_epochs_data)
+                if len(epochs_df) > 0:
+                    x_min = epochs_df['t_start'].min()
+                    x_max = (epochs_df['t_start'] + epochs_df['t_duration']).max()
+                    y_min = epochs_df['series_vertical_offset'].min()
+                    y_max = (epochs_df['series_vertical_offset'] + epochs_df['series_height']).max()
+                    return (x_min, x_max, y_min, y_max)
+            return None
+        
         if self.overview_rects_item is None:
             return None
         

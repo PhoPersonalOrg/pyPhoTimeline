@@ -20,6 +20,8 @@ dependencies = [
     "pyxdf>=1.16.8",
     "scipy>=1.13.1",
     "opencv-python>=4.5.0",
+    "imageio[ffmpeg]>=2.37.2",
+    "vispy>=0.14.0",
 ]
 
 [tool.uv.sources]

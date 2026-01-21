@@ -291,7 +291,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         video_ds = VideoTrackDatasource(video_paths=[Path("video1.mp4"), Path("video2.mp4")])
     """
     
-    def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, video_paths: Optional[List[Union[Path, str]]] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128)):
+    def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, video_paths: Optional[List[Union[Path, str]]] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False):
         """Initialize with video intervals.
         
         Args:
@@ -303,6 +303,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
             reference_timestamp: Optional reference timestamp for time conversion (default: first video start time)
             frames_per_second: Target frame rate for thumbnail extraction (default: 10.0)
             thumbnail_size: Optional (width, height) tuple for resizing frames (default: (128, 128))
+            use_vispy_renderer: If True, use high-performance vispy renderer instead of pyqtgraph (default: False)
         """
         # Determine which input method to use
         if video_intervals_df is not None:
@@ -395,6 +396,9 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         # Store configuration for frame loading
         self.frames_per_second = frames_per_second
         self.thumbnail_size = thumbnail_size
+        
+        # Store vispy renderer flag
+        self.use_vispy_renderer = use_vispy_renderer
     
     def fetch_detailed_data(self, interval: pd.Series) -> dict:
         """Fetch video frames for an interval using cv2.VideoCapture.
