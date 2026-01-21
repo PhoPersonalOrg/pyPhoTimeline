@@ -23,18 +23,43 @@ def main():
     
     # Example 1: Create video track from a folder of video files
     # Replace with your actual video folder path
-    video_folder_path = Path("path/to/your/video/folder")
-    
+    video_folder_path = Path(r"M:/ScreenRecordings/EyeTrackerVR_Recordings")
+    print(f"Video folder path: {video_folder_path}")
+
+
+    # Specify your video folder path
+    # video_folder = Path(r"E:/Dropbox (Personal)/Databases/UnparsedData/LabRecorderStudies/sub-P001/Videos")
+    video_folder = Path(r"M:/ScreenRecordings/EyeTrackerVR_Recordings")
+    assert video_folder.exists() and video_folder.is_dir()
+
     # Check if folder exists (for demonstration, we'll create a datasource anyway)
     if not video_folder_path.exists():
         print(f"Warning: Video folder not found: {video_folder_path}")
         print("Please update 'video_folder_path' with a valid path to your video files.")
         print("The script will still run but no videos will be displayed.\n")
+
+        
+    # Gather all video files (adjust extensions as needed)
+    video_extensions = ('.mp4', '.avi', '.mov', '.mkv', '.wmv')
+    all_videos = [p for p in video_folder.glob('*') if p.suffix.lower() in video_extensions]
+
+    # Sort by modification time (descending), get 5 most recent
+    all_videos.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    recent_videos = all_videos[:10]
+    recent_videos
+
+    # Create the VideoTrackDatasource
+    # video_ds = VideoTrackDatasource(video_paths=recent_videos)
+
+    print(f"Recent videos: {recent_videos}")
+
+    
     
     # Create VideoTrackDatasource with vispy renderer enabled
     print("Creating VideoTrackDatasource with vispy renderer...")
     video_datasource = VideoTrackDatasource(
-        video_folder_path=video_folder_path,
+        # video_folder_path=video_folder_path,
+        video_paths=recent_videos,
         custom_datasource_name="Video Track (Vispy)",
         use_vispy_renderer=True,  # Enable vispy renderer
         frames_per_second=10.0,
