@@ -170,8 +170,38 @@ class TrackRenderer(QtCore.QObject):
                     )
                     logger.info(f"TrackRenderer[{self.track_id}] Created vispy renderer")
                     
-                    # Note: The vispy canvas widget can be retrieved via get_canvas_widget() if needed
-                    # for custom embedding. For now, it's created but may need to be shown/embedded separately.
+                    # Embed the vispy canvas widget into the plot_item's viewbox
+                    # Note: vispy and pyqtgraph use different rendering backends (OpenGL vs QPainter)
+                    # so we need to overlay or replace the plot_item content with the vispy canvas
+                    try:
+                        vispy_canvas_widget = self.vispy_renderer.get_canvas_widget()
+                        if vispy_canvas_widget is not None:
+                            # Get the GraphicsView widget that contains the plot_item
+                            viewbox = self.plot_item.getViewBox()
+                            graphics_view = None
+                            if viewbox is not None:
+                                # Try to get the GraphicsView widget
+                                if hasattr(viewbox, 'parent'):
+                                    parent = viewbox.parent()
+                                    # GraphicsView is typically the parent of ViewBox
+                                    if parent is not None:
+                                        graphics_view = parent
+                            
+                            # If we found a GraphicsView, try to overlay the vispy canvas
+                            if graphics_view is not None:
+                                # Set the vispy canvas as a child of the graphics view
+                                vispy_canvas_widget.setParent(graphics_view)
+                                # Make it fill the entire graphics view area
+                                vispy_canvas_widget.setGeometry(graphics_view.rect())
+                                vispy_canvas_widget.raise_()  # Bring to front
+                                vispy_canvas_widget.show()
+                                logger.info(f"TrackRenderer[{self.track_id}] Embedded vispy canvas widget into graphics view")
+                            else:
+                                # Fallback: just show the canvas (might appear as separate window)
+                                vispy_canvas_widget.show()
+                                logger.warning(f"TrackRenderer[{self.track_id}] Could not find graphics view, showing vispy canvas as standalone")
+                    except Exception as e:
+                        logger.warning(f"TrackRenderer[{self.track_id}] Could not embed vispy canvas widget: {e}", exc_info=True)
                 
                 # Update vispy renderer with intervals
                 self.vispy_renderer.update_epochs(overview_df)

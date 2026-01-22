@@ -220,7 +220,7 @@ class VispyVideoEpochRenderer(QtCore.QObject):
         
         # Create vispy SceneCanvas
         # Note: parent_widget may be None initially, canvas can be embedded later
-        self.canvas = vispy.scene.SceneCanvas(keys='interactive', show=False, parent=parent_widget)
+        self.canvas = vispy.scene.SceneCanvas(keys='interactive', show=True, parent=parent_widget)
         if hasattr(self.canvas, '_send_hover_events'):
             self.canvas._send_hover_events = True  # Enable hover events
         
@@ -370,8 +370,24 @@ class VispyVideoEpochRenderer(QtCore.QObject):
         self.viewport_start = viewport_start
         self.viewport_end = viewport_end
         
-        # Update camera range
-        y_range = self.view.camera.rect[2:4] if hasattr(self.view.camera, 'rect') else (0, 1)
+        # Update camera range - get current y range from camera
+        try:
+            # Try to get current y range from camera's rect property
+            if hasattr(self.view.camera, 'rect'):
+                rect = self.view.camera.rect
+                # rect is (x, y, width, height), we need y_min and y_max
+                if isinstance(rect, (tuple, list)) and len(rect) >= 4:
+                    y_min = float(rect[1])
+                    y_max = float(rect[1] + rect[3])
+                    y_range = (y_min, y_max)
+                else:
+                    y_range = (0, 1)
+            else:
+                y_range = (0, 1)
+        except Exception:
+            # Fallback to default y range
+            y_range = (0, 1)
+        
         self.view.camera.set_range(x=(viewport_start, viewport_end), y=y_range)
         
         # Re-render with culling
