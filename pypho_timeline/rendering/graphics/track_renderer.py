@@ -189,13 +189,28 @@ class TrackRenderer(QtCore.QObject):
                             
                             # If we found a GraphicsView, try to overlay the vispy canvas
                             if graphics_view is not None:
-                                # Set the vispy canvas as a child of the graphics view
-                                vispy_canvas_widget.setParent(graphics_view)
-                                # Make it fill the entire graphics view area
-                                vispy_canvas_widget.setGeometry(graphics_view.rect())
-                                vispy_canvas_widget.raise_()  # Bring to front
-                                vispy_canvas_widget.show()
-                                logger.info(f"TrackRenderer[{self.track_id}] Embedded vispy canvas widget into graphics view")
+                                try:
+                                    # Set the vispy canvas as a child of the graphics view
+                                    vispy_canvas_widget.setParent(graphics_view)
+                                    # Make it fill the entire graphics view area
+                                    # Convert QRectF to QRect for setGeometry
+                                    from qtpy import QtCore
+                                    rect = graphics_view.rect()
+                                    if isinstance(rect, QtCore.QRectF):
+                                        # Convert QRectF to QRect
+                                        vispy_canvas_widget.setGeometry(
+                                            int(rect.x()), int(rect.y()), 
+                                            int(rect.width()), int(rect.height())
+                                        )
+                                    else:
+                                        vispy_canvas_widget.setGeometry(rect)
+                                    vispy_canvas_widget.raise_()  # Bring to front
+                                    vispy_canvas_widget.show()
+                                    logger.info(f"TrackRenderer[{self.track_id}] Embedded vispy canvas widget into graphics view")
+                                except Exception as embed_error:
+                                    logger.warning(f"TrackRenderer[{self.track_id}] Could not embed vispy canvas: {embed_error}")
+                                    # Fallback: just show the canvas
+                                    vispy_canvas_widget.show()
                             else:
                                 # Fallback: just show the canvas (might appear as separate window)
                                 vispy_canvas_widget.show()

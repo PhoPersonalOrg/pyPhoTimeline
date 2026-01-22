@@ -344,18 +344,39 @@ class VispyVideoEpochRenderer(QtCore.QObject):
         
         # Update camera range if needed
         if len(epochs_df) > 0:
-            t_start = epochs_df['t_start'].min()
-            t_end = (epochs_df['t_start'] + epochs_df['t_duration']).max()
-            y_min = epochs_df['series_vertical_offset'].min()
-            y_max = (epochs_df['series_vertical_offset'] + epochs_df['series_height']).max()
+            t_start = float(epochs_df['t_start'].min())
+            t_end = float((epochs_df['t_start'] + epochs_df['t_duration']).max())
+            y_min = float(epochs_df['series_vertical_offset'].min())
+            y_max = float((epochs_df['series_vertical_offset'] + epochs_df['series_height']).max())
             
             # Set camera range (with padding)
             padding_x = (t_end - t_start) * 0.1 if t_end > t_start else 1.0
             padding_y = (y_max - y_min) * 0.1 if y_max > y_min else 1.0
-            self.view.camera.set_range(
-                x=(t_start - padding_x, t_end + padding_x),
-                y=(y_min - padding_y, y_max + padding_y)
-            )
+            
+            # Ensure valid ranges
+            x_min = t_start - padding_x
+            x_max = t_end + padding_x
+            y_min_padded = y_min - padding_y
+            y_max_padded = y_max + padding_y
+            
+            # Make sure ranges are valid (not NaN or infinite)
+            if not (np.isfinite(x_min) and np.isfinite(x_max) and np.isfinite(y_min_padded) and np.isfinite(y_max_padded)):
+                logger.warning(f"VispyVideoEpochRenderer._do_update_epochs() - invalid range values, using defaults")
+                x_min, x_max = 0.0, 100.0
+                y_min_padded, y_max_padded = 0.0, 50.0
+            
+            try:
+                self.view.camera.set_range(
+                    x=(x_min, x_max),
+                    y=(y_min_padded, y_max_padded)
+                )
+            except Exception as e:
+                logger.warning(f"VispyVideoEpochRenderer._do_update_epochs() - error setting camera range: {e}")
+                # Try with just x range
+                try:
+                    self.view.camera.set_range(x=(x_min, x_max))
+                except Exception as e2:
+                    logger.warning(f"VispyVideoEpochRenderer._do_update_epochs() - error setting x range only: {e2}")
         
         # Trigger redraw
         self.canvas.update()
@@ -371,24 +392,34 @@ class VispyVideoEpochRenderer(QtCore.QObject):
         self.viewport_end = viewport_end
         
         # Update camera range - get current y range from camera
+        # Use a fixed y range based on the data instead of trying to extract from rect
+        # This avoids unpacking errors and OSErrors
         try:
-            # Try to get current y range from camera's rect property
-            if hasattr(self.view.camera, 'rect'):
-                rect = self.view.camera.rect
-                # rect is (x, y, width, height), we need y_min and y_max
-                if isinstance(rect, (tuple, list)) and len(rect) >= 4:
-                    y_min = float(rect[1])
-                    y_max = float(rect[1] + rect[3])
+            # Use the y range from current epochs data if available
+            if self.current_epochs_data:
+                epochs_df = pd.DataFrame(self.current_epochs_data)
+                if len(epochs_df) > 0:
+                    y_min = float(epochs_df['series_vertical_offset'].min())
+                    y_max = float((epochs_df['series_vertical_offset'] + epochs_df['series_height']).max())
                     y_range = (y_min, y_max)
                 else:
-                    y_range = (0, 1)
+                    y_range = (0, 50)  # Default height for video tracks
             else:
-                y_range = (0, 1)
-        except Exception:
+                y_range = (0, 50)  # Default height for video tracks
+        except Exception as e:
+            logger.debug(f"VispyVideoEpochRenderer.set_viewport() - error getting y range: {e}")
             # Fallback to default y range
-            y_range = (0, 1)
+            y_range = (0, 50)
         
-        self.view.camera.set_range(x=(viewport_start, viewport_end), y=y_range)
+        try:
+            self.view.camera.set_range(x=(viewport_start, viewport_end), y=y_range)
+        except Exception as e:
+            logger.warning(f"VispyVideoEpochRenderer.set_viewport() - error setting camera range: {e}")
+            # Try with just x range if y fails
+            try:
+                self.view.camera.set_range(x=(viewport_start, viewport_end))
+            except Exception as e2:
+                logger.warning(f"VispyVideoEpochRenderer.set_viewport() - error setting x range only: {e2}")
         
         # Re-render with culling
         if self.current_epochs_data:
