@@ -5,21 +5,6 @@ This demonstrates how to create a timeline with docked tracks that can display
 time-synchronized data.
 """
 
-# Compatibility shim for scipy.integrate.simps -> simpson
-# simps was deprecated and removed in SciPy 1.12+, replaced with simpson
-# This must be imported before any other modules that might use simps
-try:
-    from scipy.integrate import simps
-except ImportError:
-    # simps doesn't exist, provide it as an alias to simpson
-    try:
-        from scipy.integrate import simpson
-        import scipy.integrate
-        scipy.integrate.simps = simpson
-    except ImportError:
-        # If simpson also doesn't exist, we can't fix it
-        pass
-
 from pathlib import Path
 from re import S
 import sys
