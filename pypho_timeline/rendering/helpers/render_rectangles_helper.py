@@ -111,6 +111,7 @@ class Render2DEventRectanglesHelper:
         ## build the IntervalRectsItem
         return IntervalRectsItem(curr_IntervalRectsItem_interval_tuples, **kwargs)
     
+    
     ##################################################
     ## Spike Events METHODS
     ##################################################

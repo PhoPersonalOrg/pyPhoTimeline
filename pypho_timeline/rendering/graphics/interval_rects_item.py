@@ -4,6 +4,8 @@ IntervalRectsItem - GraphicsObject for rendering time intervals as rectangles in
 Based on pyqtgraph's CandlestickItem example, adapted for pypho_timeline.
 """
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
+from datetime import datetime
+import pandas as pd
 import numpy as np
 
 from pypho_timeline.utils.mixins import UnpackableMixin
@@ -160,6 +162,11 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             else:
                 # Tuple unpacking (backward compatibility)
                 (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data
+            
+            # Ensure start_t is numeric for Qt rendering
+            if isinstance(start_t, (datetime, pd.Timestamp)):
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                start_t = datetime_to_unix_timestamp(start_t)
             
             p.setPen(pen)
             p.setBrush(brush) # filling of the rectangles by a passed color:
