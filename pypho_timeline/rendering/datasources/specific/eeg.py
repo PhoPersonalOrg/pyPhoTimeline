@@ -112,15 +112,6 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         # Sort by time
         df_sorted = detail_data.sort_values('t')
         
-        # Convert datetime 't' column to Unix timestamps for plotting
-        t_col = df_sorted['t']
-        if pd.api.types.is_datetime64_any_dtype(t_col):
-            # Convert datetime to Unix timestamps
-            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-            t_values = t_col.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
-        else:
-            t_values = t_col.values
-        
         assert (self.channel_names is not None)
 
         found_channel_names: List[str] = [k for k in self.channel_names if (k in df_sorted.columns)]
@@ -133,6 +124,16 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
 
         # Normalize channel columns using shared helper
         normalized_channel_df, (y_min, y_max) = self.compute_normalized_channels(detail_df=df_sorted, channel_names=found_channel_names)
+
+        # Extract t_values aligned with normalized_channel_df's index to ensure shape matches
+        # normalized_channel_df may have fewer rows due to index intersection during normalization
+        t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
+        if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
+            # Convert datetime to Unix timestamps
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
+        else:
+            t_values = t_col_aligned.values
 
         # Plot each channel with its distinct color
         for a_found_channel_name in found_channel_names:

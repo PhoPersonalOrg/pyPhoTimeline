@@ -500,19 +500,83 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
             
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
-        t_start = interval['t_start']
-        t_duration = interval['t_duration']
-        
-        # Handle datetime objects in cache key
-        if isinstance(t_start, (datetime, pd.Timestamp)):
-            t_start_str = str(t_start.timestamp())
+        # Extract values from Series - use .iloc[0] if it's a single-row DataFrame converted to Series
+        # or direct access if it's already a Series
+        if isinstance(interval, pd.Series):
+            t_start = interval.get('t_start', interval.iloc[0] if 't_start' in interval.index else None)
+            t_duration = interval.get('t_duration', interval.iloc[0] if 't_duration' in interval.index else None)
         else:
-            t_start_str = f"{t_start:.3f}"
+            # Fallback for DataFrame row
+            t_start = interval.get('t_start') if hasattr(interval, 'get') else interval['t_start']
+            t_duration = interval.get('t_duration') if hasattr(interval, 'get') else interval['t_duration']
         
-        if isinstance(t_duration, timedelta):
-            t_duration_str = str(t_duration.total_seconds())
-        else:
-            t_duration_str = f"{t_duration:.3f}"
+        # Convert pandas scalars/numpy types to Python native types
+        # This is critical for proper type checking and formatting
+        if hasattr(t_start, 'item'):
+            try:
+                t_start = t_start.item()
+            except (ValueError, AttributeError):
+                pass  # Not a scalar, keep as-is
+        if hasattr(t_duration, 'item'):
+            try:
+                t_duration = t_duration.item()
+            except (ValueError, AttributeError):
+                pass  # Not a scalar, keep as-is
+        
+        # Handle datetime objects in cache key - check datetime types first
+        t_start_str = None
+        try:
+            # Check if it's a datetime/Timestamp
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                t_start_str = f"{t_start.timestamp():.3f}"
+            elif isinstance(t_start, pd.Timestamp):
+                t_start_str = f"{t_start.timestamp():.3f}"
+            else:
+                # Try to convert to Timestamp (handles string dates, numpy datetime64, etc.)
+                try:
+                    ts = pd.Timestamp(t_start)
+                    t_start_str = f"{ts.timestamp():.3f}"
+                except (ValueError, TypeError, AttributeError):
+                    # Not a datetime, try as numeric
+                    try:
+                        t_start_float = float(t_start)
+                        t_start_str = f"{t_start_float:.3f}"
+                    except (ValueError, TypeError):
+                        # Last resort: use string representation
+                        t_start_str = str(t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
+        except Exception as e:
+            # Ultimate fallback
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error formatting t_start for cache key: {t_start} (type: {type(t_start)}), error: {e}")
+            t_start_str = str(t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
+        
+        # Handle duration/timedelta objects
+        t_duration_str = None
+        try:
+            if isinstance(t_duration, timedelta):
+                t_duration_str = f"{t_duration.total_seconds():.3f}"
+            elif isinstance(t_duration, pd.Timedelta):
+                t_duration_str = f"{t_duration.total_seconds():.3f}"
+            else:
+                # Try to convert to Timedelta (handles string durations, numpy timedelta64, etc.)
+                try:
+                    td = pd.Timedelta(t_duration)
+                    t_duration_str = f"{td.total_seconds():.3f}"
+                except (ValueError, TypeError, AttributeError):
+                    # Not a timedelta, try as numeric
+                    try:
+                        t_duration_float = float(t_duration)
+                        t_duration_str = f"{t_duration_float:.3f}"
+                    except (ValueError, TypeError):
+                        # Last resort: use string representation
+                        t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
+        except Exception as e:
+            # Ultimate fallback
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error formatting t_duration for cache key: {t_duration} (type: {type(t_duration)}), error: {e}")
+            t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
         
         return f"{self.custom_datasource_name}_{t_start_str}_{t_duration_str}"
 
