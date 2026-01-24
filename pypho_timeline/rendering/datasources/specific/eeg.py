@@ -185,18 +185,18 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         if (interval is None) or (len(interval) == 0):
             # If interval is None or empty, attempt to determine t_start and t_end from detail_data
             if has_valid_detail_data:
-            # Try to get time column: use 't' if present, otherwise index values if they look like times
-            if 't' in detail_data.columns:
-                t_min = detail_data['t'].min()
-                t_max = detail_data['t'].max()
-                # Convert datetime to Unix timestamp if needed
-                if isinstance(t_min, (datetime, pd.Timestamp)):
-                    from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-                    t_start = datetime_to_unix_timestamp(t_min)
-                    t_end = datetime_to_unix_timestamp(t_max)
-                else:
-                    t_start = float(t_min)
-                    t_end = float(t_max)
+                # Try to get time column: use 't' if present, otherwise index values if they look like times
+                if 't' in detail_data.columns:
+                    t_min = detail_data['t'].min()
+                    t_max = detail_data['t'].max()
+                    # Convert datetime to Unix timestamp if needed
+                    if isinstance(t_min, (datetime, pd.Timestamp)):
+                        from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                        t_start = datetime_to_unix_timestamp(t_min)
+                        t_end = datetime_to_unix_timestamp(t_max)
+                    else:
+                        t_start = float(t_min)
+                        t_end = float(t_max)
                 else:
                     # Fallback: use DataFrame index if it is numeric and sorted
                     try:
