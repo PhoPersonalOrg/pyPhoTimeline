@@ -148,7 +148,7 @@ class TimelineBuilder:
             all_file_headers.append(file_header)
         
         # Process streams from all files and merge by stream name
-        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths)
+        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths, file_headers=all_file_headers)
         
         if not all_streams:
             print("No streams found.")
