@@ -303,17 +303,28 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         #     profiler = pg.debug.Profiler(disabled=True, delayed=True)
 
         if (start_t is not None) and (end_t is not None):
-            # Convert to datetime then to Unix timestamp if reference_datetime is available
-            # PyQtGraph's DateAxisItem expects Unix timestamps (float) but displays them as dates
+            # Convert to datetime then to Unix timestamp if reference_datetime is available.
+            # PyQtGraph's DateAxisItem expects Unix timestamps (float) but displays them as dates.
             if self.reference_datetime is not None:
-                dt_start = float_to_datetime(start_t, self.reference_datetime)
-                dt_end = float_to_datetime(end_t, self.reference_datetime)
+                # If already datetime-like, use directly.
+                if isinstance(start_t, (datetime, pd.Timestamp)) and isinstance(end_t, (datetime, pd.Timestamp)):
+                    dt_start = pd.Timestamp(start_t)
+                    dt_end = pd.Timestamp(end_t)
+                else:
+                    dt_start = float_to_datetime(start_t, self.reference_datetime)
+                    dt_end = float_to_datetime(end_t, self.reference_datetime)
                 # Convert datetime to Unix timestamp for PyQtGraph (safely handles timezone)
                 unix_start = datetime_to_unix_timestamp(dt_start)
                 unix_end = datetime_to_unix_timestamp(dt_end)
                 self.getRootPlotItem().setXRange(unix_start, unix_end, padding=0)
             else:
-                self.getRootPlotItem().setXRange(start_t, end_t, padding=0) ## global frame
+                # No reference datetime. If datetime-like, convert to unix timestamps.
+                if isinstance(start_t, (datetime, pd.Timestamp)) and isinstance(end_t, (datetime, pd.Timestamp)):
+                    unix_start = datetime_to_unix_timestamp(start_t)
+                    unix_end = datetime_to_unix_timestamp(end_t)
+                    self.getRootPlotItem().setXRange(unix_start, unix_end, padding=0)
+                else:
+                    self.getRootPlotItem().setXRange(start_t, end_t, padding=0) ## global frame
 
         self.update(end_t, defer_render=False)
         # if self.enable_debug_print:
