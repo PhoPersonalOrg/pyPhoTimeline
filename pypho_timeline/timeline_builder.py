@@ -449,6 +449,77 @@ class TimelineBuilder:
         
         print(f"Found {len(all_datasources)} datasources from {len(stream_infos_df)} stream info rows")
         
+        # Merge datasources that share the same track name.
+        #
+        # Rationale:
+        # - We may have many recordings for the same logical stream (e.g. multiple XDF segments).
+        # - `TrackRenderingMixin.add_track` uses `name` as a unique key and will not create
+        #   multiple tracks with identical names.
+        # - Therefore, we merge intervals (and detailed data where present) into a single datasource
+        #   per `custom_datasource_name`, yielding multiple overview rectangles per track.
+        datasources_by_name: Dict[str, List[TrackDatasource]] = {}
+        for ds in all_datasources:
+            datasources_by_name.setdefault(ds.custom_datasource_name, []).append(ds)
+
+        merged_datasources: List[TrackDatasource] = []
+        for name, ds_group in datasources_by_name.items():
+            if len(ds_group) == 1:
+                merged_datasources.append(ds_group[0])
+                continue
+
+            first = ds_group[0]
+            # All of our concrete datasources inherit IntervalProvidingTrackDatasource and
+            # expose `intervals_df` and (optionally) `detailed_df`.
+            intervals_dfs = [getattr(d, "intervals_df") for d in ds_group if getattr(d, "intervals_df", None) is not None]
+            detailed_dfs = [getattr(d, "detailed_df") for d in ds_group if getattr(d, "detailed_df", None) is not None]
+
+            try:
+                # Prefer specialized merge constructors when available (keeps renderer behavior)
+                if EEGTrackDatasource is not None and isinstance(first, EEGTrackDatasource):
+                    merged = EEGTrackDatasource.from_multiple_sources(
+                        intervals_dfs=intervals_dfs,
+                        detailed_dfs=detailed_dfs,
+                        custom_datasource_name=name,
+                        max_points_per_second=getattr(first, "max_points_per_second", 1000.0),
+                        enable_downsampling=getattr(first, "enable_downsampling", True),
+                        fallback_normalization_mode=getattr(first, "fallback_normalization_mode", ChannelNormalizationMode.GROUPMINMAXRANGE),
+                        normalization_mode_dict=getattr(first, "normalization_mode_dict", None),
+                        arbitrary_bounds=getattr(first, "arbitrary_bounds", None),
+                        normalize=getattr(first, "normalize", True),
+                        normalize_over_full_data=getattr(first, "normalize_over_full_data", True),
+                        normalization_reference_df=getattr(first, "normalization_reference_df", None),
+                    )
+                    merged_datasources.append(merged)
+                    continue
+
+                if MotionTrackDatasource is not None and isinstance(first, MotionTrackDatasource):
+                    merged = MotionTrackDatasource.from_multiple_sources(
+                        intervals_dfs=intervals_dfs,
+                        detailed_dfs=detailed_dfs,
+                        custom_datasource_name=name,
+                        max_points_per_second=getattr(first, "max_points_per_second", 1000.0),
+                        enable_downsampling=getattr(first, "enable_downsampling", True),
+                        fallback_normalization_mode=getattr(first, "fallback_normalization_mode", ChannelNormalizationMode.GROUPMINMAXRANGE),
+                        normalization_mode_dict=getattr(first, "normalization_mode_dict", None),
+                        arbitrary_bounds=getattr(first, "arbitrary_bounds", None),
+                    )
+                    merged_datasources.append(merged)
+                    continue
+
+                # Generic interval + optional detail (e.g. annotations)
+                merged = IntervalProvidingTrackDatasource.from_multiple_sources(
+                    intervals_dfs=intervals_dfs,
+                    detailed_dfs=detailed_dfs if detailed_dfs else None,
+                    custom_datasource_name=name,
+                    detail_renderer=getattr(first, "_detail_renderer", None) or first.get_detail_renderer(),
+                    max_points_per_second=getattr(first, "max_points_per_second", 1000.0),
+                    enable_downsampling=getattr(first, "enable_downsampling", True),
+                )
+                merged_datasources.append(merged)
+            except Exception as e:
+                print(f"Warning: failed to merge datasources for '{name}': {e}. Falling back to first datasource.")
+                merged_datasources.append(first)
+
         # Generate window title if not provided
         if window_title is None:
             window_title = f"pyPhoTimeline - MNE Raw Data ({len(eeg_raws)} recordings)"
@@ -456,7 +527,7 @@ class TimelineBuilder:
         # If reference_datetime is None, it will be set from the earliest datetime in datasources
         # Build timeline from datasources
         return self.build_from_datasources(
-            datasources=all_datasources,
+            datasources=merged_datasources,
             window_duration=window_duration,
             window_start_time=window_start_time,
             add_example_tracks=add_example_tracks,
