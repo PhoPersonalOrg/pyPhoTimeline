@@ -483,6 +483,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
     
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
+        base_key = super().get_detail_cache_key(interval)
         video_path = interval.get('video_file_path', '')
         if video_path:
             # Include file path and modification time in cache key for better cache invalidation
@@ -490,10 +491,10 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
                 path_obj = Path(video_path)
                 if path_obj.exists():
                     mtime = path_obj.stat().st_mtime
-                    return f"video_{video_path}_{mtime:.3f}_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+                    return f"video_{video_path}_{mtime:.3f}_{base_key}"
             except Exception:
                 pass
-        return f"video_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+        return f"video_{base_key}"
 
 
 __all__ = ['VideoThumbnailDetailRenderer', 'VideoTrackDatasource', 'video_metadata_to_intervals_df']
