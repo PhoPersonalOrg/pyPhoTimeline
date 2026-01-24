@@ -170,7 +170,9 @@ class PositionTrackDatasource(IntervalProvidingTrackDatasource):
     
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
-        return f"position_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+        # Delegate to base implementation which handles datetime/timedelta correctly
+        # and includes the datasource name to avoid collisions across tracks.
+        return super().get_detail_cache_key(interval)
 
     @classmethod
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None) -> 'PositionTrackDatasource':

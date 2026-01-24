@@ -323,7 +323,9 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
 
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
-        return f"motion_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+        # Delegate to base implementation which handles datetime/timedelta correctly
+        # and includes the datasource name to avoid collisions across tracks.
+        return super().get_detail_cache_key(interval)
 
     @classmethod
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None) -> 'MotionTrackDatasource':
