@@ -7,17 +7,36 @@ from different data sources such as XDF files, pre-loaded streams, or existing d
 
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 import numpy as np
 import pandas as pd
 import pyxdf
 from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams, perform_process_all_streams_multi_xdf
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
-from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource
+from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler
 from pypho_timeline.widgets import LogWidget
-from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
+from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime, datetime_to_float
+from pypho_timeline.rendering.helpers import ChannelNormalizationMode
+
+# Import MNE (optional - may not be available)
+try:
+    import mne
+    MNE_AVAILABLE = True
+except ImportError:
+    MNE_AVAILABLE = False
+    mne = None
+
+# Import datasources
+try:
+    from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
+    from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource
+    from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
+except ImportError:
+    EEGTrackDatasource = None
+    MotionTrackDatasource = None
+    LogTextDataFramePlotDetailRenderer = None
 
 # Import VideoTrackDatasource for video-only timeline building
 try:
@@ -298,6 +317,152 @@ class TimelineBuilder:
         # Build timeline from datasources
         return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title or "pyPhoTimeline", window_size=window_size, reference_datetime=reference_datetime)
     
+    def build_from_eeg_raw_and_stream_info(self, eeg_raws: List, stream_infos_df: pd.DataFrame, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
+        """Build a timeline widget from MNE Raw objects and XDF stream info DataFrame.
+        
+        Args:
+            eeg_raws: List of MNE Raw objects (mne.io.BaseRaw instances)
+            stream_infos_df: DataFrame with stream information, must contain 'xdf_dataset_idx' column
+            window_duration: Duration of the time window (default: auto-calculated from data)
+            window_start_time: Start time of the window (default: auto-calculated from data)
+            add_example_tracks: Whether to add example tracks (default: False)
+            window_title: Custom window title (default: auto-generated)
+            window_size: Window size as (width, height) tuple (default: (1000, 800))
+            
+        Returns:
+            SimpleTimelineWidget instance, or None if no valid datasources found
+            
+        Example:
+            builder = TimelineBuilder()
+            timeline = builder.build_from_eeg_raw_and_stream_info(
+                eeg_raws=_out_eeg_raw,
+                stream_infos_df=_out_xdf_stream_infos_df
+            )
+        """
+        if not MNE_AVAILABLE:
+            raise ImportError("MNE is not available. Please install mne-python to use this method.")
+        
+        if not eeg_raws:
+            print("No EEG Raw objects provided.")
+            return None
+        
+        if stream_infos_df.empty:
+            print("Stream info DataFrame is empty.")
+            return None
+        
+        if 'xdf_dataset_idx' not in stream_infos_df.columns:
+            raise ValueError("stream_infos_df must contain 'xdf_dataset_idx' column")
+        
+        print("=" * 60)
+        print(f"pyPhoTimeline - Load from {len(eeg_raws)} MNE Raw objects and {len(stream_infos_df)} stream info rows")
+        print("=" * 60)
+        
+        # Extract reference datetime from stream_infos_df
+        reference_datetime = None
+        if 'recording_datetime' in stream_infos_df.columns:
+            # Use earliest recording_datetime
+            valid_dts = stream_infos_df['recording_datetime'].dropna()
+            if len(valid_dts) > 0:
+                reference_datetime = valid_dts.min()
+        elif 'first_timestamp_dt' in stream_infos_df.columns:
+            # Fallback to earliest first_timestamp_dt
+            valid_dts = stream_infos_df['first_timestamp_dt'].dropna()
+            if len(valid_dts) > 0:
+                reference_datetime = valid_dts.min()
+        
+        if reference_datetime is None:
+            print("Warning: No reference datetime found in stream_infos_df, using Unix epoch")
+            reference_datetime = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        else:
+            # Convert pandas Timestamp to datetime if needed
+            if isinstance(reference_datetime, pd.Timestamp):
+                reference_datetime = reference_datetime.to_pydatetime()
+            # Ensure timezone-aware
+            if reference_datetime.tzinfo is None:
+                reference_datetime = reference_datetime.replace(tzinfo=timezone.utc)
+            print(f"Using reference datetime: {reference_datetime}")
+        
+        # Extract datasources from Raw objects
+        all_datasources = []
+        processed_count = 0
+        skipped_count = 0
+        
+        for idx, row in stream_infos_df.iterrows():
+            xdf_dataset_idx = row.get('xdf_dataset_idx', None)
+            if xdf_dataset_idx is None or pd.isna(xdf_dataset_idx):
+                print(f"Warning: Skipping row {idx} - missing xdf_dataset_idx")
+                skipped_count += 1
+                continue
+            
+            try:
+                xdf_dataset_idx = int(xdf_dataset_idx)
+            except (ValueError, TypeError):
+                print(f"Warning: Skipping row {idx} - invalid xdf_dataset_idx: {xdf_dataset_idx}")
+                skipped_count += 1
+                continue
+            
+            # Find corresponding Raw object
+            if xdf_dataset_idx < 0 or xdf_dataset_idx >= len(eeg_raws):
+                print(f"Warning: Skipping row {idx} - xdf_dataset_idx {xdf_dataset_idx} out of range (0-{len(eeg_raws)-1})")
+                skipped_count += 1
+                continue
+            
+            raw = eeg_raws[xdf_dataset_idx]
+            if raw is None:
+                print(f"Warning: Skipping row {idx} - Raw object at index {xdf_dataset_idx} is None")
+                skipped_count += 1
+                continue
+            
+            # Check if Raw object is valid
+            if not hasattr(raw, 'times') or len(raw.times) == 0:
+                print(f"Warning: Skipping row {idx} - Raw object at index {xdf_dataset_idx} has no time data")
+                skipped_count += 1
+                continue
+            
+            # Extract datasources from this Raw object
+            stream_name = row.get('name', f'Stream_{xdf_dataset_idx}')
+            try:
+                datasources = self._extract_datasources_from_eeg_raw(
+                    raw=raw,
+                    stream_info_row=row,
+                    reference_datetime=reference_datetime,
+                    stream_name=stream_name
+                )
+                if datasources:
+                    all_datasources.extend(datasources)
+                    processed_count += 1
+                else:
+                    print(f"Warning: No datasources extracted from '{stream_name}'")
+                    skipped_count += 1
+            except Exception as e:
+                print(f"Error: Failed to extract datasources from '{stream_name}': {e}")
+                skipped_count += 1
+                import traceback
+                traceback.print_exc()
+        
+        print(f"Processed {processed_count} streams, skipped {skipped_count} streams")
+        
+        if not all_datasources:
+            print("No valid datasources found.")
+            return None
+        
+        print(f"Found {len(all_datasources)} datasources from {len(stream_infos_df)} stream info rows")
+        
+        # Generate window title if not provided
+        if window_title is None:
+            window_title = f"pyPhoTimeline - MNE Raw Data ({len(eeg_raws)} recordings)"
+        
+        # Build timeline from datasources
+        return self.build_from_datasources(
+            datasources=all_datasources,
+            window_duration=window_duration,
+            window_start_time=window_start_time,
+            add_example_tracks=add_example_tracks,
+            window_title=window_title,
+            window_size=window_size,
+            reference_datetime=reference_datetime
+        )
+    
     def build_from_datasources(self, datasources: List[TrackDatasource], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), reference_datetime: Optional[datetime] = None) -> SimpleTimelineWidget:
         """Build a timeline widget from existing datasources.
         
@@ -408,6 +573,186 @@ class TimelineBuilder:
             print(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
         
         return timeline
+    
+    def _extract_datasources_from_eeg_raw(self, raw, stream_info_row: pd.Series, reference_datetime: datetime, stream_name: str) -> List[TrackDatasource]:
+        """Extract datasources from a single MNE Raw object.
+        
+        Args:
+            raw: MNE Raw object (mne.io.BaseRaw)
+            stream_info_row: Series with stream information (from stream_infos_df)
+            reference_datetime: Reference datetime for timestamp conversion
+            stream_name: Name of the stream
+            
+        Returns:
+            List of TrackDatasource instances (EEG, Motion, Annotations, etc.)
+        """
+        datasources = []
+        
+        # Check if Raw object has data
+        if len(raw.times) == 0:
+            print(f"Warning: Raw object for '{stream_name}' has no time data")
+            return datasources
+        
+        # Get meas_date from Raw object
+        meas_date = None
+        try:
+            meas_date = raw.info.get('meas_date', None)
+        except (AttributeError, KeyError):
+            pass
+        
+        if meas_date is None:
+            # Try to get from stream_info_row
+            meas_date = stream_info_row.get('recording_datetime', None)
+            if pd.isna(meas_date):
+                meas_date = None
+        
+        if meas_date is None:
+            # Try first_timestamp_dt as fallback
+            meas_date = stream_info_row.get('first_timestamp_dt', None)
+            if pd.isna(meas_date):
+                meas_date = None
+        
+        if meas_date is None:
+            print(f"Warning: No meas_date found for '{stream_name}', using reference_datetime")
+            meas_date = reference_datetime
+        
+        # Ensure meas_date is timezone-aware
+        if meas_date is not None:
+            if isinstance(meas_date, pd.Timestamp):
+                meas_date = meas_date.to_pydatetime()
+            if meas_date.tzinfo is None:
+                meas_date = meas_date.replace(tzinfo=timezone.utc)
+        
+        # Convert raw.times to relative seconds from reference_datetime
+        # raw.times are relative to meas_date, so we need to convert to absolute then to relative
+        if meas_date is not None:
+            absolute_times = [meas_date + timedelta(seconds=float(t)) for t in raw.times]
+            relative_times = [datetime_to_float(dt, reference_datetime) for dt in absolute_times]
+        else:
+            # Fallback: use raw.times directly (assuming they're already relative)
+            relative_times = [float(t) for t in raw.times]
+        
+        # Create base intervals_df
+        t_start = relative_times[0] if relative_times else 0.0
+        t_end = relative_times[-1] if relative_times else 0.0
+        t_duration = t_end - t_start
+        
+        base_intervals_df = pd.DataFrame({
+            't_start': [t_start],
+            't_duration': [t_duration],
+            't_end': [t_end]
+        })
+        
+        # Extract EEG channel data
+        eeg_channels = [ch for ch in raw.ch_names if raw.get_channel_types([ch])[0] == 'eeg']
+        if eeg_channels:
+            try:
+                eeg_data = raw.get_data(picks=eeg_channels)
+                eeg_df = pd.DataFrame(eeg_data.T, columns=eeg_channels)
+                eeg_df['t'] = relative_times
+                
+                # Create EEGTrackDatasource
+                if EEGTrackDatasource is not None:
+                    eeg_datasource = EEGTrackDatasource(
+                        intervals_df=base_intervals_df.copy(),
+                        eeg_df=eeg_df,
+                        custom_datasource_name=f"EEG_{stream_name}",
+                        max_points_per_second=10.0,
+                        enable_downsampling=True,
+                        fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL
+                    )
+                    datasources.append(eeg_datasource)
+                    print(f"  Created EEG datasource for '{stream_name}' with {len(eeg_channels)} channels")
+            except Exception as e:
+                print(f"Warning: Failed to extract EEG data from '{stream_name}': {e}")
+        
+        # Extract Motion data (check for motion channels)
+        motion_channel_names = ['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ']
+        motion_channels = [ch for ch in raw.ch_names if any(mc in ch for mc in motion_channel_names)]
+        if not motion_channels:
+            # Try alternative naming
+            motion_channels = [ch for ch in raw.ch_names if 'acc' in ch.lower() or 'gyro' in ch.lower() or 'motion' in ch.lower()]
+        
+        if motion_channels:
+            try:
+                motion_data = raw.get_data(picks=motion_channels)
+                # Map to standard motion channel names if possible
+                motion_df = pd.DataFrame(motion_data.T, columns=motion_channels)
+                motion_df['t'] = relative_times
+                
+                # Create MotionTrackDatasource
+                if MotionTrackDatasource is not None:
+                    motion_datasource = MotionTrackDatasource(
+                        intervals_df=base_intervals_df.copy(),
+                        motion_df=motion_df,
+                        custom_datasource_name=f"MOTION_{stream_name}",
+                        max_points_per_second=10.0,
+                        enable_downsampling=True,
+                        fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE
+                    )
+                    datasources.append(motion_datasource)
+                    print(f"  Created Motion datasource for '{stream_name}' with {len(motion_channels)} channels")
+            except Exception as e:
+                print(f"Warning: Failed to extract Motion data from '{stream_name}': {e}")
+        
+        # Extract Annotations
+        if hasattr(raw, 'annotations') and raw.annotations is not None and len(raw.annotations) > 0:
+            try:
+                # Convert annotations to DataFrame with datetime
+                annotations_df = raw.annotations.to_data_frame()
+                
+                # Convert onset times to relative seconds
+                if meas_date is not None:
+                    annotation_relative_times = []
+                    for onset in annotations_df['onset']:
+                        absolute_time = meas_date + timedelta(seconds=float(onset))
+                        relative_time = datetime_to_float(absolute_time, reference_datetime)
+                        annotation_relative_times.append(relative_time)
+                    annotations_df['t'] = annotation_relative_times
+                else:
+                    annotations_df['t'] = annotations_df['onset']
+                
+                # Create log datasource for annotations
+                if LogTextDataFramePlotDetailRenderer is not None:
+                    log_renderer = LogTextDataFramePlotDetailRenderer(
+                        text_color='white',
+                        text_size=10,
+                        channel_names=['description']
+                    )
+                    
+                    # Prepare DataFrame with 't' and 'description' columns
+                    log_df = pd.DataFrame({
+                        't': annotations_df['t'],
+                        'description': annotations_df['description'].astype(str)
+                    })
+                    
+                    # Create intervals for each annotation
+                    annotation_intervals = []
+                    for _, ann_row in annotations_df.iterrows():
+                        ann_t_start = ann_row['t']
+                        ann_duration = ann_row.get('duration', 0.0)
+                        annotation_intervals.append({
+                            't_start': ann_t_start,
+                            't_duration': ann_duration,
+                            't_end': ann_t_start + ann_duration
+                        })
+                    
+                    if annotation_intervals:
+                        ann_intervals_df = pd.DataFrame(annotation_intervals)
+                        
+                        ann_datasource = IntervalProvidingTrackDatasource(
+                            intervals_df=ann_intervals_df,
+                            detailed_df=log_df,
+                            custom_datasource_name=f"ANNOTATIONS_{stream_name}",
+                            detail_renderer=log_renderer,
+                            enable_downsampling=False
+                        )
+                        datasources.append(ann_datasource)
+                        print(f"  Created Annotations datasource for '{stream_name}' with {len(annotations_df)} annotations")
+            except Exception as e:
+                print(f"Warning: Failed to extract Annotations from '{stream_name}': {e}")
+        
+        return datasources
     
     def _process_xdf_streams(self, streams: List) -> Tuple[Dict, Dict]:
         """Process XDF streams to extract datasources.

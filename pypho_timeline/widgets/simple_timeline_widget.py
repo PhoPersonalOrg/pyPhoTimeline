@@ -13,7 +13,7 @@ from pathlib import Path
 from qtpy import QtWidgets, QtCore
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
-from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp
+from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, datetime_to_float, get_reference_datetime_from_xdf_header
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
 from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
 from pypho_timeline.rendering.detail_renderers import DataframePlotDetailRenderer
@@ -418,16 +418,18 @@ def merge_streams_by_name(streams_by_file: List[Tuple[List, Path]]) -> Dict[str,
     return streams_by_name
 
 
-def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path]) -> Tuple[Dict, Dict]:
+def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[dict]] = None) -> Tuple[Dict, Dict]:
     """Process streams from multiple XDF files and merge streams with the same name.
     
     Streams with the same name across different files will be merged into a single datasource.
-    Timestamps are preserved as absolute values (no time shifting).
+    Timestamps are converted to use a common reference datetime (earliest file's reference) to ensure
+    proper alignment across multiple files.
     
     Args:
         streams_list: List of stream lists (one per XDF file), where each stream list contains
                      stream dictionaries from pyxdf
         xdf_file_paths: List of Path objects corresponding to each stream list
+        file_headers: Optional list of XDF file header dictionaries (one per file)
     
     Returns:
         Tuple of (all_streams dict, all_streams_datasources dict) where:
@@ -436,6 +438,20 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
     """
     if len(streams_list) != len(xdf_file_paths):
         raise ValueError(f"streams_list length ({len(streams_list)}) must match xdf_file_paths length ({len(xdf_file_paths)})")
+    
+    # Extract reference datetimes from file headers
+    file_reference_datetimes = {}
+    if file_headers is not None:
+        for file_header, file_path in zip(file_headers, xdf_file_paths):
+            ref_dt = get_reference_datetime_from_xdf_header(file_header)
+            if ref_dt is not None:
+                file_reference_datetimes[file_path] = ref_dt
+    
+    # Find earliest reference datetime (common reference for all timestamps)
+    earliest_reference_datetime = None
+    if file_reference_datetimes:
+        earliest_reference_datetime = min(file_reference_datetimes.values())
+        print(f"Using earliest reference datetime: {earliest_reference_datetime} for timestamp normalization")
     
     # Group streams by name across all files
     streams_by_file = list(zip(streams_list, xdf_file_paths))
@@ -468,6 +484,19 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             if len(timestamps) == 0:
                 print(f"  Skipping empty stream from {file_path.name}")
                 continue
+            
+            # Convert timestamps: from relative (to file's reference) to absolute, then to relative (to earliest reference)
+            file_ref_dt = file_reference_datetimes.get(file_path)
+            if file_ref_dt is not None and earliest_reference_datetime is not None:
+                # Convert relative timestamps to absolute datetimes using file's reference
+                timestamps_absolute = [float_to_datetime(float(ts), file_ref_dt) for ts in timestamps]
+                # Convert absolute datetimes back to relative timestamps using earliest reference
+                timestamps = np.array([datetime_to_float(dt, earliest_reference_datetime) for dt in timestamps_absolute])
+            else:
+                # Fallback: use timestamps as-is (relative to file start, which may cause misalignment)
+                timestamps = np.array([float(ts) for ts in timestamps])
+                if file_ref_dt is None:
+                    print(f"  WARN: No reference datetime found for {file_path.name}, timestamps may be misaligned")
             
             stream_start = float(timestamps[0])
             stream_end = float(timestamps[-1])
