@@ -7,6 +7,7 @@ and extracting reference datetimes from XDF file headers.
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import logging
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,12 @@ def get_reference_datetime_from_xdf_header(file_header: dict) -> Optional[dateti
 
 
 def float_to_datetime(timestamp: float, reference_datetime: datetime) -> datetime:
-    """Convert float timestamp to datetime using reference datetime.
+    """Convert a relative float timestamp to an absolute datetime.
+
+    Note:
+        The timeline system may pass datetime-like values through some paths (e.g. when
+        operating in native datetime mode). In that case, this function will return the
+        datetime-like value directly (normalized to timezone-aware UTC).
     
     Args:
         timestamp: Float timestamp in seconds (relative to reference)
@@ -156,13 +162,22 @@ def float_to_datetime(timestamp: float, reference_datetime: datetime) -> datetim
     """
     if reference_datetime is None:
         raise ValueError("reference_datetime cannot be None")
+
+    # If already datetime-like, return it directly (treat as absolute time).
+    if isinstance(timestamp, (datetime, pd.Timestamp)):
+        dt = pd.Timestamp(timestamp)
+        if dt.tzinfo is None:
+            dt = dt.tz_localize(timezone.utc)
+        return dt.to_pydatetime()
     
     # Make reference_datetime timezone-aware if it's naive
     if reference_datetime.tzinfo is None:
         # Assume UTC if naive
         reference_datetime = reference_datetime.replace(tzinfo=timezone.utc)
     
-    result = reference_datetime + timedelta(seconds=timestamp)
+    # Ensure numeric seconds
+    seconds = float(timestamp)
+    result = reference_datetime + timedelta(seconds=seconds)
     return result
 
 

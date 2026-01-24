@@ -6,6 +6,7 @@ better than simple decimation.
 """
 import numpy as np
 import pandas as pd
+from datetime import datetime
 from typing import Optional, List
 
 
@@ -27,6 +28,17 @@ def lttb_downsample(x: np.ndarray, y: np.ndarray, max_points: int) -> np.ndarray
         Sveinn Steinarsson. "Downsampling Time Series for Visual Representation"
         https://skemman.is/bitstream/1946/15343/3/SS_MSthesis.pdf
     """
+    # Ensure numeric x-values (LTTB does math like mean/area).
+    # When the timeline runs in native datetime mode, x may be datetime64 or object-dtype
+    # containing datetime/pd.Timestamp. Convert to float seconds since epoch for computation.
+    x = np.asarray(x)
+    if np.issubdtype(x.dtype, np.datetime64):
+        x = x.astype('datetime64[ns]').astype(np.int64) / 1e9
+    elif x.dtype == object and len(x) > 0:
+        sample = next((v for v in x[:10] if v is not None), None)
+        if isinstance(sample, (datetime, pd.Timestamp, np.datetime64)):
+            x = pd.to_datetime(x, utc=True).astype('int64').to_numpy(dtype=np.int64) / 1e9
+
     n = len(x)
     if n <= max_points:
         # No downsampling needed
@@ -136,8 +148,16 @@ def downsample_dataframe(df: pd.DataFrame, max_points: int, time_col: str = 't')
     # Sort by time to ensure proper ordering
     df_sorted = df.sort_values(time_col).reset_index(drop=True)
     
-    # Get time values
-    t_values = df_sorted[time_col].values
+    # Get time values. Convert to numeric seconds if datetime-like, since the LTTB math
+    # expects numeric x-values.
+    t_values_raw = df_sorted[time_col].values
+    t_values = t_values_raw
+    if np.issubdtype(getattr(t_values_raw, "dtype", object), np.datetime64):
+        t_values = t_values_raw.astype('datetime64[ns]').astype(np.int64) / 1e9
+    elif getattr(t_values_raw, "dtype", None) == object and len(t_values_raw) > 0:
+        sample = next((v for v in t_values_raw[:10] if v is not None), None)
+        if isinstance(sample, (datetime, pd.Timestamp, np.datetime64)):
+            t_values = pd.to_datetime(t_values_raw, utc=True).astype('int64').to_numpy(dtype=np.int64) / 1e9
     
     # Get all data columns (everything except time column)
     data_columns = [col for col in df_sorted.columns if col != time_col]
