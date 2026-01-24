@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 # from qtpy import QtWidgets, QtCore
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any, Sequence, Mapping
+from datetime import datetime
 # import pyphoplacecellanalysis.External.pyqtgraph as pg
 # from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 # from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
@@ -108,7 +109,16 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         
         # Sort by time
         df_sorted = detail_data.sort_values('t')
-        t_values = df_sorted['t'].values
+        
+        # Convert datetime 't' column to Unix timestamps for plotting
+        t_col = df_sorted['t']
+        if pd.api.types.is_datetime64_any_dtype(t_col):
+            # Convert datetime to Unix timestamps
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            from datetime import datetime
+            t_values = t_col.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
+        else:
+            t_values = t_col.values
         
         assert (self.channel_names is not None)
         found_channel_names: List[str] = [k for k in self.channel_names if (k in df_sorted.columns)]
@@ -178,8 +188,16 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
             if has_valid_detail_data:
                 # Try to get time column: use 't' if present, otherwise index values if they look like times
                 if 't' in detail_data.columns:
-                    t_start = float(detail_data['t'].min())
-                    t_end = float(detail_data['t'].max())
+                    t_min = detail_data['t'].min()
+                    t_max = detail_data['t'].max()
+                    # Convert datetime to Unix timestamp if needed
+                    if isinstance(t_min, (datetime, pd.Timestamp)):
+                        from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                        t_start = datetime_to_unix_timestamp(t_min)
+                        t_end = datetime_to_unix_timestamp(t_max)
+                    else:
+                        t_start = float(t_min)
+                        t_end = float(t_max)
                 else:
                     # Fallback: use DataFrame index if it is numeric and sorted
                     try:
@@ -203,7 +221,25 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
             ## interval is provided
             t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
             t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
-            t_end = t_start + t_duration
+            
+            # Handle datetime objects for t_end calculation
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                from datetime import timedelta
+                t_end = t_start + timedelta(seconds=float(t_duration))
+                # Convert to Unix timestamp for return value
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                t_start = datetime_to_unix_timestamp(t_start)
+                t_end = datetime_to_unix_timestamp(t_end)
+            else:
+                t_end = t_start + t_duration
+        
+        # Ensure t_start and t_end are floats (Unix timestamps) for return value
+        if isinstance(t_start, (datetime, pd.Timestamp)):
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            t_start = datetime_to_unix_timestamp(t_start)
+        if isinstance(t_end, (datetime, pd.Timestamp)):
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            t_end = datetime_to_unix_timestamp(t_end)
         
         if detail_data is None or len(detail_data) == 0:
             return (t_start, t_end, 0.0, 1.0)

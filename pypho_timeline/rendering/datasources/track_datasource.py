@@ -12,8 +12,9 @@ if TYPE_CHECKING:
 This module defines the protocols for datasources that provide both overview intervals
 and detailed data that can be fetched asynchronously when intervals scroll into view.
 """
-from typing import Protocol, Optional, Tuple, List, Any, runtime_checkable
+from typing import Protocol, Optional, Tuple, List, Any, Union, runtime_checkable
 from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
 import pandas as pd
 from qtpy import QtCore
 
@@ -106,12 +107,12 @@ class TrackDatasource(Protocol):
         ...
     
     @property
-    def total_df_start_end_times(self) -> Tuple[float, float]:
+    def total_df_start_end_times(self) -> Union[Tuple[float, float], Tuple[datetime, datetime], Tuple[pd.Timestamp, pd.Timestamp]]:
         """Returns (earliest_time, latest_time) for the entire dataset"""
         ...
     
     # Required methods (from IntervalsDatasource)
-    def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
+    def get_updated_data_window(self, new_start: Union[float, datetime, pd.Timestamp], new_end: Union[float, datetime, pd.Timestamp]) -> pd.DataFrame:
         """Returns the subset of intervals that overlap with the given time window"""
         ...
     
@@ -240,13 +241,13 @@ class BaseTrackDatasource(ABC):
     
     @property
     @abstractmethod
-    def total_df_start_end_times(self) -> Tuple[float, float]:
+    def total_df_start_end_times(self) -> Union[Tuple[float, float], Tuple[datetime, datetime], Tuple[pd.Timestamp, pd.Timestamp]]:
         """Returns (earliest_time, latest_time) for the entire dataset"""
         ...
     
     # Required abstract methods
     @abstractmethod
-    def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
+    def get_updated_data_window(self, new_start: Union[float, datetime, pd.Timestamp], new_end: Union[float, datetime, pd.Timestamp]) -> pd.DataFrame:
         """Returns the subset of intervals that overlap with the given time window"""
         ...
     
@@ -376,15 +377,62 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
     @property
     def total_df_start_end_times(self) -> tuple:
         if len(self.intervals_df) == 0:
+            # Return appropriate default based on expected type
+            # Check if we have datetime columns elsewhere, or default to float
             return (0.0, 1.0)
+        
         t_start = self.intervals_df['t_start'].min()
-        t_end = (self.intervals_df['t_start'] + self.intervals_df['t_duration']).max()
-        return (t_start, t_end)
+        
+        # Check if t_start is datetime-like
+        is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df['t_start'])
+        
+        if is_datetime:
+            # Use timedelta for duration
+            t_end = (self.intervals_df['t_start'] + pd.to_timedelta(self.intervals_df['t_duration'], unit='s')).max()
+            return (t_start, t_end)
+        else:
+            # Use float arithmetic
+            t_end = (self.intervals_df['t_start'] + self.intervals_df['t_duration']).max()
+            return (float(t_start), float(t_end))
     
-    def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
+    def get_updated_data_window(self, new_start: Union[float, datetime, pd.Timestamp], new_end: Union[float, datetime, pd.Timestamp]) -> pd.DataFrame:
         """Get intervals overlapping with time window."""
-        mask = (self.intervals_df['t_start'] + self.intervals_df['t_duration'] >= new_start) & \
-               (self.intervals_df['t_start'] <= new_end)
+        # Check if DataFrame uses datetime columns
+        is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df['t_start'])
+        
+        # Convert inputs to match DataFrame dtype
+        if is_datetime:
+            # Convert float inputs to datetime
+            if isinstance(new_start, (int, float)):
+                # Assume Unix timestamp if float
+                new_start = pd.Timestamp.fromtimestamp(new_start, tz='UTC')
+            elif not isinstance(new_start, (datetime, pd.Timestamp)):
+                new_start = pd.Timestamp(new_start)
+            
+            if isinstance(new_end, (int, float)):
+                new_end = pd.Timestamp.fromtimestamp(new_end, tz='UTC')
+            elif not isinstance(new_end, (datetime, pd.Timestamp)):
+                new_end = pd.Timestamp(new_end)
+            
+            # Ensure timezone-aware
+            if isinstance(new_start, datetime) and new_start.tzinfo is None:
+                new_start = pd.Timestamp(new_start).tz_localize('UTC')
+            if isinstance(new_end, datetime) and new_end.tzinfo is None:
+                new_end = pd.Timestamp(new_end).tz_localize('UTC')
+            
+            # Calculate t_end for each interval using timedelta
+            t_end_col = self.intervals_df['t_start'] + pd.to_timedelta(self.intervals_df['t_duration'], unit='s')
+        else:
+            # Convert datetime inputs to float (Unix timestamp)
+            if isinstance(new_start, (datetime, pd.Timestamp)):
+                new_start = new_start.timestamp() if hasattr(new_start, 'timestamp') else pd.Timestamp(new_start).timestamp()
+            if isinstance(new_end, (datetime, pd.Timestamp)):
+                new_end = new_end.timestamp() if hasattr(new_end, 'timestamp') else pd.Timestamp(new_end).timestamp()
+            
+            # Use float arithmetic
+            t_end_col = self.intervals_df['t_start'] + self.intervals_df['t_duration']
+        
+        mask = (t_end_col >= new_start) & (self.intervals_df['t_start'] <= new_end)
         return self.intervals_df[mask].copy()
     
     def update_visualization_properties(self, dataframe_vis_columns_function):
@@ -400,9 +448,23 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """Fetch position data for an interval with optional downsampling."""
         if self.detailed_df is None:
             return pd.DataFrame()  # Return empty DataFrame if no position data available
+        
         t_start = interval['t_start']
-        t_end = t_start + interval['t_duration']
-        mask = (self.detailed_df['t'] >= t_start) & (self.detailed_df['t'] < t_end)
+        
+        # Check if using datetime
+        is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df['t_start'])
+        
+        if is_datetime:
+            t_end = t_start + pd.to_timedelta(interval['t_duration'], unit='s')
+        else:
+            t_end = t_start + interval['t_duration']
+        
+        # Ensure detailed_df 't' column matches the type
+        if 't' in self.detailed_df.columns:
+            mask = (self.detailed_df['t'] >= t_start) & (self.detailed_df['t'] < t_end)
+        else:
+            mask = pd.Series([False] * len(self.detailed_df))
+        
         result_df = self.detailed_df[mask].copy()
         
         # Apply downsampling if enabled
@@ -438,7 +500,21 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
             
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
-        return f"{self.custom_datasource_name}_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+        t_start = interval['t_start']
+        t_duration = interval['t_duration']
+        
+        # Handle datetime objects in cache key
+        if isinstance(t_start, (datetime, pd.Timestamp)):
+            t_start_str = str(t_start.timestamp())
+        else:
+            t_start_str = f"{t_start:.3f}"
+        
+        if isinstance(t_duration, timedelta):
+            t_duration_str = str(t_duration.total_seconds())
+        else:
+            t_duration_str = f"{t_duration:.3f}"
+        
+        return f"{self.custom_datasource_name}_{t_start_str}_{t_duration_str}"
 
     @classmethod
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: Optional[List[pd.DataFrame]] = None, custom_datasource_name: Optional[str] = None, detail_renderer: Optional['DetailRenderer'] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True) -> 'IntervalProvidingTrackDatasource':

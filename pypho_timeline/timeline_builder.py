@@ -371,8 +371,9 @@ class TimelineBuilder:
                 reference_datetime = valid_dts.min()
         
         if reference_datetime is None:
-            print("Warning: No reference datetime found in stream_infos_df, using Unix epoch")
-            reference_datetime = datetime(1970, 1, 1, tzinfo=timezone.utc)
+            print("Warning: No reference datetime found in stream_infos_df, will use earliest datetime from datasources")
+            # Don't set a default here - let build_from_datasources determine it from the actual data
+            reference_datetime = None
         else:
             # Convert pandas Timestamp to datetime if needed
             if isinstance(reference_datetime, pd.Timestamp):
@@ -452,6 +453,7 @@ class TimelineBuilder:
         if window_title is None:
             window_title = f"pyPhoTimeline - MNE Raw Data ({len(eeg_raws)} recordings)"
         
+        # If reference_datetime is None, it will be set from the earliest datetime in datasources
         # Build timeline from datasources
         return self.build_from_datasources(
             datasources=all_datasources,
@@ -482,22 +484,68 @@ class TimelineBuilder:
             raise ValueError("datasources list cannot be empty")
         
         # Calculate time range from datasources
-        total_start_time: float = np.nanmin([ds.total_df_start_end_times[0] for ds in datasources])
-        total_end_time: float = np.nanmax([ds.total_df_start_end_times[1] for ds in datasources])
+        # Check if datasources use datetime objects
+        first_start, first_end = datasources[0].total_df_start_end_times
+        is_datetime = isinstance(first_start, (datetime, pd.Timestamp))
         
-        # Calculate window duration if not provided
-        if window_duration is None:
-            window_duration = total_end_time - total_start_time
-            window_duration = max(window_duration, 10.0)
+        if is_datetime:
+            # Use datetime operations
+            total_start_time = min([ds.total_df_start_end_times[0] for ds in datasources], key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
+            total_end_time = max([ds.total_df_start_end_times[1] for ds in datasources], key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
+            
+            # Ensure they're pd.Timestamp
+            total_start_time = pd.Timestamp(total_start_time)
+            total_end_time = pd.Timestamp(total_end_time)
+            if total_start_time.tzinfo is None:
+                total_start_time = total_start_time.tz_localize('UTC')
+            if total_end_time.tzinfo is None:
+                total_end_time = total_end_time.tz_localize('UTC')
+            
+            # Calculate window duration if not provided
+            if window_duration is None:
+                duration_delta = total_end_time - total_start_time
+                window_duration = duration_delta.total_seconds()
+                window_duration = max(window_duration, 10.0)
+            
+            # Calculate window start time if not provided
+            if window_start_time is None:
+                window_start_time = total_start_time
+            elif isinstance(window_start_time, (int, float)):
+                # Convert relative float to absolute datetime
+                if reference_datetime is not None:
+                    window_start_time = reference_datetime + timedelta(seconds=float(window_start_time))
+                else:
+                    window_start_time = total_start_time + timedelta(seconds=float(window_start_time))
+        else:
+            # Use float operations (backward compatibility)
+            total_start_time: float = np.nanmin([ds.total_df_start_end_times[0] for ds in datasources])
+            total_end_time: float = np.nanmax([ds.total_df_start_end_times[1] for ds in datasources])
+            
+            # Calculate window duration if not provided
+            if window_duration is None:
+                window_duration = total_end_time - total_start_time
+                window_duration = max(window_duration, 10.0)
+            
+            # Calculate window start time if not provided
+            if window_start_time is None:
+                window_start_time = total_start_time
         
-        # Calculate window start time if not provided
-        if window_start_time is None:
-            window_start_time = total_start_time
-        
-        # Use Unix epoch as fallback if no reference datetime provided
-        if reference_datetime is None:
-            from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
-            reference_datetime = get_earliest_reference_datetime([], datasources)
+        # Set reference_datetime appropriately
+        if is_datetime:
+            # When using datetime objects, reference_datetime is just for display formatting
+            # Use the earliest datetime from datasources as reference
+            if reference_datetime is None:
+                reference_datetime = total_start_time
+            else:
+                # Ensure it's a datetime object
+                reference_datetime = pd.Timestamp(reference_datetime)
+                if reference_datetime.tzinfo is None:
+                    reference_datetime = reference_datetime.tz_localize('UTC')
+        else:
+            # Use Unix epoch as fallback if no reference datetime provided (for float timestamps)
+            if reference_datetime is None:
+                from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
+                reference_datetime = get_earliest_reference_datetime([], datasources)
         
         # Create the timeline widget with reference datetime
         timeline = SimpleTimelineWidget(
@@ -554,11 +602,43 @@ class TimelineBuilder:
         if update_time_range:
             existing_start = timeline.total_data_start_time
             existing_end = timeline.total_data_end_time
-            new_start = np.nanmin([ds.total_df_start_end_times[0] for ds in datasources])
-            new_end = np.nanmax([ds.total_df_start_end_times[1] for ds in datasources])
             
-            total_start_time = min(existing_start, new_start)
-            total_end_time = max(existing_end, new_end)
+            # Check if using datetime objects
+            first_start, first_end = datasources[0].total_df_start_end_times
+            is_datetime = isinstance(first_start, (datetime, pd.Timestamp))
+            
+            if is_datetime:
+                new_start = min([ds.total_df_start_end_times[0] for ds in datasources], key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
+                new_end = max([ds.total_df_start_end_times[1] for ds in datasources], key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
+                
+                # Ensure they're pd.Timestamp
+                new_start = pd.Timestamp(new_start)
+                new_end = pd.Timestamp(new_end)
+                if new_start.tzinfo is None:
+                    new_start = new_start.tz_localize('UTC')
+                if new_end.tzinfo is None:
+                    new_end = new_end.tz_localize('UTC')
+                
+                # Convert existing times if they're floats
+                if isinstance(existing_start, (int, float)):
+                    if timeline.reference_datetime is not None:
+                        existing_start = timeline.reference_datetime + timedelta(seconds=float(existing_start))
+                    else:
+                        existing_start = pd.Timestamp.fromtimestamp(float(existing_start), tz='UTC')
+                if isinstance(existing_end, (int, float)):
+                    if timeline.reference_datetime is not None:
+                        existing_end = timeline.reference_datetime + timedelta(seconds=float(existing_end))
+                    else:
+                        existing_end = pd.Timestamp.fromtimestamp(float(existing_end), tz='UTC')
+                
+                total_start_time = min(pd.Timestamp(existing_start), new_start)
+                total_end_time = max(pd.Timestamp(existing_end), new_end)
+            else:
+                new_start = np.nanmin([ds.total_df_start_end_times[0] for ds in datasources])
+                new_end = np.nanmax([ds.total_df_start_end_times[1] for ds in datasources])
+                
+                total_start_time = min(float(existing_start), float(new_start))
+                total_end_time = max(float(existing_end), float(new_end))
             
             # Update timeline time range
             timeline.total_data_start_time = total_start_time
@@ -623,25 +703,47 @@ class TimelineBuilder:
             if meas_date.tzinfo is None:
                 meas_date = meas_date.replace(tzinfo=timezone.utc)
         
-        # Convert raw.times to relative seconds from reference_datetime
-        # raw.times are relative to meas_date, so we need to convert to absolute then to relative
+        # Convert raw.times to absolute datetime objects
+        # raw.times are relative to meas_date, so we convert to absolute datetimes
         if meas_date is not None:
             absolute_times = [meas_date + timedelta(seconds=float(t)) for t in raw.times]
-            relative_times = [datetime_to_float(dt, reference_datetime) for dt in absolute_times]
+            # Convert to pd.Timestamp for consistency and timezone handling
+            datetime_times = [pd.Timestamp(dt) for dt in absolute_times]
+            # Ensure timezone-aware
+            datetime_times = [dt.tz_localize('UTC') if dt.tzinfo is None else dt for dt in datetime_times]
         else:
-            # Fallback: use raw.times directly (assuming they're already relative)
-            relative_times = [float(t) for t in raw.times]
+            # Fallback: if no meas_date, we can't create absolute datetimes
+            # Use reference_datetime as base if available
+            if reference_datetime is not None:
+                absolute_times = [reference_datetime + timedelta(seconds=float(t)) for t in raw.times]
+                datetime_times = [pd.Timestamp(dt) for dt in absolute_times]
+                datetime_times = [dt.tz_localize('UTC') if dt.tzinfo is None else dt for dt in datetime_times]
+            else:
+                # Last resort: use raw.times as floats (backward compatibility)
+                datetime_times = [float(t) for t in raw.times]
         
-        # Create base intervals_df
-        t_start = relative_times[0] if relative_times else 0.0
-        t_end = relative_times[-1] if relative_times else 0.0
-        t_duration = t_end - t_start
-        
-        base_intervals_df = pd.DataFrame({
-            't_start': [t_start],
-            't_duration': [t_duration],
-            't_end': [t_end]
-        })
+        # Create base intervals_df with datetime objects
+        if datetime_times and isinstance(datetime_times[0], (datetime, pd.Timestamp)):
+            t_start = datetime_times[0]
+            t_end = datetime_times[-1]
+            t_duration = (t_end - t_start).total_seconds()
+            
+            base_intervals_df = pd.DataFrame({
+                't_start': [pd.Timestamp(t_start)],
+                't_duration': [t_duration],  # Keep as float seconds for duration
+                't_end': [pd.Timestamp(t_end)]
+            })
+        else:
+            # Fallback for float timestamps (backward compatibility)
+            t_start = datetime_times[0] if datetime_times else 0.0
+            t_end = datetime_times[-1] if datetime_times else 0.0
+            t_duration = t_end - t_start
+            
+            base_intervals_df = pd.DataFrame({
+                't_start': [t_start],
+                't_duration': [t_duration],
+                't_end': [t_end]
+            })
         
         # Extract EEG channel data
         eeg_channels = [ch for ch in raw.ch_names if raw.get_channel_types([ch])[0] == 'eeg']
@@ -649,7 +751,8 @@ class TimelineBuilder:
             try:
                 eeg_data = raw.get_data(picks=eeg_channels)
                 eeg_df = pd.DataFrame(eeg_data.T, columns=eeg_channels)
-                eeg_df['t'] = relative_times
+                # Store datetime objects directly in 't' column
+                eeg_df['t'] = datetime_times
                 
                 # Create EEGTrackDatasource
                 if EEGTrackDatasource is not None:
@@ -678,7 +781,8 @@ class TimelineBuilder:
                 motion_data = raw.get_data(picks=motion_channels)
                 # Map to standard motion channel names if possible
                 motion_df = pd.DataFrame(motion_data.T, columns=motion_channels)
-                motion_df['t'] = relative_times
+                # Store datetime objects directly in 't' column
+                motion_df['t'] = datetime_times
                 
                 # Create MotionTrackDatasource
                 if MotionTrackDatasource is not None:
@@ -701,16 +805,29 @@ class TimelineBuilder:
                 # Convert annotations to DataFrame with datetime
                 annotations_df = raw.annotations.to_data_frame()
                 
-                # Convert onset times to relative seconds
+                # Convert onset times to absolute datetime objects
                 if meas_date is not None:
-                    annotation_relative_times = []
+                    annotation_datetime_times = []
                     for onset in annotations_df['onset']:
                         absolute_time = meas_date + timedelta(seconds=float(onset))
-                        relative_time = datetime_to_float(absolute_time, reference_datetime)
-                        annotation_relative_times.append(relative_time)
-                    annotations_df['t'] = annotation_relative_times
+                        dt = pd.Timestamp(absolute_time)
+                        if dt.tzinfo is None:
+                            dt = dt.tz_localize('UTC')
+                        annotation_datetime_times.append(dt)
+                    annotations_df['t'] = annotation_datetime_times
                 else:
-                    annotations_df['t'] = annotations_df['onset']
+                    # Fallback: use onset directly (assuming it's already a datetime or float)
+                    if reference_datetime is not None:
+                        annotation_datetime_times = []
+                        for onset in annotations_df['onset']:
+                            absolute_time = reference_datetime + timedelta(seconds=float(onset))
+                            dt = pd.Timestamp(absolute_time)
+                            if dt.tzinfo is None:
+                                dt = dt.tz_localize('UTC')
+                            annotation_datetime_times.append(dt)
+                        annotations_df['t'] = annotation_datetime_times
+                    else:
+                        annotations_df['t'] = annotations_df['onset']
                 
                 # Create log datasource for annotations
                 if LogTextDataFramePlotDetailRenderer is not None:
@@ -731,11 +848,21 @@ class TimelineBuilder:
                     for _, ann_row in annotations_df.iterrows():
                         ann_t_start = ann_row['t']
                         ann_duration = ann_row.get('duration', 0.0)
-                        annotation_intervals.append({
-                            't_start': ann_t_start,
-                            't_duration': ann_duration,
-                            't_end': ann_t_start + ann_duration
-                        })
+                        
+                        # Handle datetime objects for t_end calculation
+                        if isinstance(ann_t_start, (datetime, pd.Timestamp)):
+                            ann_t_end = ann_t_start + timedelta(seconds=float(ann_duration))
+                            annotation_intervals.append({
+                                't_start': pd.Timestamp(ann_t_start),
+                                't_duration': ann_duration,  # Keep as float seconds
+                                't_end': pd.Timestamp(ann_t_end)
+                            })
+                        else:
+                            annotation_intervals.append({
+                                't_start': ann_t_start,
+                                't_duration': ann_duration,
+                                't_end': ann_t_start + ann_duration
+                            })
                     
                     if annotation_intervals:
                         ann_intervals_df = pd.DataFrame(annotation_intervals)
@@ -798,8 +925,17 @@ class TimelineBuilder:
             if hasattr(a_dock, 'updateTitleBar') or hasattr(a_dock, 'refresh'):
                 a_dock.updateTitleBar()  # or refresh()
             
-            # Set the plot to show the full time range (convert to datetime then Unix timestamp if reference available)
-            if timeline.reference_datetime is not None:
+            # Set the plot to show the full time range
+            # Handle datetime objects directly
+            if isinstance(timeline.total_data_start_time, (datetime, pd.Timestamp)):
+                # Timeline uses datetime objects - convert directly to Unix timestamps
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                unix_start = datetime_to_unix_timestamp(timeline.total_data_start_time)
+                unix_end = datetime_to_unix_timestamp(timeline.total_data_end_time)
+                a_plot_item.setXRange(unix_start, unix_end, padding=0)
+                a_plot_item.setLabel('bottom', 'Time')
+            elif timeline.reference_datetime is not None:
+                # Timeline uses float timestamps with reference_datetime - convert to datetime then Unix timestamp
                 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp
                 dt_start = float_to_datetime(timeline.total_data_start_time, timeline.reference_datetime)
                 dt_end = float_to_datetime(timeline.total_data_end_time, timeline.reference_datetime)
@@ -809,6 +945,7 @@ class TimelineBuilder:
                 a_plot_item.setXRange(unix_start, unix_end, padding=0)
                 a_plot_item.setLabel('bottom', 'Time')
             else:
+                # Fallback: use float timestamps directly
                 a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0)
                 a_plot_item.setLabel('bottom', 'Time', units='s')
             a_plot_item.setYRange(0, 1, padding=0)

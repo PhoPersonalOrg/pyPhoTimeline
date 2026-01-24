@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 # from qtpy import QtWidgets, QtCore
 from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence
+from datetime import datetime
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
 
 
@@ -110,7 +111,15 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         
         # Sort by time
         df_sorted = detail_data.sort_values('t')
-        t_values = df_sorted['t'].values
+        
+        # Convert datetime 't' column to Unix timestamps for plotting
+        t_col = df_sorted['t']
+        if pd.api.types.is_datetime64_any_dtype(t_col):
+            # Convert datetime to Unix timestamps
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            t_values = t_col.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
+        else:
+            t_values = t_col.values
         
         assert (self.channel_names is not None)
 
@@ -176,10 +185,18 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         if (interval is None) or (len(interval) == 0):
             # If interval is None or empty, attempt to determine t_start and t_end from detail_data
             if has_valid_detail_data:
-                # Try to get time column: use 't' if present, otherwise index values if they look like times
-                if 't' in detail_data.columns:
-                    t_start = float(detail_data['t'].min())
-                    t_end = float(detail_data['t'].max())
+            # Try to get time column: use 't' if present, otherwise index values if they look like times
+            if 't' in detail_data.columns:
+                t_min = detail_data['t'].min()
+                t_max = detail_data['t'].max()
+                # Convert datetime to Unix timestamp if needed
+                if isinstance(t_min, (datetime, pd.Timestamp)):
+                    from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                    t_start = datetime_to_unix_timestamp(t_min)
+                    t_end = datetime_to_unix_timestamp(t_max)
+                else:
+                    t_start = float(t_min)
+                    t_end = float(t_max)
                 else:
                     # Fallback: use DataFrame index if it is numeric and sorted
                     try:
@@ -221,9 +238,25 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
             y_max = max(detail_data[col].max() for col in channel_columns)
             # Add padding
             y_pad = (y_max - y_min) * 0.1 if y_max > y_min else 1.0
+            
+            # Convert t_start and t_end to Unix timestamps if they're datetime objects
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                t_start = datetime_to_unix_timestamp(t_start)
+            if isinstance(t_end, (datetime, pd.Timestamp)):
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                t_end = datetime_to_unix_timestamp(t_end)
+            
             return (t_start, t_end, (y_min - y_pad), (y_max + y_pad))
         else:
             # No channels found, use default bounds
+            # Convert t_start and t_end to Unix timestamps if they're datetime objects
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                t_start = datetime_to_unix_timestamp(t_start)
+            if isinstance(t_end, (datetime, pd.Timestamp)):
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                t_end = datetime_to_unix_timestamp(t_end)
             return (t_start, t_end, 0.0, 1.0)
 
 

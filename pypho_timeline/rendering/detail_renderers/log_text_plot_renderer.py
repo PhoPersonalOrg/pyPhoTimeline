@@ -1,5 +1,6 @@
 """LogTextDataFramePlotDetailRenderer - Renders text log events as text labels."""
 from typing import List, Optional, Tuple, Any
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import pyphoplacecellanalysis.External.pyqtgraph as pg
@@ -97,7 +98,13 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
         
         # Create a TextItem for each row, displaying all channel values
         for idx, row in df_sorted.iterrows():
-            t_value = float(row['t'])
+            t_value_raw = row['t']
+            # Convert datetime to Unix timestamp if needed
+            if isinstance(t_value_raw, (datetime, pd.Timestamp)):
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                t_value = datetime_to_unix_timestamp(t_value_raw)
+            else:
+                t_value = float(t_value_raw)
             
             # Create vertical line at message time if enabled
             if self.enable_lines:
@@ -160,8 +167,16 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
             if has_valid_detail_data:
                 # Try to get time column: use 't' if present
                 if 't' in detail_data.columns:
-                    t_start = float(detail_data['t'].min())
-                    t_end = float(detail_data['t'].max())
+                    t_min = detail_data['t'].min()
+                    t_max = detail_data['t'].max()
+                    # Convert datetime to Unix timestamp if needed
+                    if isinstance(t_min, (datetime, pd.Timestamp)):
+                        from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                        t_start = datetime_to_unix_timestamp(t_min)
+                        t_end = datetime_to_unix_timestamp(t_max)
+                    else:
+                        t_start = float(t_min)
+                        t_end = float(t_max)
                 else:
                     # Fallback: use DataFrame index if it is numeric and sorted
                     try:
@@ -183,7 +198,25 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
             ## interval is provided
             t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
             t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
-            t_end = t_start + t_duration
+            
+            # Handle datetime objects for t_end calculation
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                from datetime import timedelta
+                t_end = t_start + timedelta(seconds=float(t_duration))
+                # Convert to Unix timestamp for return value
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                t_start = datetime_to_unix_timestamp(t_start)
+                t_end = datetime_to_unix_timestamp(t_end)
+            else:
+                t_end = t_start + t_duration
+        
+        # Ensure t_start and t_end are floats (Unix timestamps) for return value
+        if isinstance(t_start, (datetime, pd.Timestamp)):
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            t_start = datetime_to_unix_timestamp(t_start)
+        if isinstance(t_end, (datetime, pd.Timestamp)):
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            t_end = datetime_to_unix_timestamp(t_end)
         
         # Text logs don't have numeric y-values, so use fixed y-bounds
         return (t_start, t_end, 0.0, 1.0)

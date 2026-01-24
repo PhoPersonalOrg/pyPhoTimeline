@@ -4,7 +4,8 @@ This module provides type hints and a minimal interface for interval datasources
 The actual IntervalsDatasource implementation should be imported from pyphoplacecellanalysis
 if available, or a compatible implementation can be provided.
 """
-from typing import Protocol, Optional, Tuple
+from typing import Protocol, Optional, Tuple, Union
+from datetime import datetime
 import pandas as pd
 from qtpy import QtCore
 
@@ -33,11 +34,11 @@ except ImportError:
             ...
         
         @property
-        def total_df_start_end_times(self) -> Tuple[float, float]:
+        def total_df_start_end_times(self) -> Union[Tuple[float, float], Tuple[datetime, datetime], Tuple[pd.Timestamp, pd.Timestamp]]:
             """Returns (earliest_time, latest_time) for the entire dataset"""
             ...
         
-        def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
+        def get_updated_data_window(self, new_start: Union[float, datetime, pd.Timestamp], new_end: Union[float, datetime, pd.Timestamp]) -> pd.DataFrame:
             """Returns the subset of intervals that overlap with the given time window"""
             ...
         
