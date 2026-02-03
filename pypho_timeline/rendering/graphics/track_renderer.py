@@ -396,9 +396,12 @@ class TrackRenderer(QtCore.QObject):
             f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'D', 'location': 'track_renderer.py:361', 'message': '_on_detail_data_ready entry', 'data': {'track_id': track_id, 'self_track_id': self.track_id, 'cache_key': cache_key, 'cache_key_in_visible': cache_key in self.visible_intervals, 'detail_data_type': type(detail_data).__name__ if detail_data is not None else 'None', 'has_error': error is not None}, 'timestamp': __import__('time').time() * 1000}) + '\n')
         # #endregion
         logger.debug(f"TrackRenderer[{self.track_id}] _on_detail_data_ready(track_id={track_id}, cache_key='{cache_key}')")
-        
+        # g.graphics.track_renderer - DEBUG - TrackRenderer[EEG_Epoc X] Rendered detail for cache_key='EEG_Epoc X_0.000_0.000' - created 14 graphics objects
+        # 2026-02-03 11:27:20 - pypho_timeline.rendering.graphics.track_renderer - DEBUG - TrackRenderer[MOTION_Epoc X Motion] _on_detail_data_ready(track_id='EEG_Epoc X', cache_key='EEG_Epoc X_0.000_0.000')
+        # 2026-02-03 11:27:20 - pypho_timeline.rendering.graphics.track_renderer - DEBUG - TrackRenderer[MOTION_Epoc X Motion] _on_detail_data_ready() - data for wrong track (expected 'MOTION_Epoc X Motion', got 'EEG_Epoc X'), ignoring
+
         if track_id != self.track_id:
-            logger.debug(f"TrackRenderer[{self.track_id}] _on_detail_data_ready() - data for wrong track (expected {self.track_id}, got {track_id}), ignoring")
+            logger.debug(f"TrackRenderer[{self.track_id}] _on_detail_data_ready() - data for wrong track (expected '{self.track_id},' got '{track_id}'), ignoring")
             return  # Not for this track
         
         if error is not None:

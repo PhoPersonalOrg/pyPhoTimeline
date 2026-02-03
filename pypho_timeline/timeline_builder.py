@@ -963,7 +963,7 @@ class TimelineBuilder:
         """
         return perform_process_all_streams(streams=streams)
     
-    def _add_tracks_to_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource]) -> None:
+    def _add_tracks_to_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource], enable_hide_extra_track_x_axes: bool=False) -> None:
         """Add tracks to a timeline widget.
         
         Args:
@@ -1040,8 +1040,12 @@ class TimelineBuilder:
             # Hide x-axis for all except the last one (bottom-most)
             if len(all_plot_items) > 1:
                 # Hide x-axis for all tracks except the last one
-                for widget_name, plot_item in all_plot_items[:-1]:
-                    plot_item.hideAxis('bottom')
-                # Ensure the last track shows its x-axis
-                all_plot_items[-1][1].showAxis('bottom')
-        
+                if enable_hide_extra_track_x_axes:
+                    for widget_name, plot_item in all_plot_items[:-3]:
+                        plot_item.hideAxis('bottom')
+                    # Ensure the last track shows its x-axis
+                    all_plot_items[-1][1].showAxis('bottom')
+                else:
+                    ## show all
+                    for widget_name, plot_item in all_plot_items:
+                        plot_item.showAxis('bottom')

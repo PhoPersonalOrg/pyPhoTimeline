@@ -3,6 +3,7 @@ import pandas as pd
 # from qtpy import QtWidgets, QtCore
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any, Sequence, Mapping
 from datetime import datetime
+from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 # import pyphoplacecellanalysis.External.pyqtgraph as pg
 # from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 # from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
@@ -128,7 +129,6 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
         if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
             # Convert datetime to Unix timestamps
-            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
             from datetime import datetime
             t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
         else:
@@ -193,7 +193,6 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
                     t_max = detail_data['t'].max()
                     # Convert datetime to Unix timestamp if needed
                     if isinstance(t_min, (datetime, pd.Timestamp)):
-                        from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
                         t_start = datetime_to_unix_timestamp(t_min)
                         t_end = datetime_to_unix_timestamp(t_max)
                     else:
@@ -228,7 +227,6 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
                 from datetime import timedelta
                 t_end = t_start + timedelta(seconds=float(t_duration))
                 # Convert to Unix timestamp for return value
-                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
                 t_start = datetime_to_unix_timestamp(t_start)
                 t_end = datetime_to_unix_timestamp(t_end)
             else:
@@ -236,10 +234,8 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         
         # Ensure t_start and t_end are floats (Unix timestamps) for return value
         if isinstance(t_start, (datetime, pd.Timestamp)):
-            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
             t_start = datetime_to_unix_timestamp(t_start)
         if isinstance(t_end, (datetime, pd.Timestamp)):
-            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
             t_end = datetime_to_unix_timestamp(t_end)
         
         if detail_data is None or len(detail_data) == 0:

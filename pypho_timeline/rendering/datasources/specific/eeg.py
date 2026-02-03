@@ -4,7 +4,7 @@ import pandas as pd
 from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence
 from datetime import datetime
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
-
+from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGPlotDetailRenderer - Renders eeg data as line plots.                                                                                                                                                                                                                              #
@@ -130,7 +130,6 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
         if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
             # Convert datetime to Unix timestamps
-            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
             t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
         else:
             t_values = t_col_aligned.values
@@ -192,7 +191,6 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
                     t_max = detail_data['t'].max()
                     # Convert datetime to Unix timestamp if needed
                     if isinstance(t_min, (datetime, pd.Timestamp)):
-                        from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
                         t_start = datetime_to_unix_timestamp(t_min)
                         t_end = datetime_to_unix_timestamp(t_max)
                     else:
@@ -242,10 +240,8 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
             
             # Convert t_start and t_end to Unix timestamps if they're datetime objects
             if isinstance(t_start, (datetime, pd.Timestamp)):
-                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
                 t_start = datetime_to_unix_timestamp(t_start)
             if isinstance(t_end, (datetime, pd.Timestamp)):
-                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
                 t_end = datetime_to_unix_timestamp(t_end)
             
             return (t_start, t_end, (y_min - y_pad), (y_max + y_pad))
@@ -253,10 +249,8 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
             # No channels found, use default bounds
             # Convert t_start and t_end to Unix timestamps if they're datetime objects
             if isinstance(t_start, (datetime, pd.Timestamp)):
-                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
                 t_start = datetime_to_unix_timestamp(t_start)
             if isinstance(t_end, (datetime, pd.Timestamp)):
-                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
                 t_end = datetime_to_unix_timestamp(t_end)
             return (t_start, t_end, 0.0, 1.0)
 
