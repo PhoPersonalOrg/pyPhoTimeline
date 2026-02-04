@@ -6,11 +6,10 @@ from typing import List, Optional, Dict, Any
 import cv2
 import pandas as pd
 from attrs import define
-from pypho_timeline.utils.file_metadata import BaseFileMetadataParser
 
 
 @define(slots=False)
-class VideoMetadataParser(BaseFileMetadataParser):
+class BaseFileMetadataParser:
     """
     Parses video folders and extracts metadata including datetime from filenames.
     
@@ -51,7 +50,7 @@ class VideoMetadataParser(BaseFileMetadataParser):
         return None
     
     @classmethod
-    def get_file_metadata(cls, video_path: Path) -> Dict[str, Any]:
+    def get_file_metadata(cls, file_path: Path) -> Dict[str, Any]:
         """
         Extract file size and modification time for cache validation.
         
@@ -59,7 +58,7 @@ class VideoMetadataParser(BaseFileMetadataParser):
             Dictionary with file_size and file_mtime.
         """
         try:
-            stat = video_path.stat()
+            stat = file_path.stat()
             return {
                 'file_size': stat.st_size,
                 'file_mtime': stat.st_mtime,
@@ -68,9 +67,9 @@ class VideoMetadataParser(BaseFileMetadataParser):
             return {'file_size': 0, 'file_mtime': 0.0}
     
     @classmethod
-    def is_video_changed(cls, video_path: Path, cached_row: pd.Series) -> bool:
+    def is_file_changed(cls, file_path: Path, cached_row: pd.Series) -> bool:
         """
-        Check if a video file has been modified since it was cached.
+        Check if a file has been modified since it was cached.
         
         Args:
             video_path: Path to the video file
@@ -79,11 +78,11 @@ class VideoMetadataParser(BaseFileMetadataParser):
         Returns:
             True if file was modified or doesn't exist, False otherwise.
         """
-        if not video_path.exists():
+        if not file_path.exists():
             return True
         
         try:
-            current_metadata = cls.get_file_metadata(video_path)
+            current_metadata = cls.get_file_metadata(file_path)
             cached_size = cached_row.get('cache_file_size') if 'cache_file_size' in cached_row.index else 0
             cached_mtime = cached_row.get('cache_file_mtime') if 'cache_file_mtime' in cached_row.index else 0.0
             
@@ -143,7 +142,7 @@ class VideoMetadataParser(BaseFileMetadataParser):
             pass
     
     @classmethod
-    def extract_video_metadata(cls, video_path: Path) -> Optional[Dict[str, Any]]:
+    def extract_file_metadata(cls, file_path: Path) -> Optional[Dict[str, Any]]:
         """
         Extract metadata from a video file using cv2.VideoCapture.
         
@@ -151,7 +150,7 @@ class VideoMetadataParser(BaseFileMetadataParser):
             Dictionary with video metadata or None if extraction fails.
         """
         try:
-            cap = cv2.VideoCapture(str(video_path))
+            cap = cv2.VideoCapture(str(file_path))
             if not cap.isOpened():
                 return None
             
@@ -165,7 +164,7 @@ class VideoMetadataParser(BaseFileMetadataParser):
             duration = num_frames / fps if fps > 0 else 0.0
             
             # Get file size
-            file_size = video_path.stat().st_size
+            file_size = file_path.stat().st_size
             
             cap.release()
             
@@ -181,7 +180,7 @@ class VideoMetadataParser(BaseFileMetadataParser):
             return None
     
     @classmethod
-    def parse_video_folder(cls, folder_path: Path, video_extensions: List[str] = ['.mp4', '.avi', '.mov', '.mkv', '.wmv'], use_cache: bool = True, force_rebuild: bool = False) -> pd.DataFrame:
+    def parse_filesystem_folder(cls, folder_path: Path, included_file_extensions: List[str] = ['.xdf', '.avi', '.mov', '.mkv', '.wmv'], use_cache: bool = True, force_rebuild: bool = False) -> pd.DataFrame:
         """
         Parse all videos in a folder and return a DataFrame with metadata.
         Uses caching to speed up subsequent runs by only processing new or modified videos.
@@ -223,7 +222,7 @@ class VideoMetadataParser(BaseFileMetadataParser):
         
         # Find all video files
         video_files = []
-        for ext in video_extensions:
+        for ext in included_file_extensions:
             video_files.extend(folder_path.glob(f"*{ext}"))
             video_files.extend(folder_path.glob(f"*{ext.upper()}"))
         
@@ -255,7 +254,7 @@ class VideoMetadataParser(BaseFileMetadataParser):
             use_cached = False
             if use_cache and not force_rebuild and resolved_path in cached_by_path:
                 cached_row = cached_by_path[resolved_path]
-                if not cls.is_video_changed(video_path, cached_row):
+                if not cls.is_file_changed(video_path, cached_row):
                     # Use cached entry, but update cache metadata
                     cached_entry = cached_row.to_dict()
                     current_metadata = cls.get_file_metadata(video_path)
@@ -271,7 +270,7 @@ class VideoMetadataParser(BaseFileMetadataParser):
                     continue
                 
                 # Extract video metadata
-                metadata = cls.extract_video_metadata(video_path)
+                metadata = cls.extract_file_metadata(video_path)
                 if metadata is None:
                     continue
                 
@@ -319,5 +318,5 @@ class VideoMetadataParser(BaseFileMetadataParser):
         return df
 
 
-__all__ = ['VideoMetadataParser']
+__all__ = ['BaseFileMetadataParser']
 
