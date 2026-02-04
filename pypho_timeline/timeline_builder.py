@@ -17,7 +17,7 @@ from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler
 from pypho_timeline.widgets import LogWidget
-from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime, datetime_to_float
+from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, get_earliest_reference_datetime, datetime_to_float, float_to_datetime
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 
 # Import MNE (optional - may not be available)
@@ -101,7 +101,7 @@ class TimelineBuilder:
 
     
     ## MAIN FUNCTION
-    def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
+    def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from an XDF file.
         
         Args:
@@ -118,8 +118,8 @@ class TimelineBuilder:
         # Use multi-file method for backward compatibility
         return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size)
     
-
-    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
+    # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
+    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from multiple XDF files, merging streams by name.
         
         Streams with the same name across different files will be merged into a single track.
@@ -200,10 +200,11 @@ class TimelineBuilder:
                 window_title = f"pyPhoTimeline - ALL Modalities from {len(xdf_file_paths)} XDF files: {file_names}"
         
         # Build timeline from merged datasources with reference datetime
-        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, reference_datetime=reference_datetime)
+        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, reference_datetime=reference_datetime, **kwargs)
     
 
-    def build_from_video(self, video_datasource: Optional[VideoTrackDatasource] = None, video_folder_path: Optional[Path] = None, video_paths: Optional[List[Union[Path, str]]] = None, video_df: Optional[pd.DataFrame] = None, video_intervals_df: Optional[pd.DataFrame] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128)) -> SimpleTimelineWidget:
+    # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
+    def build_from_video(self, video_datasource: Optional[VideoTrackDatasource] = None, video_folder_path: Optional[Path] = None, video_paths: Optional[List[Union[Path, str]]] = None, video_df: Optional[pd.DataFrame] = None, video_intervals_df: Optional[pd.DataFrame] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), **kwargs) -> SimpleTimelineWidget:
         """Build a timeline widget from video files only (no XDF file required).
         
         Args:
@@ -255,7 +256,6 @@ class TimelineBuilder:
             raise ValueError("VideoTrackDatasource has no video intervals. Check that video files exist and are valid.")
         
         # Get reference datetime (use reference_timestamp if available, otherwise fallback)
-        from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
         reference_datetime = None
         if reference_timestamp is not None:
             # Convert reference_timestamp (float) to datetime (assuming Unix epoch, UTC)
@@ -272,13 +272,12 @@ class TimelineBuilder:
             add_example_tracks=False,
             window_title=window_title or f"pyPhoTimeline - Video Track: {video_datasource.custom_datasource_name}",
             window_size=window_size,
-            reference_datetime=reference_datetime
+            reference_datetime=reference_datetime, **kwargs,
         )
     
 
-    
-
-    def build_from_streams(self, streams: List, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
+    # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
+    def build_from_streams(self, streams: List, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from pre-loaded streams.
         
         Args:
@@ -315,9 +314,11 @@ class TimelineBuilder:
         reference_datetime = get_earliest_reference_datetime([], active_datasource_list)
         
         # Build timeline from datasources
-        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title or "pyPhoTimeline", window_size=window_size, reference_datetime=reference_datetime)
+        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title or "pyPhoTimeline", window_size=window_size, reference_datetime=reference_datetime, **kwargs)
     
-    def build_from_eeg_raw_and_stream_info(self, eeg_raws: List, stream_infos_df: pd.DataFrame, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
+
+    # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
+    def build_from_eeg_raw_and_stream_info(self, eeg_raws: List, stream_infos_df: pd.DataFrame, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from MNE Raw objects and XDF stream info DataFrame.
         
         Args:
@@ -533,10 +534,14 @@ class TimelineBuilder:
             add_example_tracks=add_example_tracks,
             window_title=window_title,
             window_size=window_size,
-            reference_datetime=reference_datetime
+            reference_datetime=reference_datetime, **kwargs,
         )
     
-    def build_from_datasources(self, datasources: List[TrackDatasource], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), reference_datetime: Optional[datetime] = None) -> SimpleTimelineWidget:
+
+    # @function_attributes(short_name=None, tags=['MAIN'], input_requires=[], output_provides=[], uses=['self._add_tracks_to_timeline'], used_by=['self.build_from_eeg_raw_and_stream_info', 'self.build_from_streams', 'self.build_from_video', 'self.build_from_xdf_files'], creation_date='2026-02-03 19:53', related_items=[])
+    def build_from_datasources(self, datasources: List[TrackDatasource], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), reference_datetime: Optional[datetime] = None,
+                use_absolute_datetime_track_mode: bool = True, **kwargs,
+                ) -> SimpleTimelineWidget:
         """Build a timeline widget from existing datasources.
         
         Args:
@@ -559,6 +564,7 @@ class TimelineBuilder:
         first_start, first_end = datasources[0].total_df_start_end_times
         is_datetime = isinstance(first_start, (datetime, pd.Timestamp))
         
+        #TODO 2026-02-03 20:10: - [ ] Implement proper full datetime use here like I did downstream in `self._add_tracks_to_timeline(...)` for use_absolute_datetime_track_mode == True mode.
         if is_datetime:
             # Use datetime operations
             total_start_time = min([ds.total_df_start_end_times[0] for ds in datasources], key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
@@ -581,6 +587,7 @@ class TimelineBuilder:
             # Calculate window start time if not provided
             if window_start_time is None:
                 window_start_time = total_start_time
+
             elif isinstance(window_start_time, (int, float)):
                 # Convert relative float to absolute datetime
                 if reference_datetime is not None:
@@ -617,7 +624,11 @@ class TimelineBuilder:
             if reference_datetime is None:
                 from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
                 reference_datetime = get_earliest_reference_datetime([], datasources)
-        
+
+
+        #TODO 2026-02-03 20:00: - [ ] Override `reference_datetime = None` so we use absolute datetimes        
+        reference_datetime = None
+
         # Create the timeline widget with reference datetime
         timeline = SimpleTimelineWidget(
             total_start_time=total_start_time,
@@ -629,7 +640,7 @@ class TimelineBuilder:
         )
         
         # Add tracks to the timeline
-        self._add_tracks_to_timeline(timeline, datasources)
+        self._add_tracks_to_timeline(timeline, datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
         
         # Configure window
         timeline.setWindowTitle(window_title or "pyPhoTimeline")
@@ -654,6 +665,7 @@ class TimelineBuilder:
         
         return timeline
     
+    # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self._add_tracks_to_timeline'], used_by=[], creation_date='2026-02-03 19:58', related_items=[])
     def update_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource], update_time_range: bool = True) -> SimpleTimelineWidget:
         """Add tracks to an existing timeline widget.
         
@@ -725,6 +737,7 @@ class TimelineBuilder:
         
         return timeline
     
+
     def _extract_datasources_from_eeg_raw(self, raw, stream_info_row: pd.Series, reference_datetime: datetime, stream_name: str) -> List[TrackDatasource]:
         """Extract datasources from a single MNE Raw object.
         
@@ -963,7 +976,9 @@ class TimelineBuilder:
         """
         return perform_process_all_streams(streams=streams)
     
-    def _add_tracks_to_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource], enable_hide_extra_track_x_axes: bool=False) -> None:
+
+    # @function_attributes(short_name=None, tags=['MAIN', 'add'], input_requires=[], output_provides=[], uses=[], used_by=['self.update_timeline', 'self.build_from_datasources'], creation_date='2026-02-03 19:57', related_items=[])
+    def _add_tracks_to_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource], enable_hide_extra_track_x_axes: bool=False, use_absolute_datetime_track_mode: bool = True) -> None:
         """Add tracks to a timeline widget.
         
         Args:
@@ -999,15 +1014,18 @@ class TimelineBuilder:
             # Set the plot to show the full time range
             # Handle datetime objects directly
             if isinstance(timeline.total_data_start_time, (datetime, pd.Timestamp)):
-                # Timeline uses datetime objects - convert directly to Unix timestamps
-                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-                unix_start = datetime_to_unix_timestamp(timeline.total_data_start_time)
-                unix_end = datetime_to_unix_timestamp(timeline.total_data_end_time)
-                a_plot_item.setXRange(unix_start, unix_end, padding=0)
+                if not use_absolute_datetime_track_mode:
+                    # Timeline uses datetime objects - convert directly to Unix timestamps
+                    unix_start = datetime_to_unix_timestamp(timeline.total_data_start_time)
+                    unix_end = datetime_to_unix_timestamp(timeline.total_data_end_time)
+                    a_plot_item.setXRange(unix_start, unix_end, padding=0)
+                else:
+                    ## use_absolute_datetime_track_mode - use the datetimes directly
+                    a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0)
+
                 a_plot_item.setLabel('bottom', 'Time')
-            elif timeline.reference_datetime is not None:
+            elif (timeline.reference_datetime is not None):
                 # Timeline uses float timestamps with reference_datetime - convert to datetime then Unix timestamp
-                from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp
                 dt_start = float_to_datetime(timeline.total_data_start_time, timeline.reference_datetime)
                 dt_end = float_to_datetime(timeline.total_data_end_time, timeline.reference_datetime)
                 # Convert datetime to Unix timestamp for PyQtGraph (DateAxisItem expects timestamps but displays as dates)
@@ -1019,6 +1037,7 @@ class TimelineBuilder:
                 # Fallback: use float timestamps directly
                 a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0)
                 a_plot_item.setLabel('bottom', 'Time', units='s')
+
             a_plot_item.setYRange(0, 1, padding=0)
             a_plot_item.setLabel('left', datasource.custom_datasource_name)
             a_plot_item.hideAxis('left')  # Hide Y-axis for cleaner look
