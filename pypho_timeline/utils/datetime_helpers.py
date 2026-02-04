@@ -5,7 +5,7 @@ and extracting reference datetimes from XDF file headers.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, List, Tuple, Dict, Any
 import logging
 import pandas as pd
 
@@ -251,3 +251,42 @@ def get_earliest_reference_datetime(file_headers: list, datasources: list) -> Op
     # Last resort: return Unix epoch (timezone-aware, UTC)
     logger.warning("No reference datetime found, using Unix epoch (1970-01-01 UTC)")
     return UNIX_EPOCH_UTC
+
+
+
+def _normalize_datetime_to_utc_naive(series: pd.Series) -> pd.Series:
+    """
+    Normalize a datetime Series to naive UTC.
+    - If aware: convert to UTC, then make naive.
+    - If naive: assume Local Time, localize to system timezone, convert to UTC, then make naive.
+
+    Usage:
+
+        from pypho_timeline.utils.datetime_helpers import _normalize_datetime_to_utc_naive
+
+    #TODO 2026-02-03 18:14: - [ ] This seems to mess up all the XDF stream dates, it isn't used on the video track at all and that's the only track with accurate datetimes
+
+    """
+    if series.empty:
+        return series
+
+    # Convert to datetime first to ensure properties exist
+    series = pd.to_datetime(series, errors='coerce')
+    
+    # Check the first non-null value to determine if aware or naive
+    first_valid = series.dropna().first_valid_index()
+    if first_valid is None:
+        return series
+        
+    first_val = series[first_valid]
+    if first_val.tzinfo is None:
+        # Naive -> Assume Local -> UTC
+        # Get system local timezone
+        local_tz = datetime.now().astimezone().tzinfo
+        return series.dt.tz_localize(local_tz).dt.tz_convert('UTC').dt.tz_convert(None)
+    else:
+        # Aware -> UTC -> Naive
+        return series.dt.tz_convert('UTC').dt.tz_convert(None)
+
+
+

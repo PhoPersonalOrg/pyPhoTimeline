@@ -40,7 +40,7 @@ def video_metadata_to_intervals_df(video_df: pd.DataFrame, reference_timestamp: 
         return pd.DataFrame()
     
 
-    if not use_absolute_datetime_track_mode:
+    if (not use_absolute_datetime_track_mode):
         # Convert datetime to timestamp
         timestamps = video_df['video_start_datetime'].values.astype('datetime64[ns]').astype(np.float64) / 1e9
         # # Calculate t_start relative to reference or first video
@@ -50,7 +50,7 @@ def video_metadata_to_intervals_df(video_df: pd.DataFrame, reference_timestamp: 
 
     else:
         ## absolute mode - matching the other tracks that use absolute datetimes
-        if reference_timestamp is not None:
+        if (reference_timestamp is not None):
             print(f'WARN: reference_timestamp is not None (reference_timestamp: {reference_timestamp}) but will be ignored because we are using absolute datetimes like the other tracks.')
         # t_start_values = video_df['video_start_datetime'].values ## matching the other tracks that use absolute datetimes
         starts = video_df['video_start_datetime']
