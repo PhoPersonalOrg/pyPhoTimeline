@@ -4,7 +4,9 @@ This module provides utilities for converting between float timestamps and datet
 and extracting reference datetimes from XDF file headers.
 """
 
+import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional, List, Tuple, Dict, Any
 import logging
 import pandas as pd

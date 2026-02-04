@@ -13,7 +13,7 @@ from pathlib import Path
 from qtpy import QtWidgets, QtCore
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
-from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, datetime_to_float, get_reference_datetime_from_xdf_header
+from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, datetime_to_float, get_reference_datetime_from_xdf_header, unix_timestamp_to_datetime
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
 from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
 from pypho_timeline.rendering.detail_renderers import DataframePlotDetailRenderer
@@ -515,16 +515,39 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         - all_streams: Dictionary mapping stream names to merged interval DataFrames
         - all_streams_datasources: Dictionary mapping stream names to merged TrackDatasource instances
     """
+    from phoofflineeeganalysis.analysis.historical_data import HistoricalData
+
+
     if len(streams_list) != len(xdf_file_paths):
         raise ValueError(f"streams_list length ({len(streams_list)}) must match xdf_file_paths length ({len(xdf_file_paths)})")
     
     # Extract reference datetimes from file headers
     file_reference_datetimes = {}
-    if file_headers is not None:
-        for file_header, file_path in zip(file_headers, xdf_file_paths):
+
+    xdf_recording_file_metadta_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=xdf_file_paths) ## this should be cheap because most will already be cached
+    
+    if file_headers is None:
+        file_headers = [None] * len(xdf_file_paths)
+
+    for file_header, file_path in zip(file_headers, xdf_file_paths):
+        ref_dt = None
+        if file_header is not None:
             ref_dt = get_reference_datetime_from_xdf_header(file_header)
-            if ref_dt is not None:
-                file_reference_datetimes[file_path] = ref_dt
+        # ref_dt = get_reference_datetime_from_xdf_file(file_path=file_path, file_header=file_header)
+        if ref_dt is not None:
+            file_reference_datetimes[file_path] = ref_dt
+        else:
+            found_file_df_matches = xdf_recording_file_metadta_df[xdf_recording_file_metadta_df['src_file'].apply(lambda s: Path(s).resolve()) == Path(file_path).resolve()]
+            if len(found_file_df_matches) == 1:
+                # Safely fetch the only row, avoiding KeyErrors and other indexing errors
+                meas_datetime = found_file_df_matches.iloc[0]['meas_datetime'] if not found_file_df_matches.empty else None
+                ref_dt = meas_datetime # Timestamp('2026-02-04 09:58:42+0000', tz='UTC')
+            else:
+                print(f'WARN: failed to find xdf file metadata for file file_path: "{file_path.as_posix()}" in xdf_recording_file_metadta_df: {xdf_recording_file_metadta_df}\n\tfound_file_df_matches: {found_file_df_matches}')
+
+        if ref_dt is not None:
+            file_reference_datetimes[file_path] = ref_dt
+    ## END for file_header, file_path in zip(file_headers, xdf_file_paths):...
     
     # Find earliest reference datetime (common reference for all timestamps)
     earliest_reference_datetime = None
@@ -557,7 +580,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             elif stream_type != current_stream_type:
                 print(f"WARN: Stream '{stream_name}' has different types across files: {stream_type} vs {current_stream_type}")
             
-            timestamps = stream['time_stamps']
+            timestamps = stream['time_stamps'] # these already look correct, like unix global timestamps
             time_series = stream['time_series']
             
             if len(timestamps) == 0:
@@ -566,11 +589,19 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             
             # Convert timestamps: from relative (to file's reference) to absolute, then to relative (to earliest reference)
             file_ref_dt = file_reference_datetimes.get(file_path)
-            if file_ref_dt is not None and earliest_reference_datetime is not None:
+            if (file_ref_dt is not None) and (timestamps is not None): # 
                 # Convert relative timestamps to absolute datetimes using file's reference
                 timestamps_absolute = [float_to_datetime(float(ts), file_ref_dt) for ts in timestamps]
-                # Convert absolute datetimes back to relative timestamps using earliest reference
-                timestamps = np.array([datetime_to_float(dt, earliest_reference_datetime) for dt in timestamps_absolute])
+
+                #TODO 2026-02-04 05:15: - [ ] Changing from using relative to earliest reference to unix timestamps (absolute)
+                # # Convert absolute datetimes back to relative timestamps using earliest reference
+                # if (earliest_reference_datetime is not None):
+                #     timestamps = np.array([datetime_to_float(dt, earliest_reference_datetime) for dt in timestamps_absolute])
+
+                # Convert to unix timestamps (absolute) instead ______________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
+                timestamps = np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute]) ## this does actually make e09 instead of e06
+                ## yeah they work: [unix_timestamp_to_datetime(v) for v in np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute])] ## actually these are real datetimes, instead of  Timestamp('2026-02-04 21:20:49.471665+0000', tz='UTC') `timestamps_absolute`
+
             else:
                 # Fallback: use timestamps as-is (relative to file start, which may cause misalignment)
                 timestamps = np.array([float(ts) for ts in timestamps])
@@ -580,7 +611,27 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             stream_start = float(timestamps[0])
             stream_end = float(timestamps[-1])
             stream_duration = stream_end - stream_start
-            
+
+            # timestamps = np.array([unix_timestamp_to_datetime(datetime_to_unix_timestamp(dt)) for dt in timestamps_absolute])
+            timestamps = np.array([unix_timestamp_to_datetime(v) for v in timestamps])
+
+
+            ## copied directly from video_metadata_to_intervals_df(...) which works:
+            # timestamps = pd.to_datetime(timestamps).apply(lambda dt: dt.tz_localize('UTC') if dt.tzinfo is None else dt).values # ## yeah they work: [unix_timestamp_to_datetime(v) for v in np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute])] ## actually these are real datetimes, instead of  Timestamp('2026-02-04 21:20:49.471665+0000', tz='UTC') `timestamps_absolute`
+            # t_start_values = pd.to_datetime(starts).apply(lambda dt: dt.tz_localize('UTC') if dt.tzinfo is None else dt).values
+
+            ts_index = pd.to_datetime(timestamps)
+            ts_index = ts_index.tz_localize('UTC') if ts_index.tz is None else ts_index.tz_convert('UTC')
+            timestamps = ts_index.values # timestamps: array(['2026-02-04T21:20:47.722655000', '2026-02-04T21:20:47.753887000',
+                                                #    '2026-02-04T21:20:47.785120000', ...,
+                                                #    '2026-02-04T22:44:58.643416000', '2026-02-04T22:44:58.674648000',
+                                                #    '2026-02-04T22:44:58.705881000'], dtype='datetime64[ns]')
+
+            ## ALTERNATIVE post-hoc conversion if I didn't use datetime_to_unix_timestep(...) above:
+            # # store that as a datetime column (e.g. pd.Timestamp(...) or a datetime64 column) in the DataFrame.
+            # t_start_absolute = float_to_datetime(stream_start, earliest_reference_datetime)
+            # t_end_absolute = float_to_datetime(stream_end, earliest_reference_datetime)
+                        
             # Create interval DataFrame
             intervals_df = pd.DataFrame({
                 't_start': [stream_start],
