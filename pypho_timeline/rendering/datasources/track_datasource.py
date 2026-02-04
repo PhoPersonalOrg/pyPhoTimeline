@@ -12,8 +12,9 @@ if TYPE_CHECKING:
 This module defines the protocols for datasources that provide both overview intervals
 and detailed data that can be fetched asynchronously when intervals scroll into view.
 """
-from typing import Protocol, Optional, Tuple, List, Any, runtime_checkable
+from typing import Protocol, Optional, Tuple, List, Any, Union, runtime_checkable
 from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
 import pandas as pd
 from qtpy import QtCore
 
@@ -106,12 +107,12 @@ class TrackDatasource(Protocol):
         ...
     
     @property
-    def total_df_start_end_times(self) -> Tuple[float, float]:
+    def total_df_start_end_times(self) -> Union[Tuple[float, float], Tuple[datetime, datetime], Tuple[pd.Timestamp, pd.Timestamp]]:
         """Returns (earliest_time, latest_time) for the entire dataset"""
         ...
     
     # Required methods (from IntervalsDatasource)
-    def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
+    def get_updated_data_window(self, new_start: Union[float, datetime, pd.Timestamp], new_end: Union[float, datetime, pd.Timestamp]) -> pd.DataFrame:
         """Returns the subset of intervals that overlap with the given time window"""
         ...
     
@@ -240,13 +241,13 @@ class BaseTrackDatasource(ABC):
     
     @property
     @abstractmethod
-    def total_df_start_end_times(self) -> Tuple[float, float]:
+    def total_df_start_end_times(self) -> Union[Tuple[float, float], Tuple[datetime, datetime], Tuple[pd.Timestamp, pd.Timestamp]]:
         """Returns (earliest_time, latest_time) for the entire dataset"""
         ...
     
     # Required abstract methods
     @abstractmethod
-    def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
+    def get_updated_data_window(self, new_start: Union[float, datetime, pd.Timestamp], new_end: Union[float, datetime, pd.Timestamp]) -> pd.DataFrame:
         """Returns the subset of intervals that overlap with the given time window"""
         ...
     
@@ -376,15 +377,62 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
     @property
     def total_df_start_end_times(self) -> tuple:
         if len(self.intervals_df) == 0:
+            # Return appropriate default based on expected type
+            # Check if we have datetime columns elsewhere, or default to float
             return (0.0, 1.0)
+        
         t_start = self.intervals_df['t_start'].min()
-        t_end = (self.intervals_df['t_start'] + self.intervals_df['t_duration']).max()
-        return (t_start, t_end)
+        
+        # Check if t_start is datetime-like
+        is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df['t_start'])
+        
+        if is_datetime:
+            # Use timedelta for duration
+            t_end = (self.intervals_df['t_start'] + pd.to_timedelta(self.intervals_df['t_duration'], unit='s')).max()
+            return (t_start, t_end)
+        else:
+            # Use float arithmetic
+            t_end = (self.intervals_df['t_start'] + self.intervals_df['t_duration']).max()
+            return (float(t_start), float(t_end))
     
-    def get_updated_data_window(self, new_start: float, new_end: float) -> pd.DataFrame:
+    def get_updated_data_window(self, new_start: Union[float, datetime, pd.Timestamp], new_end: Union[float, datetime, pd.Timestamp]) -> pd.DataFrame:
         """Get intervals overlapping with time window."""
-        mask = (self.intervals_df['t_start'] + self.intervals_df['t_duration'] >= new_start) & \
-               (self.intervals_df['t_start'] <= new_end)
+        # Check if DataFrame uses datetime columns
+        is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df['t_start'])
+        
+        # Convert inputs to match DataFrame dtype
+        if is_datetime:
+            # Convert float inputs to datetime
+            if isinstance(new_start, (int, float)):
+                # Assume Unix timestamp if float
+                new_start = pd.Timestamp.fromtimestamp(new_start, tz='UTC')
+            elif not isinstance(new_start, (datetime, pd.Timestamp)):
+                new_start = pd.Timestamp(new_start)
+            
+            if isinstance(new_end, (int, float)):
+                new_end = pd.Timestamp.fromtimestamp(new_end, tz='UTC')
+            elif not isinstance(new_end, (datetime, pd.Timestamp)):
+                new_end = pd.Timestamp(new_end)
+            
+            # Ensure timezone-aware
+            if isinstance(new_start, datetime) and new_start.tzinfo is None:
+                new_start = pd.Timestamp(new_start).tz_localize('UTC')
+            if isinstance(new_end, datetime) and new_end.tzinfo is None:
+                new_end = pd.Timestamp(new_end).tz_localize('UTC')
+            
+            # Calculate t_end for each interval using timedelta
+            t_end_col = self.intervals_df['t_start'] + pd.to_timedelta(self.intervals_df['t_duration'], unit='s')
+        else:
+            # Convert datetime inputs to float (Unix timestamp)
+            if isinstance(new_start, (datetime, pd.Timestamp)):
+                new_start = new_start.timestamp() if hasattr(new_start, 'timestamp') else pd.Timestamp(new_start).timestamp()
+            if isinstance(new_end, (datetime, pd.Timestamp)):
+                new_end = new_end.timestamp() if hasattr(new_end, 'timestamp') else pd.Timestamp(new_end).timestamp()
+            
+            # Use float arithmetic
+            t_end_col = self.intervals_df['t_start'] + self.intervals_df['t_duration']
+        
+        mask = (t_end_col >= new_start) & (self.intervals_df['t_start'] <= new_end)
         return self.intervals_df[mask].copy()
     
     def update_visualization_properties(self, dataframe_vis_columns_function):
@@ -400,9 +448,23 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """Fetch position data for an interval with optional downsampling."""
         if self.detailed_df is None:
             return pd.DataFrame()  # Return empty DataFrame if no position data available
+        
         t_start = interval['t_start']
-        t_end = t_start + interval['t_duration']
-        mask = (self.detailed_df['t'] >= t_start) & (self.detailed_df['t'] < t_end)
+        
+        # Check if using datetime
+        is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df['t_start'])
+        
+        if is_datetime:
+            t_end = t_start + pd.to_timedelta(interval['t_duration'], unit='s')
+        else:
+            t_end = t_start + interval['t_duration']
+        
+        # Ensure detailed_df 't' column matches the type
+        if 't' in self.detailed_df.columns:
+            mask = (self.detailed_df['t'] >= t_start) & (self.detailed_df['t'] < t_end)
+        else:
+            mask = pd.Series([False] * len(self.detailed_df))
+        
         result_df = self.detailed_df[mask].copy()
         
         # Apply downsampling if enabled
@@ -438,7 +500,123 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
             
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
-        return f"{self.custom_datasource_name}_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+        # #region agent log
+        import json
+        interval_type = type(interval).__name__
+        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:501', 'message': 'get_detail_cache_key entry', 'data': {'interval_type': interval_type, 'has_t_start': 't_start' in interval.index if hasattr(interval, 'index') else False, 'has_t_duration': 't_duration' in interval.index if hasattr(interval, 'index') else False}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+        # #endregion
+        # Extract values from Series - use .iloc[0] if it's a single-row DataFrame converted to Series
+        # or direct access if it's already a Series
+        if isinstance(interval, pd.Series):
+            t_start = interval.get('t_start', interval.iloc[0] if 't_start' in interval.index else None)
+            t_duration = interval.get('t_duration', interval.iloc[0] if 't_duration' in interval.index else None)
+        else:
+            # Fallback for DataFrame row
+            t_start = interval.get('t_start') if hasattr(interval, 'get') else interval['t_start']
+            t_duration = interval.get('t_duration') if hasattr(interval, 'get') else interval['t_duration']
+        # #region agent log
+        t_start_type = type(t_start).__name__ if t_start is not None else 'None'
+        t_duration_type = type(t_duration).__name__ if t_duration is not None else 'None'
+        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:513', 'message': 'extracted t_start and t_duration', 'data': {'t_start': str(t_start), 't_start_type': t_start_type, 't_duration': str(t_duration), 't_duration_type': t_duration_type}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+        # #endregion
+        
+        # Convert pandas scalars/numpy types to Python native types
+        # This is critical for proper type checking and formatting
+        if hasattr(t_start, 'item'):
+            try:
+                t_start_before = t_start
+                t_start = t_start.item()
+                # #region agent log
+                import json
+                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:529', 'message': 'after item() call', 'data': {'t_start_before_type': type(t_start_before).__name__, 't_start_after_type': type(t_start).__name__, 't_start_after': str(t_start)}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+                # #endregion
+            except (ValueError, AttributeError):
+                pass  # Not a scalar, keep as-is
+        if hasattr(t_duration, 'item'):
+            try:
+                t_duration = t_duration.item()
+            except (ValueError, AttributeError):
+                pass  # Not a scalar, keep as-is
+        
+        # Handle datetime objects in cache key - check datetime types first
+        t_start_str = None
+        try:
+            # Check if it's a datetime/Timestamp
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                # #region agent log
+                import json
+                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:543', 'message': 'before timestamp() call', 'data': {'t_start': str(t_start), 't_start_type': type(t_start).__name__, 'is_datetime': isinstance(t_start, datetime), 'is_timestamp': isinstance(t_start, pd.Timestamp)}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+                # #endregion
+                timestamp_value = t_start.timestamp()
+                # #region agent log
+                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:546', 'message': 'after timestamp() call', 'data': {'timestamp_value': timestamp_value, 'timestamp_type': type(timestamp_value).__name__}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+                # #endregion
+                t_start_str = f"{timestamp_value:.3f}"
+                # #region agent log
+                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:549', 'message': 'after formatting', 'data': {'t_start_str': t_start_str}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+                # #endregion
+            elif isinstance(t_start, pd.Timestamp):
+                t_start_str = f"{t_start.timestamp():.3f}"
+            else:
+                # Try to convert to Timestamp (handles string dates, numpy datetime64, etc.)
+                try:
+                    ts = pd.Timestamp(t_start)
+                    t_start_str = f"{ts.timestamp():.3f}"
+                except (ValueError, TypeError, AttributeError):
+                    # Not a datetime, try as numeric
+                    try:
+                        t_start_float = float(t_start)
+                        t_start_str = f"{t_start_float:.3f}"
+                    except (ValueError, TypeError):
+                        # Last resort: use string representation
+                        t_start_str = str(t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
+        except Exception as e:
+            # Ultimate fallback
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error formatting t_start for cache key: {t_start} (type: {type(t_start)}), error: {e}")
+            t_start_str = str(t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
+        
+        # Handle duration/timedelta objects
+        t_duration_str = None
+        try:
+            if isinstance(t_duration, timedelta):
+                t_duration_str = f"{t_duration.total_seconds():.3f}"
+            elif isinstance(t_duration, pd.Timedelta):
+                t_duration_str = f"{t_duration.total_seconds():.3f}"
+            else:
+                # Try to convert to Timedelta (handles string durations, numpy timedelta64, etc.)
+                try:
+                    td = pd.Timedelta(t_duration)
+                    t_duration_str = f"{td.total_seconds():.3f}"
+                except (ValueError, TypeError, AttributeError):
+                    # Not a timedelta, try as numeric
+                    try:
+                        t_duration_float = float(t_duration)
+                        t_duration_str = f"{t_duration_float:.3f}"
+                    except (ValueError, TypeError):
+                        # Last resort: use string representation
+                        t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
+        except Exception as e:
+            # Ultimate fallback
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error formatting t_duration for cache key: {t_duration} (type: {type(t_duration)}), error: {e}")
+            t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
+        
+        result_key = f"{self.custom_datasource_name}_{t_start_str}_{t_duration_str}"
+        # #region agent log
+        import json
+        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:581', 'message': 'get_detail_cache_key result', 'data': {'result_key': result_key, 't_start_str': t_start_str, 't_duration_str': t_duration_str}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+        # #endregion
+        return result_key
 
     @classmethod
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: Optional[List[pd.DataFrame]] = None, custom_datasource_name: Optional[str] = None, detail_renderer: Optional['DetailRenderer'] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True) -> 'IntervalProvidingTrackDatasource':

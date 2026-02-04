@@ -4,7 +4,12 @@ IntervalRectsItem - GraphicsObject for rendering time intervals as rectangles in
 Based on pyqtgraph's CandlestickItem example, adapted for pypho_timeline.
 """
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
+from datetime import datetime
+import logging
+import pandas as pd
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from pypho_timeline.utils.mixins import UnpackableMixin
 from attrs import define, field
@@ -14,6 +19,7 @@ from pyphoplacecellanalysis.External.pyqtgraph import QtCore, QtGui, QtWidgets
 from pyphoplacecellanalysis.External.pyqtgraph.graphicsItems.LegendItem import ItemSample, LegendItem
 
 from pypho_timeline.rendering.graphics.rectangle_helpers import RectangleRenderTupleHelpers
+from pypho_timeline.utils.datetime_helpers import format_seconds_as_hhmmss, unix_timestamp_to_datetime
 
 # Optional mixins - handle with try/except
 try:
@@ -88,19 +94,20 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             ## Remove the active_interval_rects_item:
             main_plot_widget.removeItem(active_interval_rects_item)
 
-        Example 2 (with custom tooltip function):
+        Example 2 (with custom tooltip function; use format_seconds_as_hhmmss for HH:mm:ss):
             def _custom_format_tooltip_for_rect_data(rect_index: int, rect_data_tuple: Tuple) -> str:
                 start_t, series_vertical_offset, duration_t, series_height, pen, brush = rect_data_tuple
                 ## get the optional label field if `rect_data_tuple` is a `IntervalRectsItemData` instead of a plain tuple
                 a_label = None
                 if not isinstance(rect_data_tuple, Tuple):
                     a_label = rect_data_tuple.label
-                
+                from pypho_timeline.utils.datetime_helpers import format_seconds_as_hhmmss
                 end_t = start_t + duration_t
+                start_s, end_s, duration_s = format_seconds_as_hhmmss(start_t), format_seconds_as_hhmmss(end_t), format_seconds_as_hhmmss(duration_t)
                 if a_label:
-                    tooltip_text = f"{a_label}\nItem[{rect_index}]\nStart: {start_t:.3f}\nEnd: {end_t:.3f}\nDuration: {duration_t:.3f}"
+                    tooltip_text = f"{a_label}\nItem[{rect_index}]\nStart: {start_s}\nEnd: {end_s}\nDuration: {duration_s}"
                 else:
-                    tooltip_text = f"Item[{rect_index}]\nStart: {start_t:.3f}\nEnd: {end_t:.3f}\nDuration: {duration_t:.3f}"
+                    tooltip_text = f"Item[{rect_index}]\nStart: {start_s}\nEnd: {end_s}\nDuration: {duration_s}"
                 return tooltip_text
 
             # Build the rendered interval item:
@@ -160,6 +167,11 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             else:
                 # Tuple unpacking (backward compatibility)
                 (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data
+            
+            # Ensure start_t is numeric for Qt rendering
+            if isinstance(start_t, (datetime, pd.Timestamp)):
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                start_t = datetime_to_unix_timestamp(start_t)
             
             p.setPen(pen)
             p.setBrush(brush) # filling of the rectangles by a passed color:
@@ -343,7 +355,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
         return None
     
     @classmethod
-    def _default_format_tooltip_for_rect_data(cls, rect_index: int, rect_data_tuple: Tuple) -> str:
+    def _default_format_tooltip_for_rect_data(cls, rect_index: int, rect_data_tuple: Tuple, datetime_tooltip_format: str='%Y-%m-%d %H:%M:%S') -> str:
         """Default tooltip formatter for rectangle data.
         
         rect_data_tuple = self.data[rect_index]
@@ -364,11 +376,27 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             a_label = None
         
         end_t = start_t + duration_t
+
+        ## get the start/end as datetimes and the duration as a human-readible HH:mm:ss
+        start_t = unix_timestamp_to_datetime(start_t)
+        end_t = unix_timestamp_to_datetime(end_t)
+        # Use a short ISO format for datetime display: "YYYY-MM-DD HH:MM:SS"
+        start_s: str = start_t.strftime('%Y-%m-%d %H:%M:%S')
+        end_s: str = end_t.strftime('%Y-%m-%d %H:%M:%S')
+        
+        duration_s: str = format_seconds_as_hhmmss(duration_t)
+
         if a_label:
-            tooltip_text = f"{a_label}\nItem[{rect_index}]\nStart: {start_t:.3f}\nEnd: {end_t:.3f}\nDuration: {duration_t:.3f}"
+            #  tooltip_text = f"{a_label}\nItem[{rect_index}]\nStart: {start_t:.3f}\nEnd: {end_t:.3f}\nDuration: {duration_t:.3f}"
+            tooltip_text = f"{a_label}\nItem[{rect_index}]\nStart: {start_s}\nEnd: {end_s}\nDuration: {duration_s}"
         else:
-            tooltip_text = f"Item[{rect_index}]\nStart: {start_t:.3f}\nEnd: {end_t:.3f}\nDuration: {duration_t:.3f}"
+            # tooltip_text = f"Item[{rect_index}]\nStart: {start_s}\nEnd: {end_s}\nDuration: {duration_s}"
+            tooltip_text = f"Item[{rect_index}]\nStart: {start_s}\nEnd: {end_s}\nDuration: {duration_s}"
         return tooltip_text
+
+
+
+
 
     def _show_tooltip_for_rect(self, rect_index, global_pos):
         """
@@ -382,8 +410,12 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             return
         rect_data_tuple = self.data[rect_index]
         assert self._current_hovered_item_tooltip_format_fn is not None, f"self._current_hovered_item_tooltip_format_fn is None!"
-        tooltip_text: str = self._current_hovered_item_tooltip_format_fn(rect_index=rect_index, rect_data_tuple=rect_data_tuple)        
-        QtWidgets.QToolTip.showText(global_pos, tooltip_text)
+        try:
+            tooltip_text: str = self._current_hovered_item_tooltip_format_fn(rect_index=rect_index, rect_data_tuple=rect_data_tuple)
+            QtWidgets.QToolTip.showText(global_pos, tooltip_text)
+        except Exception as e:
+            logger.exception("Tooltip formatter failed for rect_index=%s", rect_index)
+            QtWidgets.QToolTip.showText(global_pos, f"Tooltip error: {e}")
 
     def setToolTip(self, text):
         """

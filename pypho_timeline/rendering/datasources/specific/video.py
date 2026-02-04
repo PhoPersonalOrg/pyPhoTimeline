@@ -14,13 +14,14 @@ except ImportError:
     CV2_AVAILABLE = False
 
 from pypho_timeline.utils.video_metadata import VideoMetadataParser
-
+from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+        
 
 # ==================================================================================================================================================================================================================================================================================== #
 # Helper function to convert VideoMetadataParser output to intervals_df format                                                                                                                                                                                                       #
 # ==================================================================================================================================================================================================================================================================================== #
 
-def video_metadata_to_intervals_df(video_df: pd.DataFrame, reference_timestamp: Optional[float] = None) -> pd.DataFrame:
+def video_metadata_to_intervals_df(video_df: pd.DataFrame, reference_timestamp: Optional[float] = None, use_absolute_datetime_track_mode: bool = True) -> pd.DataFrame:
     """Convert VideoMetadataParser output to intervals_df format.
     
     Args:
@@ -38,15 +39,25 @@ def video_metadata_to_intervals_df(video_df: pd.DataFrame, reference_timestamp: 
     if 'video_start_datetime' not in video_df.columns:
         return pd.DataFrame()
     
-    # Convert datetime to timestamp
-    timestamps = video_df['video_start_datetime'].values.astype('datetime64[ns]').astype(np.float64) / 1e9
-    
-    # Calculate t_start relative to reference or first video
-    if reference_timestamp is None:
-        reference_timestamp = float(timestamps[0])
-    
-    t_start_values = timestamps - reference_timestamp
-    
+
+    if (not use_absolute_datetime_track_mode):
+        # Convert datetime to timestamp
+        timestamps = video_df['video_start_datetime'].values.astype('datetime64[ns]').astype(np.float64) / 1e9
+        # # Calculate t_start relative to reference or first video
+        if reference_timestamp is None:
+            reference_timestamp = float(timestamps[0])    
+        t_start_values = timestamps - reference_timestamp
+
+    else:
+        ## absolute mode - matching the other tracks that use absolute datetimes
+        if (reference_timestamp is not None):
+            print(f'WARN: reference_timestamp is not None (reference_timestamp: {reference_timestamp}) but will be ignored because we are using absolute datetimes like the other tracks.')
+        # t_start_values = video_df['video_start_datetime'].values ## matching the other tracks that use absolute datetimes
+        starts = video_df['video_start_datetime']
+        t_start_values = pd.to_datetime(starts).apply(lambda dt: dt.tz_localize('UTC') if dt.tzinfo is None else dt).values
+
+    ## OUTPUTS: t_start_values
+
     # Create intervals_df
     intervals_df = pd.DataFrame({
         't_start': t_start_values,
@@ -172,6 +183,7 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         
         return graphics_objects
     
+
     def _prepare_frame_image(self, frame: np.ndarray) -> Optional[np.ndarray]:
         """Prepare a frame for display as an image.
         
@@ -259,6 +271,12 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         y_min = y_center - self.thumbnail_height / 2.0
         y_max = y_center + self.thumbnail_height / 2.0
         
+        # Convert t_start and t_end to Unix timestamps if they're datetime objects
+        if isinstance(t_start, (datetime, pd.Timestamp)):
+            t_start = datetime_to_unix_timestamp(t_start)
+        if isinstance(t_end, (datetime, pd.Timestamp)):
+            t_end = datetime_to_unix_timestamp(t_end)
+
         return (t_start, t_end, y_min, y_max)
 
 
@@ -291,7 +309,8 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         video_ds = VideoTrackDatasource(video_paths=[Path("video1.mp4"), Path("video2.mp4")])
     """
     
-    def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, video_paths: Optional[List[Union[Path, str]]] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128)):
+    def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, video_paths: Optional[List[Union[Path, str]]] = None, 
+            custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False):
         """Initialize with video intervals.
         
         Args:
@@ -303,6 +322,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
             reference_timestamp: Optional reference timestamp for time conversion (default: first video start time)
             frames_per_second: Target frame rate for thumbnail extraction (default: 10.0)
             thumbnail_size: Optional (width, height) tuple for resizing frames (default: (128, 128))
+            use_vispy_renderer: If True, use high-performance vispy renderer instead of pyqtgraph (default: False)
         """
         # Determine which input method to use
         if video_intervals_df is not None:
@@ -395,7 +415,11 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         # Store configuration for frame loading
         self.frames_per_second = frames_per_second
         self.thumbnail_size = thumbnail_size
+        
+        # Store vispy renderer flag
+        self.use_vispy_renderer = use_vispy_renderer
     
+
     def fetch_detailed_data(self, interval: pd.Series) -> dict:
         """Fetch video frames for an interval using cv2.VideoCapture.
         
@@ -479,6 +503,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
     
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
+        base_key = super().get_detail_cache_key(interval)
         video_path = interval.get('video_file_path', '')
         if video_path:
             # Include file path and modification time in cache key for better cache invalidation
@@ -486,10 +511,10 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
                 path_obj = Path(video_path)
                 if path_obj.exists():
                     mtime = path_obj.stat().st_mtime
-                    return f"video_{video_path}_{mtime:.3f}_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+                    return f"video_{video_path}_{mtime:.3f}_{base_key}"
             except Exception:
                 pass
-        return f"video_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+        return f"video_{base_key}"
 
 
 __all__ = ['VideoThumbnailDetailRenderer', 'VideoTrackDatasource', 'video_metadata_to_intervals_df']

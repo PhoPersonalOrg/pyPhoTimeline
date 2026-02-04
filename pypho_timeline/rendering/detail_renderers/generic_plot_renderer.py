@@ -1,5 +1,6 @@
 """GenericPlotDetailRenderer - Generic renderer for arbitrary plot data."""
 from typing import List, Mapping, Tuple, Any, Callable, Optional, Dict, Sequence
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import pyphoplacecellanalysis.External.pyqtgraph as pg
@@ -75,9 +76,19 @@ class GenericPlotDetailRenderer(DetailRenderer):
     
     def _default_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
         """Default bounds function that uses interval bounds."""
+        from datetime import datetime, timedelta
         t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
         t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
-        t_end = t_start + t_duration
+        
+        # Handle datetime objects for t_end calculation
+        if isinstance(t_start, (datetime, pd.Timestamp)):
+            t_end = t_start + timedelta(seconds=float(t_duration))
+            # Convert to Unix timestamps for return value
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            t_start = datetime_to_unix_timestamp(t_start)
+            t_end = datetime_to_unix_timestamp(t_end)
+        else:
+            t_end = t_start + t_duration
         
         y_offset = interval['series_vertical_offset'].iloc[0] if len(interval) > 0 and 'series_vertical_offset' in interval.columns else 0.0
         y_height = interval['series_height'].iloc[0] if len(interval) > 0 and 'series_height' in interval.columns else 1.0
@@ -132,7 +143,15 @@ class IntervalPlotDetailRenderer(DetailRenderer):
         
         # Sort by time
         df_sorted = detail_data.sort_values('t')
-        t_values = df_sorted['t'].values
+        
+        # Convert datetime 't' column to Unix timestamps for plotting
+        t_col = df_sorted['t']
+        if pd.api.types.is_datetime64_any_dtype(t_col):
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            t_values = t_col.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
+        else:
+            t_values = t_col.values
+        
         x_values = df_sorted['x'].values
         
         if self.y_column is not None and self.y_column in df_sorted.columns:
@@ -314,7 +333,14 @@ class DataframePlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, Deta
         
         # Sort by time
         df_sorted = detail_data.sort_values('t')
-        t_values = df_sorted['t'].values
+        
+        # Convert datetime 't' column to Unix timestamps for plotting
+        t_col = df_sorted['t']
+        if pd.api.types.is_datetime64_any_dtype(t_col):
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            t_values = t_col.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
+        else:
+            t_values = t_col.values
         
         # Auto-detect channels if channel_names is None
         if self.channel_names is None:
@@ -452,8 +478,16 @@ class DataframePlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, Deta
             if has_valid_detail_data:
                 # Try to get time column: use 't' if present, otherwise index values if they look like times
                 if 't' in detail_data.columns:
-                    t_start = float(detail_data['t'].min())
-                    t_end = float(detail_data['t'].max())
+                    t_min = detail_data['t'].min()
+                    t_max = detail_data['t'].max()
+                    # Convert datetime to Unix timestamp if needed
+                    if isinstance(t_min, (datetime, pd.Timestamp)):
+                        from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                        t_start = datetime_to_unix_timestamp(t_min)
+                        t_end = datetime_to_unix_timestamp(t_max)
+                    else:
+                        t_start = float(t_min)
+                        t_end = float(t_max)
                 else:
                     # Fallback: use DataFrame index if it is numeric and sorted
                     try:

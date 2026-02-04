@@ -4,6 +4,21 @@ This library provides functionality for creating scrollable docked widgets (time
 display various data tracks (spikes, intervals, etc.) synchronized with a main time window.
 """
 
+# Compatibility shim for scipy.integrate.simps -> simpson
+# simps was deprecated and removed in SciPy 1.12+, replaced with simpson
+# This must be imported before any other modules that might use simps
+try:
+    from scipy.integrate import simps
+except ImportError:
+    # simps doesn't exist, provide it as an alias to simpson
+    try:
+        from scipy.integrate import simpson
+        import scipy.integrate
+        scipy.integrate.simps = simpson
+    except ImportError:
+        # If simpson also doesn't exist, we can't fix it
+        pass
+
 __version__ = "0.1.0"
 
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode

@@ -17,6 +17,13 @@ try:
 except ImportError:
     VideoTrackDatasource = None
 
+# Import vispy renderer
+try:
+    from pypho_timeline.rendering.graphics.vispy_video_epoch_renderer import VispyVideoEpochRenderer, VISPY_AVAILABLE
+except ImportError:
+    VispyVideoEpochRenderer = None
+    VISPY_AVAILABLE = False
+
 logger = get_rendering_logger(__name__)
 
 
@@ -52,6 +59,8 @@ class TrackRenderer(QtCore.QObject):
         
         # Overview rendering
         self.overview_rects_item: Optional[IntervalRectsItem] = None
+        self.vispy_renderer: Optional[VispyVideoEpochRenderer] = None
+        self.use_vispy = False
         
         # Detail rendering state
         self.detail_renderer: DetailRenderer = datasource.get_detail_renderer()
@@ -73,6 +82,15 @@ class TrackRenderer(QtCore.QObject):
         detail_renderer_type = type(self.detail_renderer).__name__ if self.detail_renderer is not None else "None"
         logger.info(f"TrackRenderer[{self.track_id}] Initialized with datasource type={datasource_type}, detail_renderer={detail_renderer_type}")
         
+        # Check if we should use vispy renderer for video tracks
+        if VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource):
+            if hasattr(self.datasource, 'use_vispy_renderer') and self.datasource.use_vispy_renderer:
+                if VISPY_AVAILABLE and VispyVideoEpochRenderer is not None:
+                    self.use_vispy = True
+                    logger.info(f"TrackRenderer[{self.track_id}] Using vispy renderer for video track")
+                else:
+                    logger.warning(f"TrackRenderer[{self.track_id}] vispy requested but not available, falling back to pyqtgraph")
+        
         # Connect to async fetcher
         self.async_fetcher.detail_data_ready.connect(self._on_detail_data_ready)
         logger.debug(f"TrackRenderer[{self.track_id}] Connected to async_fetcher.detail_data_ready signal")
@@ -90,7 +108,122 @@ class TrackRenderer(QtCore.QObject):
             num_intervals = len(overview_df)
             logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - found {num_intervals} intervals in overview")
             
-            # Build IntervalRectsItem from overview data
+            # Use vispy renderer if enabled
+            if self.use_vispy and VispyVideoEpochRenderer is not None:
+                # Get reference datetime from plot_item's parent widget if available
+                reference_datetime = None
+                try:
+                    # Try to get reference_datetime from timeline widget
+                    parent_widget = self.plot_item.parentItem()
+                    if parent_widget is not None:
+                        # Traverse up to find timeline widget
+                        while parent_widget is not None:
+                            if hasattr(parent_widget, 'reference_datetime'):
+                                reference_datetime = parent_widget.reference_datetime
+                                break
+                            parent_widget = parent_widget.parentItem()
+                except Exception:
+                    pass
+                
+                # Create or update vispy renderer
+                if self.vispy_renderer is None:
+                    # Get reference datetime from timeline widget if available
+                    # Try to get from plot_item's parent hierarchy
+                    timeline_widget = None
+                    try:
+                        # Try to find timeline widget by traversing parent chain
+                        current = self.plot_item
+                        while current is not None:
+                            if hasattr(current, 'reference_datetime'):
+                                reference_datetime = current.reference_datetime
+                                timeline_widget = current
+                                break
+                            # Try to get parent
+                            if hasattr(current, 'parentItem'):
+                                current = current.parentItem()
+                            elif hasattr(current, 'parent'):
+                                current = current.parent()
+                            else:
+                                break
+                    except Exception as e:
+                        logger.debug(f"TrackRenderer[{self.track_id}] Could not find reference_datetime: {e}")
+                    
+                    # Get parent widget for embedding (vispy canvas needs Qt widget parent)
+                    parent_widget = None
+                    try:
+                        # Try to get the actual Qt widget from plot_item
+                        viewbox = self.plot_item.getViewBox()
+                        if viewbox is not None:
+                            # Get the GraphicsView widget
+                            if hasattr(viewbox, 'parent'):
+                                parent_widget = viewbox.parent()
+                            # Try alternative: get widget from plot_item
+                            if parent_widget is None and hasattr(self.plot_item, 'parent'):
+                                parent_widget = self.plot_item.parent()
+                    except Exception as e:
+                        logger.debug(f"TrackRenderer[{self.track_id}] Could not get parent widget: {e}")
+                    
+                    self.vispy_renderer = VispyVideoEpochRenderer(
+                        parent_widget=parent_widget,
+                        reference_datetime=reference_datetime,
+                        max_epochs=10000
+                    )
+                    logger.info(f"TrackRenderer[{self.track_id}] Created vispy renderer")
+                    
+                    # Embed the vispy canvas widget into the plot_item's viewbox
+                    # Note: vispy and pyqtgraph use different rendering backends (OpenGL vs QPainter)
+                    # so we need to overlay or replace the plot_item content with the vispy canvas
+                    try:
+                        vispy_canvas_widget = self.vispy_renderer.get_canvas_widget()
+                        if vispy_canvas_widget is not None:
+                            # Get the GraphicsView widget that contains the plot_item
+                            viewbox = self.plot_item.getViewBox()
+                            graphics_view = None
+                            if viewbox is not None:
+                                # Try to get the GraphicsView widget
+                                if hasattr(viewbox, 'parent'):
+                                    parent = viewbox.parent()
+                                    # GraphicsView is typically the parent of ViewBox
+                                    if parent is not None:
+                                        graphics_view = parent
+                            
+                            # If we found a GraphicsView, try to overlay the vispy canvas
+                            if graphics_view is not None:
+                                try:
+                                    # Set the vispy canvas as a child of the graphics view
+                                    vispy_canvas_widget.setParent(graphics_view)
+                                    # Make it fill the entire graphics view area
+                                    # Convert QRectF to QRect for setGeometry
+                                    from qtpy import QtCore
+                                    rect = graphics_view.rect()
+                                    if isinstance(rect, QtCore.QRectF):
+                                        # Convert QRectF to QRect
+                                        vispy_canvas_widget.setGeometry(
+                                            int(rect.x()), int(rect.y()), 
+                                            int(rect.width()), int(rect.height())
+                                        )
+                                    else:
+                                        vispy_canvas_widget.setGeometry(rect)
+                                    vispy_canvas_widget.raise_()  # Bring to front
+                                    vispy_canvas_widget.show()
+                                    logger.info(f"TrackRenderer[{self.track_id}] Embedded vispy canvas widget into graphics view")
+                                except Exception as embed_error:
+                                    logger.warning(f"TrackRenderer[{self.track_id}] Could not embed vispy canvas: {embed_error}")
+                                    # Fallback: just show the canvas
+                                    vispy_canvas_widget.show()
+                            else:
+                                # Fallback: just show the canvas (might appear as separate window)
+                                vispy_canvas_widget.show()
+                                logger.warning(f"TrackRenderer[{self.track_id}] Could not find graphics view, showing vispy canvas as standalone")
+                    except Exception as e:
+                        logger.warning(f"TrackRenderer[{self.track_id}] Could not embed vispy canvas widget: {e}", exc_info=True)
+                
+                # Update vispy renderer with intervals
+                self.vispy_renderer.update_epochs(overview_df)
+                logger.debug(f"TrackRenderer[{self.track_id}] Updated vispy renderer with {num_intervals} intervals")
+                return
+            
+            # Build IntervalRectsItem from overview data (pyqtgraph fallback)
             # The datasource should provide visualization columns, but if not, we need to add them
             if 'series_vertical_offset' not in overview_df.columns:
                 # Default vertical positioning
@@ -148,8 +281,12 @@ class TrackRenderer(QtCore.QObject):
             # Optimize for video tracks: skip detail fetching entirely
             is_video_track = VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource)
             
-            # For video tracks, skip all processing - they don't need detail fetching
+            # For video tracks, update vispy renderer viewport if using vispy
             if is_video_track:
+                if self.use_vispy and self.vispy_renderer is not None:
+                    # Update vispy renderer viewport
+                    self.vispy_renderer.set_viewport(viewport_start, viewport_end)
+                    logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - updated vispy renderer viewport")
                 # Just update visible_intervals to empty set to prevent any detail fetching
                 # Video tracks only show overview rectangles, no detail overlays
                 self.visible_intervals.clear()
@@ -171,13 +308,35 @@ class TrackRenderer(QtCore.QObject):
             for idx, interval_series in intervals_df.iterrows():
                 # Convert Series to single-row DataFrame for DetailRenderer methods
                 interval_df = intervals_df.iloc[[idx]]
+                # #region agent log
+                import json
+                t_start_val = interval_series.get('t_start', None)
+                t_duration_val = interval_series.get('t_duration', None)
+                t_start_type = type(t_start_val).__name__ if t_start_val is not None else 'None'
+                t_duration_type = type(t_duration_val).__name__ if t_duration_val is not None else 'None'
+                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_renderer.py:308', 'message': 'update_viewport interval processing', 'data': {'track_id': self.track_id, 'idx': str(idx), 't_start': str(t_start_val), 't_start_type': t_start_type, 't_duration': str(t_duration_val), 't_duration_type': t_duration_type}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+                # #endregion
                 cache_key = self.datasource.get_detail_cache_key(interval_series)
+                # #region agent log
+                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_renderer.py:311', 'message': 'cache_key generated in update_viewport', 'data': {'cache_key': cache_key, 'cache_key_type': type(cache_key).__name__}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+                # #endregion
                 new_visible_keys.add(cache_key)
                 
                 # If not already visible and not already loaded, fetch detail
                 if cache_key not in self.visible_intervals:
                     # Check cache first for non-video tracks
+                    # #region agent log
+                    import json
+                    with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                        f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B', 'location': 'track_renderer.py:317', 'message': 'checking cache in update_viewport', 'data': {'cache_key': cache_key, 'visible_intervals_count': len(self.visible_intervals)}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+                    # #endregion
                     cached_data = self.async_fetcher.get_cached_data(cache_key)
+                    # #region agent log
+                    with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                        f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B', 'location': 'track_renderer.py:318', 'message': 'cache lookup result', 'data': {'cache_key': cache_key, 'cached_data_is_none': cached_data is None, 'cached_data_type': type(cached_data).__name__ if cached_data is not None else 'None'}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+                    # #endregion
                     if cached_data is not None:
                         # Use cached data immediately
                         cache_hits += 1
@@ -231,10 +390,18 @@ class TrackRenderer(QtCore.QObject):
             detail_data: The fetched detail data
             error: Error if fetch failed, None otherwise
         """
+        # #region agent log
+        import json
+        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'D', 'location': 'track_renderer.py:361', 'message': '_on_detail_data_ready entry', 'data': {'track_id': track_id, 'self_track_id': self.track_id, 'cache_key': cache_key, 'cache_key_in_visible': cache_key in self.visible_intervals, 'detail_data_type': type(detail_data).__name__ if detail_data is not None else 'None', 'has_error': error is not None}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+        # #endregion
         logger.debug(f"TrackRenderer[{self.track_id}] _on_detail_data_ready(track_id={track_id}, cache_key='{cache_key}')")
-        
+        # g.graphics.track_renderer - DEBUG - TrackRenderer[EEG_Epoc X] Rendered detail for cache_key='EEG_Epoc X_0.000_0.000' - created 14 graphics objects
+        # 2026-02-03 11:27:20 - pypho_timeline.rendering.graphics.track_renderer - DEBUG - TrackRenderer[MOTION_Epoc X Motion] _on_detail_data_ready(track_id='EEG_Epoc X', cache_key='EEG_Epoc X_0.000_0.000')
+        # 2026-02-03 11:27:20 - pypho_timeline.rendering.graphics.track_renderer - DEBUG - TrackRenderer[MOTION_Epoc X Motion] _on_detail_data_ready() - data for wrong track (expected 'MOTION_Epoc X Motion', got 'EEG_Epoc X'), ignoring
+
         if track_id != self.track_id:
-            logger.debug(f"TrackRenderer[{self.track_id}] _on_detail_data_ready() - data for wrong track (expected {self.track_id}, got {track_id}), ignoring")
+            logger.debug(f"TrackRenderer[{self.track_id}] _on_detail_data_ready() - data for wrong track (expected '{self.track_id},' got '{track_id}'), ignoring")
             return  # Not for this track
         
         if error is not None:
@@ -335,6 +502,12 @@ class TrackRenderer(QtCore.QObject):
         # Clear all details
         self.clear_all_details()
         
+        # Remove vispy renderer if used
+        if self.vispy_renderer is not None:
+            logger.debug(f"TrackRenderer[{self.track_id}] remove() - removing vispy renderer")
+            self.vispy_renderer.remove()
+            self.vispy_renderer = None
+        
         # Remove overview
         if self.overview_rects_item is not None:
             logger.debug(f"TrackRenderer[{self.track_id}] remove() - removing overview item")
@@ -357,6 +530,18 @@ class TrackRenderer(QtCore.QObject):
         Returns:
             Tuple of (x_min, x_max, y_min, y_max) or None if no overview
         """
+        if self.use_vispy and self.vispy_renderer is not None:
+            # Get bounds from vispy renderer
+            if self.vispy_renderer.current_epochs_data:
+                epochs_df = pd.DataFrame(self.vispy_renderer.current_epochs_data)
+                if len(epochs_df) > 0:
+                    x_min = epochs_df['t_start'].min()
+                    x_max = (epochs_df['t_start'] + epochs_df['t_duration']).max()
+                    y_min = epochs_df['series_vertical_offset'].min()
+                    y_max = (epochs_df['series_vertical_offset'] + epochs_df['series_height']).max()
+                    return (x_min, x_max, y_min, y_max)
+            return None
+        
         if self.overview_rects_item is None:
             return None
         

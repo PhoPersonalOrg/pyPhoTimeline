@@ -7,17 +7,36 @@ from different data sources such as XDF files, pre-loaded streams, or existing d
 
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 import numpy as np
 import pandas as pd
 import pyxdf
 from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams, perform_process_all_streams_multi_xdf
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
-from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource
+from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler
 from pypho_timeline.widgets import LogWidget
-from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
+from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, get_earliest_reference_datetime, datetime_to_float, float_to_datetime
+from pypho_timeline.rendering.helpers import ChannelNormalizationMode
+
+# Import MNE (optional - may not be available)
+try:
+    import mne
+    MNE_AVAILABLE = True
+except ImportError:
+    MNE_AVAILABLE = False
+    mne = None
+
+# Import datasources
+try:
+    from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
+    from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource
+    from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
+except ImportError:
+    EEGTrackDatasource = None
+    MotionTrackDatasource = None
+    LogTextDataFramePlotDetailRenderer = None
 
 # Import VideoTrackDatasource for video-only timeline building
 try:
@@ -82,7 +101,7 @@ class TimelineBuilder:
 
     
     ## MAIN FUNCTION
-    def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
+    def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from an XDF file.
         
         Args:
@@ -99,8 +118,8 @@ class TimelineBuilder:
         # Use multi-file method for backward compatibility
         return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size)
     
-
-    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
+    # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
+    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from multiple XDF files, merging streams by name.
         
         Streams with the same name across different files will be merged into a single track.
@@ -148,7 +167,7 @@ class TimelineBuilder:
             all_file_headers.append(file_header)
         
         # Process streams from all files and merge by stream name
-        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths)
+        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths, file_headers=all_file_headers)
         
         if not all_streams:
             print("No streams found.")
@@ -181,10 +200,11 @@ class TimelineBuilder:
                 window_title = f"pyPhoTimeline - ALL Modalities from {len(xdf_file_paths)} XDF files: {file_names}"
         
         # Build timeline from merged datasources with reference datetime
-        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, reference_datetime=reference_datetime)
+        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, reference_datetime=reference_datetime, **kwargs)
     
 
-    def build_from_video(self, video_datasource: Optional[VideoTrackDatasource] = None, video_folder_path: Optional[Path] = None, video_paths: Optional[List[Union[Path, str]]] = None, video_df: Optional[pd.DataFrame] = None, video_intervals_df: Optional[pd.DataFrame] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128)) -> SimpleTimelineWidget:
+    # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
+    def build_from_video(self, video_datasource: Optional[VideoTrackDatasource] = None, video_folder_path: Optional[Path] = None, video_paths: Optional[List[Union[Path, str]]] = None, video_df: Optional[pd.DataFrame] = None, video_intervals_df: Optional[pd.DataFrame] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), **kwargs) -> SimpleTimelineWidget:
         """Build a timeline widget from video files only (no XDF file required).
         
         Args:
@@ -236,7 +256,6 @@ class TimelineBuilder:
             raise ValueError("VideoTrackDatasource has no video intervals. Check that video files exist and are valid.")
         
         # Get reference datetime (use reference_timestamp if available, otherwise fallback)
-        from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
         reference_datetime = None
         if reference_timestamp is not None:
             # Convert reference_timestamp (float) to datetime (assuming Unix epoch, UTC)
@@ -253,13 +272,12 @@ class TimelineBuilder:
             add_example_tracks=False,
             window_title=window_title or f"pyPhoTimeline - Video Track: {video_datasource.custom_datasource_name}",
             window_size=window_size,
-            reference_datetime=reference_datetime
+            reference_datetime=reference_datetime, **kwargs,
         )
     
 
-    
-
-    def build_from_streams(self, streams: List, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800)) -> Optional[SimpleTimelineWidget]:
+    # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
+    def build_from_streams(self, streams: List, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from pre-loaded streams.
         
         Args:
@@ -296,9 +314,234 @@ class TimelineBuilder:
         reference_datetime = get_earliest_reference_datetime([], active_datasource_list)
         
         # Build timeline from datasources
-        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title or "pyPhoTimeline", window_size=window_size, reference_datetime=reference_datetime)
+        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title or "pyPhoTimeline", window_size=window_size, reference_datetime=reference_datetime, **kwargs)
     
-    def build_from_datasources(self, datasources: List[TrackDatasource], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), reference_datetime: Optional[datetime] = None) -> SimpleTimelineWidget:
+
+    # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
+    def build_from_eeg_raw_and_stream_info(self, eeg_raws: List, stream_infos_df: pd.DataFrame, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
+        """Build a timeline widget from MNE Raw objects and XDF stream info DataFrame.
+        
+        Args:
+            eeg_raws: List of MNE Raw objects (mne.io.BaseRaw instances)
+            stream_infos_df: DataFrame with stream information, must contain 'xdf_dataset_idx' column
+            window_duration: Duration of the time window (default: auto-calculated from data)
+            window_start_time: Start time of the window (default: auto-calculated from data)
+            add_example_tracks: Whether to add example tracks (default: False)
+            window_title: Custom window title (default: auto-generated)
+            window_size: Window size as (width, height) tuple (default: (1000, 800))
+            
+        Returns:
+            SimpleTimelineWidget instance, or None if no valid datasources found
+            
+        Example:
+            builder = TimelineBuilder()
+            timeline = builder.build_from_eeg_raw_and_stream_info(
+                eeg_raws=_out_eeg_raw,
+                stream_infos_df=_out_xdf_stream_infos_df
+            )
+        """
+        if not MNE_AVAILABLE:
+            raise ImportError("MNE is not available. Please install mne-python to use this method.")
+        
+        if not eeg_raws:
+            print("No EEG Raw objects provided.")
+            return None
+        
+        if stream_infos_df.empty:
+            print("Stream info DataFrame is empty.")
+            return None
+        
+        if 'xdf_dataset_idx' not in stream_infos_df.columns:
+            raise ValueError("stream_infos_df must contain 'xdf_dataset_idx' column")
+        
+        print("=" * 60)
+        print(f"pyPhoTimeline - Load from {len(eeg_raws)} MNE Raw objects and {len(stream_infos_df)} stream info rows")
+        print("=" * 60)
+        
+        # Extract reference datetime from stream_infos_df
+        reference_datetime = None
+        if 'recording_datetime' in stream_infos_df.columns:
+            # Use earliest recording_datetime
+            valid_dts = stream_infos_df['recording_datetime'].dropna()
+            if len(valid_dts) > 0:
+                reference_datetime = valid_dts.min()
+        elif 'first_timestamp_dt' in stream_infos_df.columns:
+            # Fallback to earliest first_timestamp_dt
+            valid_dts = stream_infos_df['first_timestamp_dt'].dropna()
+            if len(valid_dts) > 0:
+                reference_datetime = valid_dts.min()
+        
+        if reference_datetime is None:
+            print("Warning: No reference datetime found in stream_infos_df, will use earliest datetime from datasources")
+            # Don't set a default here - let build_from_datasources determine it from the actual data
+            reference_datetime = None
+        else:
+            # Convert pandas Timestamp to datetime if needed
+            if isinstance(reference_datetime, pd.Timestamp):
+                reference_datetime = reference_datetime.to_pydatetime()
+            # Ensure timezone-aware
+            if reference_datetime.tzinfo is None:
+                reference_datetime = reference_datetime.replace(tzinfo=timezone.utc)
+            print(f"Using reference datetime: {reference_datetime}")
+        
+        # Extract datasources from Raw objects
+        all_datasources = []
+        processed_count = 0
+        skipped_count = 0
+        
+        for idx, row in stream_infos_df.iterrows():
+            xdf_dataset_idx = row.get('xdf_dataset_idx', None)
+            if xdf_dataset_idx is None or pd.isna(xdf_dataset_idx):
+                print(f"Warning: Skipping row {idx} - missing xdf_dataset_idx")
+                skipped_count += 1
+                continue
+            
+            try:
+                xdf_dataset_idx = int(xdf_dataset_idx)
+            except (ValueError, TypeError):
+                print(f"Warning: Skipping row {idx} - invalid xdf_dataset_idx: {xdf_dataset_idx}")
+                skipped_count += 1
+                continue
+            
+            # Find corresponding Raw object
+            if xdf_dataset_idx < 0 or xdf_dataset_idx >= len(eeg_raws):
+                print(f"Warning: Skipping row {idx} - xdf_dataset_idx {xdf_dataset_idx} out of range (0-{len(eeg_raws)-1})")
+                skipped_count += 1
+                continue
+            
+            raw = eeg_raws[xdf_dataset_idx]
+            if raw is None:
+                print(f"Warning: Skipping row {idx} - Raw object at index {xdf_dataset_idx} is None")
+                skipped_count += 1
+                continue
+            
+            # Check if Raw object is valid
+            if not hasattr(raw, 'times') or len(raw.times) == 0:
+                print(f"Warning: Skipping row {idx} - Raw object at index {xdf_dataset_idx} has no time data")
+                skipped_count += 1
+                continue
+            
+            # Extract datasources from this Raw object
+            stream_name = row.get('name', f'Stream_{xdf_dataset_idx}')
+            try:
+                datasources = self._extract_datasources_from_eeg_raw(
+                    raw=raw,
+                    stream_info_row=row,
+                    reference_datetime=reference_datetime,
+                    stream_name=stream_name
+                )
+                if datasources:
+                    all_datasources.extend(datasources)
+                    processed_count += 1
+                else:
+                    print(f"Warning: No datasources extracted from '{stream_name}'")
+                    skipped_count += 1
+            except Exception as e:
+                print(f"Error: Failed to extract datasources from '{stream_name}': {e}")
+                skipped_count += 1
+                import traceback
+                traceback.print_exc()
+        
+        print(f"Processed {processed_count} streams, skipped {skipped_count} streams")
+        
+        if not all_datasources:
+            print("No valid datasources found.")
+            return None
+        
+        print(f"Found {len(all_datasources)} datasources from {len(stream_infos_df)} stream info rows")
+        
+        # Merge datasources that share the same track name.
+        #
+        # Rationale:
+        # - We may have many recordings for the same logical stream (e.g. multiple XDF segments).
+        # - `TrackRenderingMixin.add_track` uses `name` as a unique key and will not create
+        #   multiple tracks with identical names.
+        # - Therefore, we merge intervals (and detailed data where present) into a single datasource
+        #   per `custom_datasource_name`, yielding multiple overview rectangles per track.
+        datasources_by_name: Dict[str, List[TrackDatasource]] = {}
+        for ds in all_datasources:
+            datasources_by_name.setdefault(ds.custom_datasource_name, []).append(ds)
+
+        merged_datasources: List[TrackDatasource] = []
+        for name, ds_group in datasources_by_name.items():
+            if len(ds_group) == 1:
+                merged_datasources.append(ds_group[0])
+                continue
+
+            first = ds_group[0]
+            # All of our concrete datasources inherit IntervalProvidingTrackDatasource and
+            # expose `intervals_df` and (optionally) `detailed_df`.
+            intervals_dfs = [getattr(d, "intervals_df") for d in ds_group if getattr(d, "intervals_df", None) is not None]
+            detailed_dfs = [getattr(d, "detailed_df") for d in ds_group if getattr(d, "detailed_df", None) is not None]
+
+            try:
+                # Prefer specialized merge constructors when available (keeps renderer behavior)
+                if EEGTrackDatasource is not None and isinstance(first, EEGTrackDatasource):
+                    merged = EEGTrackDatasource.from_multiple_sources(
+                        intervals_dfs=intervals_dfs,
+                        detailed_dfs=detailed_dfs,
+                        custom_datasource_name=name,
+                        max_points_per_second=getattr(first, "max_points_per_second", 1000.0),
+                        enable_downsampling=getattr(first, "enable_downsampling", True),
+                        fallback_normalization_mode=getattr(first, "fallback_normalization_mode", ChannelNormalizationMode.GROUPMINMAXRANGE),
+                        normalization_mode_dict=getattr(first, "normalization_mode_dict", None),
+                        arbitrary_bounds=getattr(first, "arbitrary_bounds", None),
+                        normalize=getattr(first, "normalize", True),
+                        normalize_over_full_data=getattr(first, "normalize_over_full_data", True),
+                        normalization_reference_df=getattr(first, "normalization_reference_df", None),
+                    )
+                    merged_datasources.append(merged)
+                    continue
+
+                if MotionTrackDatasource is not None and isinstance(first, MotionTrackDatasource):
+                    merged = MotionTrackDatasource.from_multiple_sources(
+                        intervals_dfs=intervals_dfs,
+                        detailed_dfs=detailed_dfs,
+                        custom_datasource_name=name,
+                        max_points_per_second=getattr(first, "max_points_per_second", 1000.0),
+                        enable_downsampling=getattr(first, "enable_downsampling", True),
+                        fallback_normalization_mode=getattr(first, "fallback_normalization_mode", ChannelNormalizationMode.GROUPMINMAXRANGE),
+                        normalization_mode_dict=getattr(first, "normalization_mode_dict", None),
+                        arbitrary_bounds=getattr(first, "arbitrary_bounds", None),
+                    )
+                    merged_datasources.append(merged)
+                    continue
+
+                # Generic interval + optional detail (e.g. annotations)
+                merged = IntervalProvidingTrackDatasource.from_multiple_sources(
+                    intervals_dfs=intervals_dfs,
+                    detailed_dfs=detailed_dfs if detailed_dfs else None,
+                    custom_datasource_name=name,
+                    detail_renderer=getattr(first, "_detail_renderer", None) or first.get_detail_renderer(),
+                    max_points_per_second=getattr(first, "max_points_per_second", 1000.0),
+                    enable_downsampling=getattr(first, "enable_downsampling", True),
+                )
+                merged_datasources.append(merged)
+            except Exception as e:
+                print(f"Warning: failed to merge datasources for '{name}': {e}. Falling back to first datasource.")
+                merged_datasources.append(first)
+
+        # Generate window title if not provided
+        if window_title is None:
+            window_title = f"pyPhoTimeline - MNE Raw Data ({len(eeg_raws)} recordings)"
+        
+        # If reference_datetime is None, it will be set from the earliest datetime in datasources
+        # Build timeline from datasources
+        return self.build_from_datasources(
+            datasources=merged_datasources,
+            window_duration=window_duration,
+            window_start_time=window_start_time,
+            add_example_tracks=add_example_tracks,
+            window_title=window_title,
+            window_size=window_size,
+            reference_datetime=reference_datetime, **kwargs,
+        )
+    
+
+    # @function_attributes(short_name=None, tags=['MAIN'], input_requires=[], output_provides=[], uses=['self._add_tracks_to_timeline'], used_by=['self.build_from_eeg_raw_and_stream_info', 'self.build_from_streams', 'self.build_from_video', 'self.build_from_xdf_files'], creation_date='2026-02-03 19:53', related_items=[])
+    def build_from_datasources(self, datasources: List[TrackDatasource], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), reference_datetime: Optional[datetime] = None,
+                use_absolute_datetime_track_mode: bool = True, **kwargs,
+                ) -> SimpleTimelineWidget:
         """Build a timeline widget from existing datasources.
         
         Args:
@@ -317,23 +560,75 @@ class TimelineBuilder:
             raise ValueError("datasources list cannot be empty")
         
         # Calculate time range from datasources
-        total_start_time: float = np.nanmin([ds.total_df_start_end_times[0] for ds in datasources])
-        total_end_time: float = np.nanmax([ds.total_df_start_end_times[1] for ds in datasources])
+        # Check if datasources use datetime objects
+        first_start, first_end = datasources[0].total_df_start_end_times
+        is_datetime = isinstance(first_start, (datetime, pd.Timestamp))
         
-        # Calculate window duration if not provided
-        if window_duration is None:
-            window_duration = total_end_time - total_start_time
-            window_duration = max(window_duration, 10.0)
+        #TODO 2026-02-03 20:10: - [ ] Implement proper full datetime use here like I did downstream in `self._add_tracks_to_timeline(...)` for use_absolute_datetime_track_mode == True mode.
+        if is_datetime:
+            # Use datetime operations
+            total_start_time = min([ds.total_df_start_end_times[0] for ds in datasources], key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
+            total_end_time = max([ds.total_df_start_end_times[1] for ds in datasources], key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
+            
+            # Ensure they're pd.Timestamp
+            total_start_time = pd.Timestamp(total_start_time)
+            total_end_time = pd.Timestamp(total_end_time)
+            if total_start_time.tzinfo is None:
+                total_start_time = total_start_time.tz_localize('UTC')
+            if total_end_time.tzinfo is None:
+                total_end_time = total_end_time.tz_localize('UTC')
+            
+            # Calculate window duration if not provided
+            if window_duration is None:
+                duration_delta = total_end_time - total_start_time
+                window_duration = duration_delta.total_seconds()
+                window_duration = max(window_duration, 10.0)
+            
+            # Calculate window start time if not provided
+            if window_start_time is None:
+                window_start_time = total_start_time
+
+            elif isinstance(window_start_time, (int, float)):
+                # Convert relative float to absolute datetime
+                if reference_datetime is not None:
+                    window_start_time = reference_datetime + timedelta(seconds=float(window_start_time))
+                else:
+                    window_start_time = total_start_time + timedelta(seconds=float(window_start_time))
+        else:
+            # Use float operations (backward compatibility)
+            total_start_time: float = np.nanmin([ds.total_df_start_end_times[0] for ds in datasources])
+            total_end_time: float = np.nanmax([ds.total_df_start_end_times[1] for ds in datasources])
+            
+            # Calculate window duration if not provided
+            if window_duration is None:
+                window_duration = total_end_time - total_start_time
+                window_duration = max(window_duration, 10.0)
+            
+            # Calculate window start time if not provided
+            if window_start_time is None:
+                window_start_time = total_start_time
         
-        # Calculate window start time if not provided
-        if window_start_time is None:
-            window_start_time = total_start_time
-        
-        # Use Unix epoch as fallback if no reference datetime provided
-        if reference_datetime is None:
-            from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
-            reference_datetime = get_earliest_reference_datetime([], datasources)
-        
+        # Set reference_datetime appropriately
+        if is_datetime:
+            # When using datetime objects, reference_datetime is just for display formatting
+            # Use the earliest datetime from datasources as reference
+            if reference_datetime is None:
+                reference_datetime = total_start_time
+            else:
+                # Ensure it's a datetime object
+                reference_datetime = pd.Timestamp(reference_datetime)
+                if reference_datetime.tzinfo is None:
+                    reference_datetime = reference_datetime.tz_localize('UTC')
+        else:
+            # Use Unix epoch as fallback if no reference datetime provided (for float timestamps)
+            if reference_datetime is None:
+                from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
+                reference_datetime = get_earliest_reference_datetime([], datasources)
+
+
+        #TODO 2026-02-03 20:00: - [ ] Override `reference_datetime = None` so we use absolute datetimes        
+        reference_datetime = None
+
         # Create the timeline widget with reference datetime
         timeline = SimpleTimelineWidget(
             total_start_time=total_start_time,
@@ -345,7 +640,7 @@ class TimelineBuilder:
         )
         
         # Add tracks to the timeline
-        self._add_tracks_to_timeline(timeline, datasources)
+        self._add_tracks_to_timeline(timeline, datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
         
         # Configure window
         timeline.setWindowTitle(window_title or "pyPhoTimeline")
@@ -370,6 +665,7 @@ class TimelineBuilder:
         
         return timeline
     
+    # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self._add_tracks_to_timeline'], used_by=[], creation_date='2026-02-03 19:58', related_items=[])
     def update_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource], update_time_range: bool = True) -> SimpleTimelineWidget:
         """Add tracks to an existing timeline widget.
         
@@ -389,11 +685,43 @@ class TimelineBuilder:
         if update_time_range:
             existing_start = timeline.total_data_start_time
             existing_end = timeline.total_data_end_time
-            new_start = np.nanmin([ds.total_df_start_end_times[0] for ds in datasources])
-            new_end = np.nanmax([ds.total_df_start_end_times[1] for ds in datasources])
             
-            total_start_time = min(existing_start, new_start)
-            total_end_time = max(existing_end, new_end)
+            # Check if using datetime objects
+            first_start, first_end = datasources[0].total_df_start_end_times
+            is_datetime = isinstance(first_start, (datetime, pd.Timestamp))
+            
+            if is_datetime:
+                new_start = min([ds.total_df_start_end_times[0] for ds in datasources], key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
+                new_end = max([ds.total_df_start_end_times[1] for ds in datasources], key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
+                
+                # Ensure they're pd.Timestamp
+                new_start = pd.Timestamp(new_start)
+                new_end = pd.Timestamp(new_end)
+                if new_start.tzinfo is None:
+                    new_start = new_start.tz_localize('UTC')
+                if new_end.tzinfo is None:
+                    new_end = new_end.tz_localize('UTC')
+                
+                # Convert existing times if they're floats
+                if isinstance(existing_start, (int, float)):
+                    if timeline.reference_datetime is not None:
+                        existing_start = timeline.reference_datetime + timedelta(seconds=float(existing_start))
+                    else:
+                        existing_start = pd.Timestamp.fromtimestamp(float(existing_start), tz='UTC')
+                if isinstance(existing_end, (int, float)):
+                    if timeline.reference_datetime is not None:
+                        existing_end = timeline.reference_datetime + timedelta(seconds=float(existing_end))
+                    else:
+                        existing_end = pd.Timestamp.fromtimestamp(float(existing_end), tz='UTC')
+                
+                total_start_time = min(pd.Timestamp(existing_start), new_start)
+                total_end_time = max(pd.Timestamp(existing_end), new_end)
+            else:
+                new_start = np.nanmin([ds.total_df_start_end_times[0] for ds in datasources])
+                new_end = np.nanmax([ds.total_df_start_end_times[1] for ds in datasources])
+                
+                total_start_time = min(float(existing_start), float(new_start))
+                total_end_time = max(float(existing_end), float(new_end))
             
             # Update timeline time range
             timeline.total_data_start_time = total_start_time
@@ -409,6 +737,234 @@ class TimelineBuilder:
         
         return timeline
     
+
+    def _extract_datasources_from_eeg_raw(self, raw, stream_info_row: pd.Series, reference_datetime: datetime, stream_name: str) -> List[TrackDatasource]:
+        """Extract datasources from a single MNE Raw object.
+        
+        Args:
+            raw: MNE Raw object (mne.io.BaseRaw)
+            stream_info_row: Series with stream information (from stream_infos_df)
+            reference_datetime: Reference datetime for timestamp conversion
+            stream_name: Name of the stream
+            
+        Returns:
+            List of TrackDatasource instances (EEG, Motion, Annotations, etc.)
+        """
+        datasources = []
+        
+        # Check if Raw object has data
+        if len(raw.times) == 0:
+            print(f"Warning: Raw object for '{stream_name}' has no time data")
+            return datasources
+        
+        # Get meas_date from Raw object
+        meas_date = None
+        try:
+            meas_date = raw.info.get('meas_date', None)
+        except (AttributeError, KeyError):
+            pass
+        
+        if meas_date is None:
+            # Try to get from stream_info_row
+            meas_date = stream_info_row.get('recording_datetime', None)
+            if pd.isna(meas_date):
+                meas_date = None
+        
+        if meas_date is None:
+            # Try first_timestamp_dt as fallback
+            meas_date = stream_info_row.get('first_timestamp_dt', None)
+            if pd.isna(meas_date):
+                meas_date = None
+        
+        if meas_date is None:
+            print(f"Warning: No meas_date found for '{stream_name}', using reference_datetime")
+            meas_date = reference_datetime
+        
+        # Ensure meas_date is timezone-aware
+        if meas_date is not None:
+            if isinstance(meas_date, pd.Timestamp):
+                meas_date = meas_date.to_pydatetime()
+            if meas_date.tzinfo is None:
+                meas_date = meas_date.replace(tzinfo=timezone.utc)
+        
+        # Convert raw.times to absolute datetime objects
+        # raw.times are relative to meas_date, so we convert to absolute datetimes
+        if meas_date is not None:
+            absolute_times = [meas_date + timedelta(seconds=float(t)) for t in raw.times]
+            # Convert to pd.Timestamp for consistency and timezone handling
+            datetime_times = [pd.Timestamp(dt) for dt in absolute_times]
+            # Ensure timezone-aware
+            datetime_times = [dt.tz_localize('UTC') if dt.tzinfo is None else dt for dt in datetime_times]
+        else:
+            # Fallback: if no meas_date, we can't create absolute datetimes
+            # Use reference_datetime as base if available
+            if reference_datetime is not None:
+                absolute_times = [reference_datetime + timedelta(seconds=float(t)) for t in raw.times]
+                datetime_times = [pd.Timestamp(dt) for dt in absolute_times]
+                datetime_times = [dt.tz_localize('UTC') if dt.tzinfo is None else dt for dt in datetime_times]
+            else:
+                # Last resort: use raw.times as floats (backward compatibility)
+                datetime_times = [float(t) for t in raw.times]
+        
+        # Create base intervals_df with datetime objects
+        if datetime_times and isinstance(datetime_times[0], (datetime, pd.Timestamp)):
+            t_start = datetime_times[0]
+            t_end = datetime_times[-1]
+            t_duration = (t_end - t_start).total_seconds()
+            
+            base_intervals_df = pd.DataFrame({
+                't_start': [pd.Timestamp(t_start)],
+                't_duration': [t_duration],  # Keep as float seconds for duration
+                't_end': [pd.Timestamp(t_end)]
+            })
+        else:
+            # Fallback for float timestamps (backward compatibility)
+            t_start = datetime_times[0] if datetime_times else 0.0
+            t_end = datetime_times[-1] if datetime_times else 0.0
+            t_duration = t_end - t_start
+            
+            base_intervals_df = pd.DataFrame({
+                't_start': [t_start],
+                't_duration': [t_duration],
+                't_end': [t_end]
+            })
+        
+        # Extract EEG channel data
+        eeg_channels = [ch for ch in raw.ch_names if raw.get_channel_types([ch])[0] == 'eeg']
+        if eeg_channels:
+            try:
+                eeg_data = raw.get_data(picks=eeg_channels)
+                eeg_df = pd.DataFrame(eeg_data.T, columns=eeg_channels)
+                # Store datetime objects directly in 't' column
+                eeg_df['t'] = datetime_times
+                
+                # Create EEGTrackDatasource
+                if EEGTrackDatasource is not None:
+                    eeg_datasource = EEGTrackDatasource(
+                        intervals_df=base_intervals_df.copy(),
+                        eeg_df=eeg_df,
+                        custom_datasource_name=f"EEG_{stream_name}",
+                        max_points_per_second=10.0,
+                        enable_downsampling=True,
+                        fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL
+                    )
+                    datasources.append(eeg_datasource)
+                    print(f"  Created EEG datasource for '{stream_name}' with {len(eeg_channels)} channels")
+            except Exception as e:
+                print(f"Warning: Failed to extract EEG data from '{stream_name}': {e}")
+        
+        # Extract Motion data (check for motion channels)
+        motion_channel_names = ['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ']
+        motion_channels = [ch for ch in raw.ch_names if any(mc in ch for mc in motion_channel_names)]
+        if not motion_channels:
+            # Try alternative naming
+            motion_channels = [ch for ch in raw.ch_names if 'acc' in ch.lower() or 'gyro' in ch.lower() or 'motion' in ch.lower()]
+        
+        if motion_channels:
+            try:
+                motion_data = raw.get_data(picks=motion_channels)
+                # Map to standard motion channel names if possible
+                motion_df = pd.DataFrame(motion_data.T, columns=motion_channels)
+                # Store datetime objects directly in 't' column
+                motion_df['t'] = datetime_times
+                
+                # Create MotionTrackDatasource
+                if MotionTrackDatasource is not None:
+                    motion_datasource = MotionTrackDatasource(
+                        intervals_df=base_intervals_df.copy(),
+                        motion_df=motion_df,
+                        custom_datasource_name=f"MOTION_{stream_name}",
+                        max_points_per_second=10.0,
+                        enable_downsampling=True,
+                        fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE
+                    )
+                    datasources.append(motion_datasource)
+                    print(f"  Created Motion datasource for '{stream_name}' with {len(motion_channels)} channels")
+            except Exception as e:
+                print(f"Warning: Failed to extract Motion data from '{stream_name}': {e}")
+        
+        # Extract Annotations
+        if hasattr(raw, 'annotations') and raw.annotations is not None and len(raw.annotations) > 0:
+            try:
+                # Convert annotations to DataFrame with datetime
+                annotations_df = raw.annotations.to_data_frame()
+                
+                # Convert onset times to absolute datetime objects
+                if meas_date is not None:
+                    annotation_datetime_times = []
+                    for onset in annotations_df['onset']:
+                        absolute_time = meas_date + timedelta(seconds=float(onset))
+                        dt = pd.Timestamp(absolute_time)
+                        if dt.tzinfo is None:
+                            dt = dt.tz_localize('UTC')
+                        annotation_datetime_times.append(dt)
+                    annotations_df['t'] = annotation_datetime_times
+                else:
+                    # Fallback: use onset directly (assuming it's already a datetime or float)
+                    if reference_datetime is not None:
+                        annotation_datetime_times = []
+                        for onset in annotations_df['onset']:
+                            absolute_time = reference_datetime + timedelta(seconds=float(onset))
+                            dt = pd.Timestamp(absolute_time)
+                            if dt.tzinfo is None:
+                                dt = dt.tz_localize('UTC')
+                            annotation_datetime_times.append(dt)
+                        annotations_df['t'] = annotation_datetime_times
+                    else:
+                        annotations_df['t'] = annotations_df['onset']
+                
+                # Create log datasource for annotations
+                if LogTextDataFramePlotDetailRenderer is not None:
+                    log_renderer = LogTextDataFramePlotDetailRenderer(
+                        text_color='white',
+                        text_size=10,
+                        channel_names=['description']
+                    )
+                    
+                    # Prepare DataFrame with 't' and 'description' columns
+                    log_df = pd.DataFrame({
+                        't': annotations_df['t'],
+                        'description': annotations_df['description'].astype(str)
+                    })
+                    
+                    # Create intervals for each annotation
+                    annotation_intervals = []
+                    for _, ann_row in annotations_df.iterrows():
+                        ann_t_start = ann_row['t']
+                        ann_duration = ann_row.get('duration', 0.0)
+                        
+                        # Handle datetime objects for t_end calculation
+                        if isinstance(ann_t_start, (datetime, pd.Timestamp)):
+                            ann_t_end = ann_t_start + timedelta(seconds=float(ann_duration))
+                            annotation_intervals.append({
+                                't_start': pd.Timestamp(ann_t_start),
+                                't_duration': ann_duration,  # Keep as float seconds
+                                't_end': pd.Timestamp(ann_t_end)
+                            })
+                        else:
+                            annotation_intervals.append({
+                                't_start': ann_t_start,
+                                't_duration': ann_duration,
+                                't_end': ann_t_start + ann_duration
+                            })
+                    
+                    if annotation_intervals:
+                        ann_intervals_df = pd.DataFrame(annotation_intervals)
+                        
+                        ann_datasource = IntervalProvidingTrackDatasource(
+                            intervals_df=ann_intervals_df,
+                            detailed_df=log_df,
+                            custom_datasource_name=f"ANNOTATIONS_{stream_name}",
+                            detail_renderer=log_renderer,
+                            enable_downsampling=False
+                        )
+                        datasources.append(ann_datasource)
+                        print(f"  Created Annotations datasource for '{stream_name}' with {len(annotations_df)} annotations")
+            except Exception as e:
+                print(f"Warning: Failed to extract Annotations from '{stream_name}': {e}")
+        
+        return datasources
+    
     def _process_xdf_streams(self, streams: List) -> Tuple[Dict, Dict]:
         """Process XDF streams to extract datasources.
         
@@ -420,7 +976,9 @@ class TimelineBuilder:
         """
         return perform_process_all_streams(streams=streams)
     
-    def _add_tracks_to_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource]) -> None:
+
+    # @function_attributes(short_name=None, tags=['MAIN', 'add'], input_requires=[], output_provides=[], uses=[], used_by=['self.update_timeline', 'self.build_from_datasources'], creation_date='2026-02-03 19:57', related_items=[])
+    def _add_tracks_to_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource], enable_hide_extra_track_x_axes: bool=False, use_absolute_datetime_track_mode: bool = True) -> None:
         """Add tracks to a timeline widget.
         
         Args:
@@ -453,9 +1011,24 @@ class TimelineBuilder:
             if hasattr(a_dock, 'updateTitleBar') or hasattr(a_dock, 'refresh'):
                 a_dock.updateTitleBar()  # or refresh()
             
-            # Set the plot to show the full time range (convert to datetime then Unix timestamp if reference available)
-            if timeline.reference_datetime is not None:
-                from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp
+            # Set the plot to show the full time range
+            # Handle datetime objects directly
+            if isinstance(timeline.total_data_start_time, (datetime, pd.Timestamp)):
+                if not use_absolute_datetime_track_mode:
+                    # Timeline uses datetime objects - convert directly to Unix timestamps
+                    unix_start = datetime_to_unix_timestamp(timeline.total_data_start_time)
+                    unix_end = datetime_to_unix_timestamp(timeline.total_data_end_time)
+                    a_plot_item.setXRange(unix_start, unix_end, padding=0)
+                else:
+                    ## use_absolute_datetime_track_mode - use the datetimes directly
+                    unix_start = datetime_to_unix_timestamp(timeline.total_data_start_time)
+                    unix_end = datetime_to_unix_timestamp(timeline.total_data_end_time)
+                    # a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0) ## performs So min and max (your timeline.total_data_start_time and timeline.total_data_end_time) are datetime objects. In Python, datetime + datetime is invalid (only datetime - datetime or datetime + timedelta are defined), so you get that TypeError.
+                    a_plot_item.setXRange(unix_start, unix_end, padding=0)
+
+                a_plot_item.setLabel('bottom', 'Time')
+            elif (timeline.reference_datetime is not None):
+                # Timeline uses float timestamps with reference_datetime - convert to datetime then Unix timestamp
                 dt_start = float_to_datetime(timeline.total_data_start_time, timeline.reference_datetime)
                 dt_end = float_to_datetime(timeline.total_data_end_time, timeline.reference_datetime)
                 # Convert datetime to Unix timestamp for PyQtGraph (DateAxisItem expects timestamps but displays as dates)
@@ -464,8 +1037,10 @@ class TimelineBuilder:
                 a_plot_item.setXRange(unix_start, unix_end, padding=0)
                 a_plot_item.setLabel('bottom', 'Time')
             else:
+                # Fallback: use float timestamps directly
                 a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0)
                 a_plot_item.setLabel('bottom', 'Time', units='s')
+
             a_plot_item.setYRange(0, 1, padding=0)
             a_plot_item.setLabel('left', datasource.custom_datasource_name)
             a_plot_item.hideAxis('left')  # Hide Y-axis for cleaner look
@@ -487,8 +1062,12 @@ class TimelineBuilder:
             # Hide x-axis for all except the last one (bottom-most)
             if len(all_plot_items) > 1:
                 # Hide x-axis for all tracks except the last one
-                for widget_name, plot_item in all_plot_items[:-1]:
-                    plot_item.hideAxis('bottom')
-                # Ensure the last track shows its x-axis
-                all_plot_items[-1][1].showAxis('bottom')
-        
+                if enable_hide_extra_track_x_axes:
+                    for widget_name, plot_item in all_plot_items[:-3]:
+                        plot_item.hideAxis('bottom')
+                    # Ensure the last track shows its x-axis
+                    all_plot_items[-1][1].showAxis('bottom')
+                else:
+                    ## show all
+                    for widget_name, plot_item in all_plot_items:
+                        plot_item.showAxis('bottom')

@@ -4,6 +4,7 @@ Refactored from pyphoplacecellanalysis for use in pypho_timeline.
 """
 from copy import deepcopy
 from typing import Tuple
+from datetime import datetime
 import numpy as np
 import pandas as pd
 
@@ -47,6 +48,13 @@ class Render2DEventRectanglesHelper:
         """    
         ## Validate that it has all required columns:
         assert np.isin(cls._required_interval_visualization_columns, df.columns).all(), f"dataframe is missing required columns:\n Required: {cls._required_interval_visualization_columns}, current: {df.columns} "
+        # Convert datetime t_start values to Unix timestamps for rendering
+        if pd.api.types.is_datetime64_any_dtype(df['t_start']) or df['t_start'].apply(lambda x: isinstance(x, (datetime, pd.Timestamp))).any():
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            df = df.copy()
+            df['t_start'] = df['t_start'].apply(
+                lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x
+            )
         if 'label' in df.columns:
             return [IntervalRectsItemData(*row) for row in zip(df.t_start, df.series_vertical_offset, df.t_duration, df.series_height, df.pen, df.brush, df.label)]
         else:
@@ -102,6 +110,7 @@ class Render2DEventRectanglesHelper:
         curr_IntervalRectsItem_interval_tuples = cls._build_interval_tuple_list_from_dataframe(active_df)
         ## build the IntervalRectsItem
         return IntervalRectsItem(curr_IntervalRectsItem_interval_tuples, **kwargs)
+    
     
     ##################################################
     ## Spike Events METHODS

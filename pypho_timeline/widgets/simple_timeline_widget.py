@@ -7,13 +7,13 @@ along with utility functions for processing stream data.
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, List, Dict, Optional
-from datetime import datetime
+from typing import Tuple, List, Dict, Optional, Union
+from datetime import datetime, timedelta
 from pathlib import Path
 from qtpy import QtWidgets, QtCore
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
-from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp
+from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, datetime_to_float, get_reference_datetime_from_xdf_header, unix_timestamp_to_datetime
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
 from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
 from pypho_timeline.rendering.detail_renderers import DataframePlotDetailRenderer
@@ -34,8 +34,16 @@ class SimpleTimeWindow:
     def __init__(self, start, end, window_dur, window_start):
         self.total_df_start_end_times = (start, end)
         self.active_window_start_time = window_start
-        self.active_window_end_time = window_start + window_dur
-        self.active_time_window = (window_start, window_start + window_dur)
+        
+        # Handle datetime objects for window_end calculation
+        if isinstance(window_start, (datetime, pd.Timestamp)) and isinstance(window_dur, timedelta):
+            self.active_window_end_time = window_start + window_dur
+        elif isinstance(window_start, (datetime, pd.Timestamp)):
+            self.active_window_end_time = window_start + timedelta(seconds=float(window_dur))
+        else:
+            self.active_window_end_time = window_start + window_dur
+        
+        self.active_time_window = (self.active_window_start_time, self.active_window_end_time)
         self.window_duration = window_dur
         
     def update_window_start_end(self, start_t, end_t):
@@ -65,7 +73,13 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         return plots
     
 
-    def __init__(self, total_start_time=0.0, total_end_time=100.0, window_duration=10.0, window_start_time=30.0, add_example_tracks=False, reference_datetime: Optional[datetime] = None, parent=None):
+    def __init__(self, total_start_time: Union[float, datetime, pd.Timestamp] = 0.0, 
+                 total_end_time: Union[float, datetime, pd.Timestamp] = 100.0, 
+                 window_duration: Union[float, timedelta] = 10.0, 
+                 window_start_time: Union[float, datetime, pd.Timestamp] = 30.0, 
+                 add_example_tracks=False, 
+                 reference_datetime: Optional[datetime] = None, 
+                 parent=None):
         super().__init__(parent)
         
         # Store whether to add example tracks
@@ -80,20 +94,58 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         self.plots_data = RenderPlotsData(name='SimpleTimelineWidget')
         self.plots = PyqtgraphRenderPlots(name='SimpleTimelineWidget', render_detail_graphics_objects={})
         
-        # Time window properties
-        self.total_data_start_time = total_start_time
-        self.total_data_end_time = total_end_time
-        self.active_window_start_time = window_start_time
-        self.active_window_end_time = window_start_time + window_duration
-        
         # Reference datetime for datetime axis alignment (shared across all tracks)
         if reference_datetime is None:
             from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
             reference_datetime = get_earliest_reference_datetime([], [])
         self.reference_datetime = reference_datetime
         
+        # Convert time properties to datetime if they're floats and reference_datetime is available
+        # Otherwise store as-is (datetime objects stay as datetime, floats stay as floats)
+        if isinstance(total_start_time, (int, float)):
+            if reference_datetime is not None:
+                # Convert relative float to absolute datetime
+                self.total_data_start_time = reference_datetime + timedelta(seconds=float(total_start_time))
+            else:
+                # Keep as float if no reference
+                self.total_data_start_time = float(total_start_time)
+        else:
+            # Already a datetime object, convert to pd.Timestamp for consistency
+            self.total_data_start_time = pd.Timestamp(total_start_time)
+            if self.total_data_start_time.tzinfo is None:
+                self.total_data_start_time = self.total_data_start_time.tz_localize('UTC')
+        
+        if isinstance(total_end_time, (int, float)):
+            if reference_datetime is not None:
+                self.total_data_end_time = reference_datetime + timedelta(seconds=float(total_end_time))
+            else:
+                self.total_data_end_time = float(total_end_time)
+        else:
+            self.total_data_end_time = pd.Timestamp(total_end_time)
+            if self.total_data_end_time.tzinfo is None:
+                self.total_data_end_time = self.total_data_end_time.tz_localize('UTC')
+        
+        if isinstance(window_start_time, (int, float)):
+            if reference_datetime is not None:
+                self.active_window_start_time = reference_datetime + timedelta(seconds=float(window_start_time))
+            else:
+                self.active_window_start_time = float(window_start_time)
+        else:
+            self.active_window_start_time = pd.Timestamp(window_start_time)
+            if self.active_window_start_time.tzinfo is None:
+                self.active_window_start_time = self.active_window_start_time.tz_localize('UTC')
+        
+        # Calculate window_end_time
+        if isinstance(self.active_window_start_time, (datetime, pd.Timestamp)):
+            if isinstance(window_duration, timedelta):
+                self.active_window_end_time = self.active_window_start_time + window_duration
+            else:
+                self.active_window_end_time = self.active_window_start_time + timedelta(seconds=float(window_duration))
+        else:
+            self.active_window_end_time = self.active_window_start_time + float(window_duration)
+        
         self.spikes_window = SimpleTimeWindow(
-            total_start_time, total_end_time, window_duration, window_start_time
+            self.total_data_start_time, self.total_data_end_time, window_duration, self.active_window_start_time
         )
         
         # Initialize plots_data and plots BEFORE setupUI (needed by mixins)
@@ -125,20 +177,47 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             self.add_example_tracks()
         
 
-    def simulate_window_scroll(self, new_start_time):
+    def simulate_window_scroll(self, new_start_time: Union[float, datetime, pd.Timestamp]):
         """Simulate scrolling the time window (for demonstration)."""
-        new_end_time = new_start_time + (self.active_window_end_time - self.active_window_start_time)
+        # Calculate duration
+        if isinstance(self.active_window_start_time, (datetime, pd.Timestamp)) and isinstance(self.active_window_end_time, (datetime, pd.Timestamp)):
+            duration = self.active_window_end_time - self.active_window_start_time
+            if isinstance(new_start_time, (int, float)):
+                # Convert float to datetime if needed
+                if self.reference_datetime is not None:
+                    new_start_time = self.reference_datetime + timedelta(seconds=float(new_start_time))
+                else:
+                    new_start_time = pd.Timestamp.fromtimestamp(float(new_start_time), tz='UTC')
+            new_end_time = new_start_time + duration
+        else:
+            duration = self.active_window_end_time - self.active_window_start_time
+            if isinstance(new_start_time, (datetime, pd.Timestamp)):
+                # Convert datetime to float if needed
+                new_start_time = new_start_time.timestamp() if hasattr(new_start_time, 'timestamp') else pd.Timestamp(new_start_time).timestamp()
+            new_end_time = new_start_time + duration
+        
         self.active_window_start_time = new_start_time
         self.active_window_end_time = new_end_time
         self.spikes_window.update_window_start_end(new_start_time, new_end_time)
         
-        # Emit the signal to update synchronized tracks
-        self.window_scrolled.emit(new_start_time, new_end_time)
-        print(f"Window scrolled to: {new_start_time:.2f} - {new_end_time:.2f}")
+        # Emit the signal to update synchronized tracks (convert to float for signal)
+        if isinstance(new_start_time, (datetime, pd.Timestamp)):
+            emit_start = new_start_time.timestamp() if hasattr(new_start_time, 'timestamp') else pd.Timestamp(new_start_time).timestamp()
+            emit_end = new_end_time.timestamp() if hasattr(new_end_time, 'timestamp') else pd.Timestamp(new_end_time).timestamp()
+        else:
+            emit_start = float(new_start_time)
+            emit_end = float(new_end_time)
+        
+        self.window_scrolled.emit(emit_start, emit_end)
+        
+        if isinstance(new_start_time, (datetime, pd.Timestamp)):
+            print(f"Window scrolled to: {new_start_time} - {new_end_time}")
+        else:
+            print(f"Window scrolled to: {new_start_time:.2f} - {new_end_time:.2f}")
 
 
 
-    def add_video_track(self, track_name: str, video_datasource: VideoTrackDatasource, dockSize: Tuple[int, int] = (500, 80), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA):
+    def add_video_track(self, track_name: str, video_datasource: VideoTrackDatasource, dockSize: Tuple[int, int] = (500, 80), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA, use_vispy: bool = False):
             """Add a video track to the timeline.
             
             This is a convenience method that creates a plot widget and adds the video track.
@@ -148,6 +227,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                 video_datasource: VideoTrackDatasource instance
                 dockSize: Size of the dock widget (width, height). Default: (500, 80)
                 sync_mode: Synchronization mode for the plot. Default: TO_GLOBAL_DATA
+                use_vispy: If True, use high-performance vispy renderer instead of pyqtgraph (default: False)
                 
             Returns:
                 Tuple of (widget, root_graphics, plot_item, dock) from add_new_embedded_pyqtgraph_render_plot_widget
@@ -159,6 +239,10 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                 dockAddLocationOpts=['bottom'],
                 sync_mode=sync_mode
             )
+            
+            # Set vispy renderer flag on datasource if requested
+            if use_vispy:
+                video_datasource.use_vispy_renderer = True
             
             # Get time range from datasource
             t_start, t_end = video_datasource.total_df_start_end_times
@@ -413,24 +497,63 @@ def merge_streams_by_name(streams_by_file: List[Tuple[List, Path]]) -> Dict[str,
     return streams_by_name
 
 
-def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path]) -> Tuple[Dict, Dict]:
+def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[dict]] = None) -> Tuple[Dict, Dict]:
     """Process streams from multiple XDF files and merge streams with the same name.
     
     Streams with the same name across different files will be merged into a single datasource.
-    Timestamps are preserved as absolute values (no time shifting).
+    Timestamps are converted to use a common reference datetime (earliest file's reference) to ensure
+    proper alignment across multiple files.
     
     Args:
         streams_list: List of stream lists (one per XDF file), where each stream list contains
                      stream dictionaries from pyxdf
         xdf_file_paths: List of Path objects corresponding to each stream list
+        file_headers: Optional list of XDF file header dictionaries (one per file)
     
     Returns:
         Tuple of (all_streams dict, all_streams_datasources dict) where:
         - all_streams: Dictionary mapping stream names to merged interval DataFrames
         - all_streams_datasources: Dictionary mapping stream names to merged TrackDatasource instances
     """
+    from phoofflineeeganalysis.analysis.historical_data import HistoricalData
+
+
     if len(streams_list) != len(xdf_file_paths):
         raise ValueError(f"streams_list length ({len(streams_list)}) must match xdf_file_paths length ({len(xdf_file_paths)})")
+    
+    # Extract reference datetimes from file headers
+    file_reference_datetimes = {}
+
+    xdf_recording_file_metadta_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=xdf_file_paths) ## this should be cheap because most will already be cached
+    
+    if file_headers is None:
+        file_headers = [None] * len(xdf_file_paths)
+
+    for file_header, file_path in zip(file_headers, xdf_file_paths):
+        ref_dt = None
+        if file_header is not None:
+            ref_dt = get_reference_datetime_from_xdf_header(file_header)
+        # ref_dt = get_reference_datetime_from_xdf_file(file_path=file_path, file_header=file_header)
+        if ref_dt is not None:
+            file_reference_datetimes[file_path] = ref_dt
+        else:
+            found_file_df_matches = xdf_recording_file_metadta_df[xdf_recording_file_metadta_df['src_file'].apply(lambda s: Path(s).resolve()) == Path(file_path).resolve()]
+            if len(found_file_df_matches) == 1:
+                # Safely fetch the only row, avoiding KeyErrors and other indexing errors
+                meas_datetime = found_file_df_matches.iloc[0]['meas_datetime'] if not found_file_df_matches.empty else None
+                ref_dt = meas_datetime # Timestamp('2026-02-04 09:58:42+0000', tz='UTC')
+            else:
+                print(f'WARN: failed to find xdf file metadata for file file_path: "{file_path.as_posix()}" in xdf_recording_file_metadta_df: {xdf_recording_file_metadta_df}\n\tfound_file_df_matches: {found_file_df_matches}')
+
+        if ref_dt is not None:
+            file_reference_datetimes[file_path] = ref_dt
+    ## END for file_header, file_path in zip(file_headers, xdf_file_paths):...
+    
+    # Find earliest reference datetime (common reference for all timestamps)
+    earliest_reference_datetime = None
+    if file_reference_datetimes:
+        earliest_reference_datetime = min(file_reference_datetimes.values())
+        print(f"Using earliest reference datetime: {earliest_reference_datetime} for timestamp normalization")
     
     # Group streams by name across all files
     streams_by_file = list(zip(streams_list, xdf_file_paths))
@@ -457,17 +580,58 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             elif stream_type != current_stream_type:
                 print(f"WARN: Stream '{stream_name}' has different types across files: {stream_type} vs {current_stream_type}")
             
-            timestamps = stream['time_stamps']
+            timestamps = stream['time_stamps'] # these already look correct, like unix global timestamps
             time_series = stream['time_series']
             
             if len(timestamps) == 0:
                 print(f"  Skipping empty stream from {file_path.name}")
                 continue
             
+            # Convert timestamps: from relative (to file's reference) to absolute, then to relative (to earliest reference)
+            file_ref_dt = file_reference_datetimes.get(file_path)
+            if (file_ref_dt is not None) and (timestamps is not None): # 
+                # Convert relative timestamps to absolute datetimes using file's reference
+                timestamps_absolute = [float_to_datetime(float(ts), file_ref_dt) for ts in timestamps]
+
+                #TODO 2026-02-04 05:15: - [ ] Changing from using relative to earliest reference to unix timestamps (absolute)
+                # # Convert absolute datetimes back to relative timestamps using earliest reference
+                # if (earliest_reference_datetime is not None):
+                #     timestamps = np.array([datetime_to_float(dt, earliest_reference_datetime) for dt in timestamps_absolute])
+
+                # Convert to unix timestamps (absolute) instead ______________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
+                timestamps = np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute]) ## this does actually make e09 instead of e06
+                ## yeah they work: [unix_timestamp_to_datetime(v) for v in np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute])] ## actually these are real datetimes, instead of  Timestamp('2026-02-04 21:20:49.471665+0000', tz='UTC') `timestamps_absolute`
+
+            else:
+                # Fallback: use timestamps as-is (relative to file start, which may cause misalignment)
+                timestamps = np.array([float(ts) for ts in timestamps])
+                if file_ref_dt is None:
+                    print(f"  WARN: No reference datetime found for {file_path.name}, timestamps may be misaligned")
+            
             stream_start = float(timestamps[0])
             stream_end = float(timestamps[-1])
             stream_duration = stream_end - stream_start
-            
+
+            # timestamps = np.array([unix_timestamp_to_datetime(datetime_to_unix_timestamp(dt)) for dt in timestamps_absolute])
+            timestamps = np.array([unix_timestamp_to_datetime(v) for v in timestamps])
+
+
+            ## copied directly from video_metadata_to_intervals_df(...) which works:
+            # timestamps = pd.to_datetime(timestamps).apply(lambda dt: dt.tz_localize('UTC') if dt.tzinfo is None else dt).values # ## yeah they work: [unix_timestamp_to_datetime(v) for v in np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute])] ## actually these are real datetimes, instead of  Timestamp('2026-02-04 21:20:49.471665+0000', tz='UTC') `timestamps_absolute`
+            # t_start_values = pd.to_datetime(starts).apply(lambda dt: dt.tz_localize('UTC') if dt.tzinfo is None else dt).values
+
+            ts_index = pd.to_datetime(timestamps)
+            ts_index = ts_index.tz_localize('UTC') if ts_index.tz is None else ts_index.tz_convert('UTC')
+            timestamps = ts_index.values # timestamps: array(['2026-02-04T21:20:47.722655000', '2026-02-04T21:20:47.753887000',
+                                                #    '2026-02-04T21:20:47.785120000', ...,
+                                                #    '2026-02-04T22:44:58.643416000', '2026-02-04T22:44:58.674648000',
+                                                #    '2026-02-04T22:44:58.705881000'], dtype='datetime64[ns]')
+
+            ## ALTERNATIVE post-hoc conversion if I didn't use datetime_to_unix_timestep(...) above:
+            # # store that as a datetime column (e.g. pd.Timestamp(...) or a datetime64 column) in the DataFrame.
+            # t_start_absolute = float_to_datetime(stream_start, earliest_reference_datetime)
+            # t_end_absolute = float_to_datetime(stream_end, earliest_reference_datetime)
+                        
             # Create interval DataFrame
             intervals_df = pd.DataFrame({
                 't_start': [stream_start],

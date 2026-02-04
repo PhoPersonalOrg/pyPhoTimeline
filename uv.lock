@@ -2202,6 +2202,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/fe/301e0936b79bcab4cacc7548bf2853fc28dced0a578bab1f7ef53c9aa75b/imageio-2.37.2-py3-none-any.whl", hash = "sha256:ad9adfb20335d718c03de457358ed69f141021a333c40a53e57273d8a5bd0b9b", size = 317646, upload-time = "2025-11-04T14:29:37.948Z" },
 ]
 
+[package.optional-dependencies]
+ffmpeg = [
+    { name = "imageio-ffmpeg" },
+    { name = "psutil" },
+]
+
 [[package]]
 name = "imageio-ffmpeg"
 version = "0.6.0"
@@ -3389,6 +3395,7 @@ dependencies = [
     { name = "pingouin" },
     { name = "portion" },
     { name = "python-benedict" },
+    { name = "rdp" },
     { name = "scikit-learn" },
     { name = "scikit-posthocs" },
     { name = "scipy" },
@@ -3424,6 +3431,7 @@ requires-dist = [
     { name = "pingouin", specifier = ">=0.5.3,<0.6" },
     { name = "portion", git = "https://github.com/CommanderPho/portion.git" },
     { name = "python-benedict", specifier = ">=0.28.3,<0.29" },
+    { name = "rdp", specifier = ">=0.8" },
     { name = "scikit-learn", specifier = ">=1.2.1,<2" },
     { name = "scikit-posthocs", specifier = ">=0.7.0,<0.8" },
     { name = "scipy", specifier = "~=1.6" },
@@ -4131,11 +4139,12 @@ wheels = [
 
 [[package]]
 name = "py-pho-timeline"
-version = "0.3.2"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "attrs" },
     { name = "awkward" },
+    { name = "imageio", extra = ["ffmpeg"] },
     { name = "nptyping" },
     { name = "numpy" },
     { name = "opencv-python" },
@@ -4148,12 +4157,14 @@ dependencies = [
     { name = "pyxdf" },
     { name = "qtpy" },
     { name = "scipy" },
+    { name = "vispy" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "attrs", specifier = ">=22.2.0,<23" },
     { name = "awkward", specifier = ">=2.8.11" },
+    { name = "imageio", extras = ["ffmpeg"], specifier = ">=2.37.2" },
     { name = "nptyping", specifier = ">=2.5.0" },
     { name = "numpy", specifier = "~=1.20" },
     { name = "opencv-python", specifier = ">=4.5.0" },
@@ -4166,6 +4177,7 @@ requires-dist = [
     { name = "pyxdf", specifier = ">=1.16.8" },
     { name = "qtpy", specifier = ">=2.0.0" },
     { name = "scipy", specifier = ">=1.13.1" },
+    { name = "vispy", specifier = ">=0.14.0" },
 ]
 
 [[package]]
@@ -4993,6 +5005,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/40/b4/a14dbeebf8ab08600
 wheels = [
     { url = "https://files.pythonhosted.org/packages/17/0c/b4ee3f929bbe564101f110080dcdd33d1181a6f8a041cc9e21d992509b52/quantities-0.16.2-py3-none-any.whl", hash = "sha256:bd5b1ed422770b7cd8952ccfccaf67a89024ae0ecb31b1eacbc7ff966899ab34", size = 103021, upload-time = "2025-04-11T14:16:10.524Z" },
 ]
+
+[[package]]
+name = "rdp"
+version = "0.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/67/42/80a54cc4387256335c32b48bd42db80967ab5f40d6ffcd8167b3dd988c11/rdp-0.8.tar.gz", hash = "sha256:19ec92f0803587891a00b439441e5e23fc9410500983f02941e4cf9ac3113e4b", size = 4382, upload-time = "2016-12-19T01:34:07.454Z" }
 
 [[package]]
 name = "referencing"

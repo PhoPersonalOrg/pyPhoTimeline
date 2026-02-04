@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 # from qtpy import QtWidgets, QtCore
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any, Sequence, Mapping
+from datetime import datetime
+from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 # import pyphoplacecellanalysis.External.pyqtgraph as pg
 # from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 # from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
@@ -108,7 +110,6 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         
         # Sort by time
         df_sorted = detail_data.sort_values('t')
-        t_values = df_sorted['t'].values
         
         assert (self.channel_names is not None)
         found_channel_names: List[str] = [k for k in self.channel_names if (k in df_sorted.columns)]
@@ -122,6 +123,16 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         # Normalize channels using shared helper to support per-group modes
         normalized_channel_df, (y_min, y_max) = self.compute_normalized_channels(detail_df=df_sorted, channel_names=found_channel_names)
         # normalized_channel_df = normalize_channels(df_sorted, found_channel_names, default_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds)
+
+        # Extract t_values aligned with normalized_channel_df's index to ensure shape matches
+        # normalized_channel_df may have fewer rows due to index intersection during normalization
+        t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
+        if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
+            # Convert datetime to Unix timestamps
+            from datetime import datetime
+            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
+        else:
+            t_values = t_col_aligned.values
 
         # Plot each channel with its distinct color
         for a_found_channel_name in found_channel_names:
@@ -178,8 +189,15 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
             if has_valid_detail_data:
                 # Try to get time column: use 't' if present, otherwise index values if they look like times
                 if 't' in detail_data.columns:
-                    t_start = float(detail_data['t'].min())
-                    t_end = float(detail_data['t'].max())
+                    t_min = detail_data['t'].min()
+                    t_max = detail_data['t'].max()
+                    # Convert datetime to Unix timestamp if needed
+                    if isinstance(t_min, (datetime, pd.Timestamp)):
+                        t_start = datetime_to_unix_timestamp(t_min)
+                        t_end = datetime_to_unix_timestamp(t_max)
+                    else:
+                        t_start = float(t_min)
+                        t_end = float(t_max)
                 else:
                     # Fallback: use DataFrame index if it is numeric and sorted
                     try:
@@ -203,7 +221,22 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
             ## interval is provided
             t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
             t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
-            t_end = t_start + t_duration
+            
+            # Handle datetime objects for t_end calculation
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                from datetime import timedelta
+                t_end = t_start + timedelta(seconds=float(t_duration))
+                # Convert to Unix timestamp for return value
+                t_start = datetime_to_unix_timestamp(t_start)
+                t_end = datetime_to_unix_timestamp(t_end)
+            else:
+                t_end = t_start + t_duration
+        
+        # Ensure t_start and t_end are floats (Unix timestamps) for return value
+        if isinstance(t_start, (datetime, pd.Timestamp)):
+            t_start = datetime_to_unix_timestamp(t_start)
+        if isinstance(t_end, (datetime, pd.Timestamp)):
+            t_end = datetime_to_unix_timestamp(t_end)
         
         if detail_data is None or len(detail_data) == 0:
             return (t_start, t_end, 0.0, 1.0)
@@ -287,7 +320,9 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
 
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
-        return f"motion_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+        # Delegate to base implementation which handles datetime/timedelta correctly
+        # and includes the datasource name to avoid collisions across tracks.
+        return super().get_detail_cache_key(interval)
 
     @classmethod
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None) -> 'MotionTrackDatasource':

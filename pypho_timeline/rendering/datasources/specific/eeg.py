@@ -2,8 +2,9 @@ import numpy as np
 import pandas as pd
 # from qtpy import QtWidgets, QtCore
 from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence
+from datetime import datetime
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
-
+from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGPlotDetailRenderer - Renders eeg data as line plots.                                                                                                                                                                                                                              #
@@ -110,7 +111,6 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         
         # Sort by time
         df_sorted = detail_data.sort_values('t')
-        t_values = df_sorted['t'].values
         
         assert (self.channel_names is not None)
 
@@ -124,6 +124,15 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
 
         # Normalize channel columns using shared helper
         normalized_channel_df, (y_min, y_max) = self.compute_normalized_channels(detail_df=df_sorted, channel_names=found_channel_names)
+
+        # Extract t_values aligned with normalized_channel_df's index to ensure shape matches
+        # normalized_channel_df may have fewer rows due to index intersection during normalization
+        t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
+        if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
+            # Convert datetime to Unix timestamps
+            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
+        else:
+            t_values = t_col_aligned.values
 
         # Plot each channel with its distinct color
         for a_found_channel_name in found_channel_names:
@@ -178,8 +187,15 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
             if has_valid_detail_data:
                 # Try to get time column: use 't' if present, otherwise index values if they look like times
                 if 't' in detail_data.columns:
-                    t_start = float(detail_data['t'].min())
-                    t_end = float(detail_data['t'].max())
+                    t_min = detail_data['t'].min()
+                    t_max = detail_data['t'].max()
+                    # Convert datetime to Unix timestamp if needed
+                    if isinstance(t_min, (datetime, pd.Timestamp)):
+                        t_start = datetime_to_unix_timestamp(t_min)
+                        t_end = datetime_to_unix_timestamp(t_max)
+                    else:
+                        t_start = float(t_min)
+                        t_end = float(t_max)
                 else:
                     # Fallback: use DataFrame index if it is numeric and sorted
                     try:
@@ -221,9 +237,21 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
             y_max = max(detail_data[col].max() for col in channel_columns)
             # Add padding
             y_pad = (y_max - y_min) * 0.1 if y_max > y_min else 1.0
+            
+            # Convert t_start and t_end to Unix timestamps if they're datetime objects
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                t_start = datetime_to_unix_timestamp(t_start)
+            if isinstance(t_end, (datetime, pd.Timestamp)):
+                t_end = datetime_to_unix_timestamp(t_end)
+            
             return (t_start, t_end, (y_min - y_pad), (y_max + y_pad))
         else:
             # No channels found, use default bounds
+            # Convert t_start and t_end to Unix timestamps if they're datetime objects
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                t_start = datetime_to_unix_timestamp(t_start)
+            if isinstance(t_end, (datetime, pd.Timestamp)):
+                t_end = datetime_to_unix_timestamp(t_end)
             return (t_start, t_end, 0.0, 1.0)
 
 
@@ -310,7 +338,9 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
 
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
-        return f"eeg_{interval['t_start']:.3f}_{interval['t_duration']:.3f}"
+        # Delegate to base implementation which handles datetime/timedelta correctly
+        # and includes the datasource name to avoid collisions across tracks.
+        return super().get_detail_cache_key(interval)
 
     @classmethod
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None) -> 'EEGTrackDatasource':

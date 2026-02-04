@@ -144,16 +144,38 @@ class AsyncDetailFetcher(QtCore.QObject):
             callback: Optional callback function(track_id, cache_key, interval, data, error)
                      If None, the detail_data_ready signal will be emitted instead
         """
+        # #region agent log
+        import json
+        t_start_val = interval.get('t_start', None)
+        t_duration_val = interval.get('t_duration', None)
+        t_start_type = type(t_start_val).__name__ if t_start_val is not None else 'None'
+        t_duration_type = type(t_duration_val).__name__ if t_duration_val is not None else 'None'
+        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'async_detail_fetcher.py:147', 'message': 'fetch_detail_async entry', 'data': {'track_id': track_id, 't_start': str(t_start_val), 't_start_type': t_start_type, 't_duration': str(t_duration_val), 't_duration_type': t_duration_type}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+        # #endregion
         cache_key = datasource.get_detail_cache_key(interval)
+        # #region agent log
+        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'async_detail_fetcher.py:148', 'message': 'cache_key generated', 'data': {'cache_key': cache_key, 'cache_key_type': type(cache_key).__name__}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+        # #endregion
         logger.debug(f"AsyncDetailFetcher.fetch_detail_async(track_id={track_id}, cache_key='{cache_key}')")
         
         # Check cache first
         with self._lock:
+            # #region agent log
+            cache_keys_list = list(self._cache.keys())
+            with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B', 'location': 'async_detail_fetcher.py:151', 'message': 'cache lookup before check', 'data': {'cache_key': cache_key, 'cache_size': len(self._cache), 'cache_keys_sample': cache_keys_list[:5] if len(cache_keys_list) > 0 else []}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+            # #endregion
             if cache_key in self._cache:
                 # Cache hit - return immediately
                 data = self._cache[cache_key]
                 # Move to end (LRU)
                 self._cache.move_to_end(cache_key)
+                # #region agent log
+                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B', 'location': 'async_detail_fetcher.py:157', 'message': 'cache HIT', 'data': {'cache_key': cache_key, 'data_type': type(data).__name__}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+                # #endregion
                 logger.debug(f"AsyncDetailFetcher.fetch_detail_async() - cache HIT for cache_key='{cache_key}', returning immediately")
                 # Convert Series to DataFrame for DetailRenderer compatibility
                 interval_df = interval.to_frame().T
@@ -172,6 +194,10 @@ class AsyncDetailFetcher(QtCore.QObject):
                     logger.debug(f"AsyncDetailFetcher.fetch_detail_async() - duplicate fetch request for cache_key='{cache_key}', already pending")
                     return
         
+        # #region agent log
+        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B', 'location': 'async_detail_fetcher.py:175', 'message': 'cache MISS', 'data': {'cache_key': cache_key}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+        # #endregion
         logger.debug(f"AsyncDetailFetcher.fetch_detail_async() - cache MISS for cache_key='{cache_key}', creating worker")
         
         # Store callback for later use in _on_worker_finished
@@ -249,8 +275,17 @@ class AsyncDetailFetcher(QtCore.QObject):
             
             # Cache the data if successful
             if error is None and detail_data is not None:
+                # #region agent log
+                import json
+                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'C', 'location': 'async_detail_fetcher.py:251', 'message': 'storing in cache', 'data': {'cache_key': cache_key, 'cache_key_type': type(cache_key).__name__, 'data_type': type(detail_data).__name__, 'cache_size_before': len(self._cache)}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+                # #endregion
                 self._cache[cache_key] = detail_data
                 self._cache.move_to_end(cache_key)
+                # #region agent log
+                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'C', 'location': 'async_detail_fetcher.py:254', 'message': 'stored in cache', 'data': {'cache_key': cache_key, 'cache_size_after': len(self._cache)}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+                # #endregion
                 logger.debug(f"AsyncDetailFetcher._on_worker_finished() - cached data for cache_key='{cache_key}', cache_size={len(self._cache)}")
                 
                 # Evict if cache too large
@@ -269,6 +304,11 @@ class AsyncDetailFetcher(QtCore.QObject):
             except Exception as e:
                 logger.error(f"AsyncDetailFetcher._on_worker_finished() - error in callback for cache_key='{cache_key}': {e}", exc_info=True)
         else:
+            # #region agent log
+            import json
+            with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
+                f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'D', 'location': 'async_detail_fetcher.py:272', 'message': 'emitting detail_data_ready signal', 'data': {'track_id': track_id, 'cache_key': cache_key, 'interval_shape': list(interval.shape) if hasattr(interval, 'shape') else 'N/A', 'detail_data_type': type(detail_data).__name__ if detail_data is not None else 'None', 'has_error': error is not None}, 'timestamp': __import__('time').time() * 1000}) + '\n')
+            # #endregion
             logger.debug(f"AsyncDetailFetcher._on_worker_finished() - emitting detail_data_ready signal for cache_key='{cache_key}'")
             self.detail_data_ready.emit(track_id, cache_key, interval, detail_data, error)
     
