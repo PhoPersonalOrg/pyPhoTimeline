@@ -13,7 +13,7 @@ try:
 except ImportError:
     CV2_AVAILABLE = False
 
-from pypho_timeline.utils.video_metadata import VideoMetadataParser
+from phopylslhelper.file_metadata_caching.video_metadata import VideoMetadataParser
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
         
 

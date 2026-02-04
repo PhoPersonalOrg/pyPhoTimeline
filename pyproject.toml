@@ -22,11 +22,13 @@ dependencies = [
     "opencv-python>=4.5.0",
     "imageio[ffmpeg]>=2.37.2",
     "vispy>=0.14.0",
+    "phopylslhelper>=1.0.0",
 ]
 
 [tool.uv.sources]
 pyphoplacecellanalysis = { path = "../pyPhoPlaceCellAnalysis", editable = true }
 pyphocorehelpers = { path = "../pyPhoCoreHelpers", editable = true }
+phopylslhelper = { path = "../PhoPyLSLhelper", editable = true }
 
 [build-system]
 requires = ["setuptools>=80.9.0", "wheel>=0.45.1"]
