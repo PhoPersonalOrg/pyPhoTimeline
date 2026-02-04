@@ -1021,10 +1021,7 @@ class TimelineBuilder:
                     a_plot_item.setXRange(unix_start, unix_end, padding=0)
                 else:
                     ## use_absolute_datetime_track_mode - use the datetimes directly
-                    unix_start = datetime_to_unix_timestamp(timeline.total_data_start_time)
-                    unix_end = datetime_to_unix_timestamp(timeline.total_data_end_time)
-                    # a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0) ## performs So min and max (your timeline.total_data_start_time and timeline.total_data_end_time) are datetime objects. In Python, datetime + datetime is invalid (only datetime - datetime or datetime + timedelta are defined), so you get that TypeError.
-                    a_plot_item.setXRange(unix_start, unix_end, padding=0)
+                    a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0)
 
                 a_plot_item.setLabel('bottom', 'Time')
             elif (timeline.reference_datetime is not None):
