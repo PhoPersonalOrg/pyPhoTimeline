@@ -591,7 +591,8 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             file_ref_dt = file_reference_datetimes.get(file_path)
             if (file_ref_dt is not None) and (timestamps is not None): # 
                 # Convert relative timestamps to absolute datetimes using file's reference
-                timestamps_absolute = [float_to_datetime(float(ts), file_ref_dt) for ts in timestamps]
+                # timestamps_absolute = [float_to_datetime(float(ts), file_ref_dt) for ts in timestamps]
+                timestamps_absolute = float_to_datetime(timestamps, file_ref_dt) ## use fectorized version
 
                 #TODO 2026-02-04 05:15: - [ ] Changing from using relative to earliest reference to unix timestamps (absolute)
                 # # Convert absolute datetimes back to relative timestamps using earliest reference
@@ -599,7 +600,8 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                 #     timestamps = np.array([datetime_to_float(dt, earliest_reference_datetime) for dt in timestamps_absolute])
 
                 # Convert to unix timestamps (absolute) instead ______________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
-                timestamps = np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute]) ## this does actually make e09 instead of e06
+                # timestamps = np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute]) ## this does actually make e09 instead of e06
+                timestamps = datetime_to_unix_timestamp(timestamps_absolute) ## use fectorized version
                 ## yeah they work: [unix_timestamp_to_datetime(v) for v in np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute])] ## actually these are real datetimes, instead of  Timestamp('2026-02-04 21:20:49.471665+0000', tz='UTC') `timestamps_absolute`
 
             else:
@@ -613,7 +615,8 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             stream_duration = stream_end - stream_start
 
             # timestamps = np.array([unix_timestamp_to_datetime(datetime_to_unix_timestamp(dt)) for dt in timestamps_absolute])
-            timestamps = np.array([unix_timestamp_to_datetime(v) for v in timestamps])
+            # timestamps = np.array([unix_timestamp_to_datetime(v) for v in timestamps])
+            timestamps = unix_timestamp_to_datetime(timestamps) ## use fectorized version
 
 
             ## copied directly from video_metadata_to_intervals_df(...) which works:
