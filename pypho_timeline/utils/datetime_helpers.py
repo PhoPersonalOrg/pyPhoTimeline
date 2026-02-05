@@ -7,8 +7,9 @@ and extracting reference datetimes from XDF file headers.
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, List, Tuple, Dict, Any
+from typing import Optional, List, Tuple, Dict, Any, Union
 import logging
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -58,77 +59,77 @@ def create_am_pm_date_axis(orientation='bottom'):
         return None
 
 
-def determine_timelike_value_format(value):
-    """ Unfinished 
-    #TODO 2026-02-04 02:47: - [ ] broken out of `get_reference_datetime_from_xdf_header` for reuse.
-    """
+# def determine_timelike_value_format(value):
+#     """ Unfinished 
+#     #TODO 2026-02-04 02:47: - [ ] broken out of `get_reference_datetime_from_xdf_header` for reuse.
+#     """
 
 
-    # Check the format of start_t (is it datetime, Unix timestamp, or relative seconds)?
-    start_t_type = type(start_t)
-    is_datetime = False
-    is_unix_timestamp = False
-    is_relative_seconds = False
+#     # Check the format of start_t (is it datetime, Unix timestamp, or relative seconds)?
+#     start_t_type = type(start_t)
+#     is_datetime = False
+#     is_unix_timestamp = False
+#     is_relative_seconds = False
 
-    if isinstance(start_t, (pd.Timestamp, datetime)):
-        is_datetime = True
-    elif isinstance(start_t, (float, int)):
-        # Heuristic: treat as Unix timestamp if > 10^9, otherwise relative seconds
-        # (This threshold is approximately 2001-09-09 in seconds since epoch)
-        if start_t > 1e9:
-            is_unix_timestamp = True
-        else:
-            is_relative_seconds = True
-    else:
-        # Unknown format; handle accordingly or log warning if desired
-        pass
+#     if isinstance(start_t, (pd.Timestamp, datetime)):
+#         is_datetime = True
+#     elif isinstance(start_t, (float, int)):
+#         # Heuristic: treat as Unix timestamp if > 10^9, otherwise relative seconds
+#         # (This threshold is approximately 2001-09-09 in seconds since epoch)
+#         if start_t > 1e9:
+#             is_unix_timestamp = True
+#         else:
+#             is_relative_seconds = True
+#     else:
+#         # Unknown format; handle accordingly or log warning if desired
+#         pass
     
-    #TODO 2026-02-04 03:24: - [ ] Seperate implementation, more complete but with no heuristic and forcibly assumes timestamp format
+#     #TODO 2026-02-04 03:24: - [ ] Seperate implementation, more complete but with no heuristic and forcibly assumes timestamp format
 
-    # Try to parse as datetime
-    if isinstance(value, (int, float)):
-        # Unix timestamp (seconds since epoch)
-        try:
-            dt = datetime.fromtimestamp(value, tz=timezone.utc)
-            return dt
-        except (ValueError, OSError):
-            # Try as milliseconds if seconds fails
-            try:
-                dt = datetime.fromtimestamp(value / 1000.0, tz=timezone.utc)
-                return dt
-            except (ValueError, OSError):
-                logger.warning(f"Could not parse timestamp value {value} as Unix timestamp")
-                return None
-    elif isinstance(value, str):
-        # Try ISO format or other string formats
-        try:
-            # Try ISO format first
-            dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
-            # Make timezone-aware if naive
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
-        except ValueError:
-            # Try other common formats
-            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f']:
-                try:
-                    dt = datetime.strptime(value, fmt)
-                    # Make timezone-aware (assume UTC)
-                    dt = dt.replace(tzinfo=timezone.utc)
-                    return dt
-                except ValueError:
-                    continue
-            logger.warning(f"Could not parse datetime string: {value}")
-            return None
+#     # Try to parse as datetime
+#     if isinstance(value, (int, float)):
+#         # Unix timestamp (seconds since epoch)
+#         try:
+#             dt = datetime.fromtimestamp(value, tz=timezone.utc)
+#             return dt
+#         except (ValueError, OSError):
+#             # Try as milliseconds if seconds fails
+#             try:
+#                 dt = datetime.fromtimestamp(value / 1000.0, tz=timezone.utc)
+#                 return dt
+#             except (ValueError, OSError):
+#                 logger.warning(f"Could not parse timestamp value {value} as Unix timestamp")
+#                 return None
+#     elif isinstance(value, str):
+#         # Try ISO format or other string formats
+#         try:
+#             # Try ISO format first
+#             dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+#             # Make timezone-aware if naive
+#             if dt.tzinfo is None:
+#                 dt = dt.replace(tzinfo=timezone.utc)
+#             return dt
+#         except ValueError:
+#             # Try other common formats
+#             for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f']:
+#                 try:
+#                     dt = datetime.strptime(value, fmt)
+#                     # Make timezone-aware (assume UTC)
+#                     dt = dt.replace(tzinfo=timezone.utc)
+#                     return dt
+#                 except ValueError:
+#                     continue
+#             logger.warning(f"Could not parse datetime string: {value}")
+#             return None
 
-    elif isinstance(value, datetime):
-        # Make timezone-aware if naive
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value
+#     elif isinstance(value, datetime):
+#         # Make timezone-aware if naive
+#         if value.tzinfo is None:
+#             value = value.replace(tzinfo=timezone.utc)
+#         return value
 
-    else:
-        raise NotImplementedError(f'unexpected type for value: {type(value)}, value: {value}')
+#     else:
+#         raise NotImplementedError(f'unexpected type for value: {type(value)}, value: {value}')
 
         
 
@@ -225,18 +226,32 @@ def get_reference_datetime_from_xdf_header(file_header: dict) -> Optional[dateti
 # ==================================================================================================================================================================================================================================================================================== #
 # unix-timestamp-float <=> datetime                                                                                                                                                                                                                                                    #
 # ==================================================================================================================================================================================================================================================================================== #
-def datetime_to_unix_timestamp(dt: datetime) -> float:
+def datetime_to_unix_timestamp(dt: Union[datetime, np.ndarray]) -> Union[float, List[float]]:
     """Convert datetime to Unix timestamp (seconds since 1970-01-01 UTC).
     
     Reciprocal of `unix_timestamp_to_datetime`: round-tripping preserves the instant.
     This function safely handles both naive and timezone-aware datetimes.
     
     Args:
-        dt: datetime object (naive or timezone-aware)
+        dt: datetime object (naive or timezone-aware) or numpy array of datetime objects
         
     Returns:
-        Unix timestamp as float (seconds since epoch)
+        Unix timestamp as float (seconds since epoch) for scalar input,
+        or List[float] for array input
     """
+    if isinstance(dt, np.ndarray):
+        # Convert to pandas DatetimeIndex for vectorized processing
+        dt_series = pd.to_datetime(dt)
+        # Ensure UTC timezone
+        if dt_series.tz is None:
+            dt_series = dt_series.tz_localize('UTC')
+        else:
+            dt_series = dt_series.tz_convert('UTC')
+        # Convert to Unix timestamps (nanoseconds to seconds)
+        timestamps = (dt_series.astype('int64') / 1e9).tolist()
+        return timestamps
+    
+    # Scalar value
     # If naive, assume UTC
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -244,7 +259,7 @@ def datetime_to_unix_timestamp(dt: datetime) -> float:
     return dt.timestamp()
 
 
-def unix_timestamp_to_datetime(ts: float) -> datetime:
+def unix_timestamp_to_datetime(ts: Union[float, np.ndarray]) -> Union[datetime, List[datetime]]:
     """Convert Unix timestamp (seconds since 1970-01-01 UTC) to timezone-aware UTC datetime.
 
     Reciprocal of `datetime_to_unix_timestamp`: round-tripping preserves the instant, i.e.
@@ -253,34 +268,87 @@ def unix_timestamp_to_datetime(ts: float) -> datetime:
     These two functions are reciprocals of one another.
 
     Args:
-        ts: Unix timestamp as float (seconds since epoch).
+        ts: Unix timestamp as float (seconds since epoch) or numpy array of timestamps.
 
     Returns:
-        Timezone-aware datetime in UTC.
+        Timezone-aware datetime in UTC for scalar input, or List[datetime] for array input.
     """
+    if isinstance(ts, np.ndarray):
+        # Use pandas vectorized conversion
+        datetimes = pd.to_datetime(ts, unit='s', utc=True).tolist()
+        # Convert Timestamp objects to datetime objects
+        return [dt.to_pydatetime() if isinstance(dt, pd.Timestamp) else dt for dt in datetimes]
+    
+    # Scalar value
     return datetime.fromtimestamp(ts, tz=timezone.utc)
 
 
 # ==================================================================================================================================================================================================================================================================================== #
 # float <=> datetime                                                                                                                                                                                                                                                                   #
 # ==================================================================================================================================================================================================================================================================================== #
-def datetime_to_float(dt: datetime, reference_datetime: datetime) -> float:
+def datetime_to_float(dt: Union[datetime, np.ndarray], reference_datetime: datetime) -> Union[float, List[float]]:
     """Convert datetime back to float timestamp relative to reference.
     
     Args:
-        dt: datetime object representing absolute time
+        dt: datetime object representing absolute time, or numpy array of datetime objects
         reference_datetime: Reference datetime object
         
     Returns:
-        Float timestamp in seconds (relative to reference)
+        Float timestamp in seconds (relative to reference) for scalar input,
+        or List[float] for array input
     """
     if reference_datetime is None:
         raise ValueError("reference_datetime cannot be None")
-    delta = dt - reference_datetime
+    
+    # Normalize reference_datetime to timezone-aware datetime
+    if isinstance(reference_datetime, pd.Timestamp):
+        ref_dt = reference_datetime.to_pydatetime()
+    else:
+        ref_dt = reference_datetime
+    
+    # Make reference_datetime timezone-aware if it's naive
+    if ref_dt.tzinfo is None:
+        ref_dt = ref_dt.replace(tzinfo=timezone.utc)
+    else:
+        ref_dt = ref_dt.astimezone(timezone.utc)
+    
+    if isinstance(dt, np.ndarray):
+        # Vectorized conversion using pandas
+        dt_series = pd.to_datetime(dt)
+        # Ensure UTC timezone
+        if dt_series.tz is None:
+            dt_series = dt_series.tz_localize('UTC')
+        else:
+            dt_series = dt_series.tz_convert('UTC')
+        # Convert reference to pandas Timestamp for subtraction
+        ref_ts = pd.Timestamp(ref_dt)
+        # Calculate differences and convert to seconds
+        deltas = (dt_series - ref_ts).total_seconds()
+        # Convert to list (handles both Series and array-like)
+        if hasattr(deltas, 'tolist'):
+            return deltas.tolist()
+        elif hasattr(deltas, 'values'):
+            return deltas.values.tolist()
+        else:
+            return list(deltas)
+    
+    # Scalar value
+    # Ensure dt is timezone-aware
+    if isinstance(dt, pd.Timestamp):
+        dt_py = dt.to_pydatetime()
+    else:
+        dt_py = dt
+    
+    if dt_py.tzinfo is None:
+        dt_py = dt_py.replace(tzinfo=timezone.utc)
+    else:
+        dt_py = dt_py.astimezone(timezone.utc)
+    
+    delta = dt_py - ref_dt
     return delta.total_seconds()
 
 
-def float_to_datetime(timestamp: float, reference_datetime: datetime) -> datetime:
+def float_to_datetime(timestamp: Union[float, np.ndarray], reference_datetime: datetime) -> Union[datetime, List[datetime]]:
     """Convert a relative float timestamp to an absolute datetime.
 
     Note:
@@ -289,31 +357,61 @@ def float_to_datetime(timestamp: float, reference_datetime: datetime) -> datetim
         datetime-like value directly (normalized to timezone-aware UTC).
     
     Args:
-        timestamp: Float timestamp in seconds (relative to reference)
-        reference_datetime: Reference datetime object
+        timestamp: Float timestamp in seconds (relative to reference), or numpy array of timestamps
+        reference_datetime: Reference datetime object (can be datetime, pd.Timestamp, etc.)
         
     Returns:
-        datetime object representing absolute time (timezone-aware, UTC)
+        datetime object (for scalar input) or List[datetime] (for array input), both timezone-aware UTC
     """
     if reference_datetime is None:
         raise ValueError("reference_datetime cannot be None")
 
-    # If already datetime-like, return it directly (treat as absolute time).
+    # If already datetime-like (scalar), return it directly (treat as absolute time).
     if isinstance(timestamp, (datetime, pd.Timestamp)):
         dt = pd.Timestamp(timestamp)
         if dt.tzinfo is None:
             dt = dt.tz_localize(timezone.utc)
         return dt.to_pydatetime()
     
-    # Make reference_datetime timezone-aware if it's naive
-    if reference_datetime.tzinfo is None:
-        # Assume UTC if naive
-        reference_datetime = reference_datetime.replace(tzinfo=timezone.utc)
+    # Normalize reference_datetime to timezone-aware datetime
+    if isinstance(reference_datetime, pd.Timestamp):
+        ref_dt = reference_datetime.to_pydatetime()
+    else:
+        ref_dt = reference_datetime
     
-    # Ensure numeric seconds
-    seconds = float(timestamp)
-    result = reference_datetime + timedelta(seconds=seconds)
-    return result
+    # Make reference_datetime timezone-aware if it's naive
+    if ref_dt.tzinfo is None:
+        # Assume UTC if naive
+        ref_dt = ref_dt.replace(tzinfo=timezone.utc)
+    else:
+        # Ensure UTC timezone
+        ref_dt = ref_dt.astimezone(timezone.utc)
+    
+    # Check if timestamp is a numpy array
+    if isinstance(timestamp, np.ndarray):
+        # Check if array contains datetime-like values
+        if timestamp.dtype.kind == 'M' or (timestamp.dtype == object and timestamp.size > 0 and isinstance(timestamp.flat[0], (datetime, pd.Timestamp))):
+            # Array of datetime objects - normalize each
+            timestamps_absolute = []
+            for ts in timestamp:
+                dt = pd.Timestamp(ts)
+                if dt.tzinfo is None:
+                    dt = dt.tz_localize(timezone.utc)
+                else:
+                    dt = dt.tz_convert(timezone.utc)
+                timestamps_absolute.append(dt.to_pydatetime())
+            return timestamps_absolute
+        
+        # Array of numeric values - vectorized conversion using pandas
+        timestamps_absolute = (ref_dt + pd.to_timedelta(timestamp, unit='s')).tolist()
+        return timestamps_absolute
+    
+    else:
+        # Scalar value:
+        # Ensure numeric seconds
+        seconds = float(timestamp)
+        result = ref_dt + timedelta(seconds=seconds)
+        return result
 
 
 
@@ -376,7 +474,6 @@ def get_earliest_reference_datetime(file_headers: list, datasources: list) -> Op
     # Last resort: return Unix epoch (timezone-aware, UTC)
     logger.warning("No reference datetime found, using Unix epoch (1970-01-01 UTC)")
     return UNIX_EPOCH_UTC
-
 
 
 def _normalize_datetime_to_utc_naive(series: pd.Series) -> pd.Series:
