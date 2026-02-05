@@ -226,20 +226,20 @@ def get_reference_datetime_from_xdf_header(file_header: dict) -> Optional[dateti
 # ==================================================================================================================================================================================================================================================================================== #
 # unix-timestamp-float <=> datetime                                                                                                                                                                                                                                                    #
 # ==================================================================================================================================================================================================================================================================================== #
-def datetime_to_unix_timestamp(dt: Union[datetime, np.ndarray]) -> Union[float, List[float]]:
+def datetime_to_unix_timestamp(dt: Union[datetime, np.ndarray, List[datetime]]) -> Union[float, List[float]]:
     """Convert datetime to Unix timestamp (seconds since 1970-01-01 UTC).
     
     Reciprocal of `unix_timestamp_to_datetime`: round-tripping preserves the instant.
     This function safely handles both naive and timezone-aware datetimes.
     
     Args:
-        dt: datetime object (naive or timezone-aware) or numpy array of datetime objects
+        dt: datetime object (naive or timezone-aware), numpy array, or list of datetime objects
         
     Returns:
         Unix timestamp as float (seconds since epoch) for scalar input,
-        or List[float] for array input
+        or List[float] for array/list input
     """
-    if isinstance(dt, np.ndarray):
+    if isinstance(dt, (np.ndarray, list)):
         # Convert to pandas DatetimeIndex for vectorized processing
         dt_series = pd.to_datetime(dt)
         # Ensure UTC timezone
@@ -259,7 +259,7 @@ def datetime_to_unix_timestamp(dt: Union[datetime, np.ndarray]) -> Union[float, 
     return dt.timestamp()
 
 
-def unix_timestamp_to_datetime(ts: Union[float, np.ndarray]) -> Union[datetime, List[datetime]]:
+def unix_timestamp_to_datetime(ts: Union[float, np.ndarray, List[float]]) -> Union[datetime, List[datetime]]:
     """Convert Unix timestamp (seconds since 1970-01-01 UTC) to timezone-aware UTC datetime.
 
     Reciprocal of `datetime_to_unix_timestamp`: round-tripping preserves the instant, i.e.
@@ -268,12 +268,12 @@ def unix_timestamp_to_datetime(ts: Union[float, np.ndarray]) -> Union[datetime, 
     These two functions are reciprocals of one another.
 
     Args:
-        ts: Unix timestamp as float (seconds since epoch) or numpy array of timestamps.
+        ts: Unix timestamp as float (seconds since epoch), numpy array, or list of timestamps.
 
     Returns:
-        Timezone-aware datetime in UTC for scalar input, or List[datetime] for array input.
+        Timezone-aware datetime in UTC for scalar input, or List[datetime] for array/list input.
     """
-    if isinstance(ts, np.ndarray):
+    if isinstance(ts, (np.ndarray, list)):
         # Use pandas vectorized conversion
         datetimes = pd.to_datetime(ts, unit='s', utc=True).tolist()
         # Convert Timestamp objects to datetime objects
@@ -286,16 +286,16 @@ def unix_timestamp_to_datetime(ts: Union[float, np.ndarray]) -> Union[datetime, 
 # ==================================================================================================================================================================================================================================================================================== #
 # float <=> datetime                                                                                                                                                                                                                                                                   #
 # ==================================================================================================================================================================================================================================================================================== #
-def datetime_to_float(dt: Union[datetime, np.ndarray], reference_datetime: datetime) -> Union[float, List[float]]:
+def datetime_to_float(dt: Union[datetime, np.ndarray, List[datetime]], reference_datetime: datetime) -> Union[float, List[float]]:
     """Convert datetime back to float timestamp relative to reference.
     
     Args:
-        dt: datetime object representing absolute time, or numpy array of datetime objects
+        dt: datetime object representing absolute time, numpy array, or list of datetime objects
         reference_datetime: Reference datetime object
         
     Returns:
         Float timestamp in seconds (relative to reference) for scalar input,
-        or List[float] for array input
+        or List[float] for array/list input
     """
     if reference_datetime is None:
         raise ValueError("reference_datetime cannot be None")
@@ -312,7 +312,7 @@ def datetime_to_float(dt: Union[datetime, np.ndarray], reference_datetime: datet
     else:
         ref_dt = ref_dt.astimezone(timezone.utc)
     
-    if isinstance(dt, np.ndarray):
+    if isinstance(dt, (np.ndarray, list)):
         # Vectorized conversion using pandas
         dt_series = pd.to_datetime(dt)
         # Ensure UTC timezone
@@ -348,7 +348,7 @@ def datetime_to_float(dt: Union[datetime, np.ndarray], reference_datetime: datet
     return delta.total_seconds()
 
 
-def float_to_datetime(timestamp: Union[float, np.ndarray], reference_datetime: datetime) -> Union[datetime, List[datetime]]:
+def float_to_datetime(timestamp: Union[float, np.ndarray, List[float]], reference_datetime: datetime) -> Union[datetime, List[datetime]]:
     """Convert a relative float timestamp to an absolute datetime.
 
     Note:
@@ -357,11 +357,11 @@ def float_to_datetime(timestamp: Union[float, np.ndarray], reference_datetime: d
         datetime-like value directly (normalized to timezone-aware UTC).
     
     Args:
-        timestamp: Float timestamp in seconds (relative to reference), or numpy array of timestamps
+        timestamp: Float timestamp in seconds (relative to reference), numpy array, or list of timestamps
         reference_datetime: Reference datetime object (can be datetime, pd.Timestamp, etc.)
         
     Returns:
-        datetime object (for scalar input) or List[datetime] (for array input), both timezone-aware UTC
+        datetime object (for scalar input) or List[datetime] (for array/list input), both timezone-aware UTC
     """
     if reference_datetime is None:
         raise ValueError("reference_datetime cannot be None")
@@ -387,11 +387,21 @@ def float_to_datetime(timestamp: Union[float, np.ndarray], reference_datetime: d
         # Ensure UTC timezone
         ref_dt = ref_dt.astimezone(timezone.utc)
     
-    # Check if timestamp is a numpy array
-    if isinstance(timestamp, np.ndarray):
-        # Check if array contains datetime-like values
-        if timestamp.dtype.kind == 'M' or (timestamp.dtype == object and timestamp.size > 0 and isinstance(timestamp.flat[0], (datetime, pd.Timestamp))):
-            # Array of datetime objects - normalize each
+    # Check if timestamp is a numpy array or list
+    if isinstance(timestamp, (np.ndarray, list)):
+        # Check if array/list contains datetime-like values
+        is_datetime_array = False
+        if isinstance(timestamp, np.ndarray):
+            # For numpy arrays, check dtype
+            if timestamp.dtype.kind == 'M' or (timestamp.dtype == object and timestamp.size > 0 and isinstance(timestamp.flat[0], (datetime, pd.Timestamp))):
+                is_datetime_array = True
+        else:
+            # For lists, check first element if list is not empty
+            if len(timestamp) > 0 and isinstance(timestamp[0], (datetime, pd.Timestamp)):
+                is_datetime_array = True
+        
+        if is_datetime_array:
+            # Array/list of datetime objects - normalize each
             timestamps_absolute = []
             for ts in timestamp:
                 dt = pd.Timestamp(ts)
@@ -402,7 +412,7 @@ def float_to_datetime(timestamp: Union[float, np.ndarray], reference_datetime: d
                 timestamps_absolute.append(dt.to_pydatetime())
             return timestamps_absolute
         
-        # Array of numeric values - vectorized conversion using pandas
+        # Array/list of numeric values - vectorized conversion using pandas
         timestamps_absolute = (ref_dt + pd.to_timedelta(timestamp, unit='s')).tolist()
         return timestamps_absolute
     
