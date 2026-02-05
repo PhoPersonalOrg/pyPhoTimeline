@@ -145,7 +145,8 @@ class InstancedEpochQuadVisual(Visual):
                     r, g, b = c.getRgb()
                     return np.array([r/255.0, g/255.0, b/255.0, 1.0], dtype=np.float32)
             # Fallback: default blue color
-            return np.array([0.4, 0.6, 0.8, 0.588], dtype=np.float32)
+            print(f'WARNING: failed to extract_color from pen_or_brush: {pen_or_brush} in extract_color(...) - using default weird color')
+            return np.array([0.6, 0.6, 0.3, 0.588], dtype=np.float32)
         
         # Process each epoch
         for i, epoch in enumerate(epochs_data):
@@ -165,7 +166,8 @@ class InstancedEpochQuadVisual(Visual):
                 color = extract_color(pen)
             else:
                 # Default blue color matching VideoTrackDatasource
-                color = np.array([0.4, 0.6, 0.8, 0.588], dtype=np.float32)
+                print(f'WARNING: failed to extract_color from pen_or_brush: {pen} or {brush} - using default weird color')
+                color = np.array([0.9, 0.6, 0.8, 0.78], dtype=np.float32)
             
             # Set instance attributes
             shifts[i, 0] = t_start

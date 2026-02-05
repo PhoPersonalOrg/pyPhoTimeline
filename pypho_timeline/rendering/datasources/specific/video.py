@@ -400,7 +400,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         
         # Create pens and brushes with blue color (matching PhoOfflineEEGAnalysis)
         color = pg.mkColor(100, 150, 200, 255)
-        color.setAlphaF(0.588)  # 150/255 ≈ 0.588
+        color.setAlphaF(0.78)  # 150/255 ≈ 0.588
         pen = pg.mkPen(color, width=1)
         brush = pg.mkBrush(color)
         self.intervals_df['pen'] = [pen] * len(self.intervals_df)
