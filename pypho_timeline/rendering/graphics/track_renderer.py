@@ -66,6 +66,7 @@ class TrackRenderer(QtCore.QObject):
         self.detail_renderer: DetailRenderer = datasource.get_detail_renderer()
         self.detail_graphics: Dict[str, List[pg.GraphicsObject]] = {}  # cache_key -> graphics objects
         self.visible_intervals: Set[str] = set()  # Set of cache keys currently in viewport
+        self._overview_df: Optional[pd.DataFrame] = None  # Store overview intervals for mapping rectangle indices
         
         # Channel visibility state (for channel-based renderers)
         self.channel_visibility: Dict[str, bool] = {}
@@ -107,6 +108,9 @@ class TrackRenderer(QtCore.QObject):
             overview_df = self.datasource.get_overview_intervals()
             num_intervals = len(overview_df)
             logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - found {num_intervals} intervals in overview")
+            
+            # Store overview_df for mapping rectangle indices to intervals
+            self._overview_df = overview_df.copy()
             
             # Use vispy renderer if enabled
             if self.use_vispy and VispyVideoEpochRenderer is not None:
@@ -242,9 +246,54 @@ class TrackRenderer(QtCore.QObject):
                     return ''
                 format_label_fn = video_label_formatter
             
+            # Create detail render callback if detail renderer is available
+            detail_render_callback = None
+            if self.detail_renderer is not None:
+                def detail_render_callback_fn(rect_index: int, rect_data: IntervalRectsItemData):
+                    """Callback to render detailed view for a specific interval rectangle.
+                    
+                    Args:
+                        rect_index: Index of the rectangle in IntervalRectsItem.data
+                        rect_data: IntervalRectsItemData for the rectangle
+                    """
+                    logger.info(f"TrackRenderer[{self.track_id}] detail_render_callback called for rect_index={rect_index}")
+                    
+                    # Get the corresponding interval from overview_df
+                    if self._overview_df is None or rect_index >= len(self._overview_df):
+                        logger.warning(f"TrackRenderer[{self.track_id}] Invalid rect_index={rect_index} for overview_df length={len(self._overview_df) if self._overview_df is not None else 0}")
+                        return
+                    
+                    # Get interval as Series
+                    interval_series = self._overview_df.iloc[rect_index]
+                    
+                    # Convert to single-row DataFrame for _render_detail
+                    interval_df = self._overview_df.iloc[[rect_index]]
+                    
+                    # Get cache key
+                    cache_key = self.datasource.get_detail_cache_key(interval_series)
+                    logger.debug(f"TrackRenderer[{self.track_id}] detail_render_callback - cache_key='{cache_key}'")
+                    
+                    # Add to visible_intervals to prevent it from being cleared
+                    self.visible_intervals.add(cache_key)
+                    
+                    # Check if detail data is already cached
+                    cached_data = self.async_fetcher.get_cached_data(cache_key)
+                    if cached_data is not None:
+                        # Render immediately with cached data
+                        logger.debug(f"TrackRenderer[{self.track_id}] detail_render_callback - using cached data for cache_key='{cache_key}'")
+                        self._render_detail(interval_df, cache_key, cached_data)
+                        self.detail_loaded.emit(self.track_id, interval_df, cached_data)
+                    else:
+                        # Fetch asynchronously
+                        logger.debug(f"TrackRenderer[{self.track_id}] detail_render_callback - fetching detail data asynchronously for cache_key='{cache_key}'")
+                        self.async_fetcher.fetch_detail_async(self.track_id, interval_series, self.datasource)
+                        # Note: _on_detail_data_ready will be called when data is ready
+                
+                detail_render_callback = detail_render_callback_fn
+            
             # Build the interval rects item
             self.overview_rects_item = Render2DEventRectanglesHelper.build_IntervalRectsItem_from_interval_datasource(
-                self.datasource, format_label_fn=format_label_fn
+                self.datasource, format_label_fn=format_label_fn, detail_render_callback=detail_render_callback
             )
             
             # Remove old overview if exists

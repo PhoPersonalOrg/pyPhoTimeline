@@ -121,7 +121,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
     clicked = QtCore.pyqtSignal()
     ## data must have fields: start_t, series_vertical_offset, duration_t, series_height, pen, brush
 
-    def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False):
+    def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False, detail_render_callback=None):
         # menu creation is deferred because it is expensive and often
         # the user will never see the menu anyway.
         self.menu = None
@@ -141,6 +141,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
 
         self._current_hovered_item_tooltip_format_fn = format_tooltip_fn
         self._item_label_format_fn = format_label_fn
+        self._detail_render_callback = detail_render_callback  # Callback for detailed rendering: (rect_index: int, rect_data: IntervalRectsItemData) -> None
 
         self._labels = []
         self.rebuild_label_items()
@@ -457,7 +458,9 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
     def raiseContextMenu(self, ev):
         """Works to spawn the context menu in the appropriate location."""
         print(f'IntervalRectsItem.raiseContextMenu(ev: {ev})')
-        menu = self.getContextMenus()
+        # Store the clicked position to identify which rectangle was clicked
+        self._context_menu_event_pos = ev.pos()
+        menu = self.getContextMenus(ev)
         
         pos = ev.screenPos()
         menu.popup(QtCore.QPoint(int(pos.x()), int(pos.y())))
@@ -468,6 +471,13 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
         if self.menu is None:
             self.menu = QtWidgets.QMenu()
             self.menu.setTitle("IntervalRectItem options..")
+            
+            # Add "Render detailed" action if callback is provided
+            if self._detail_render_callback is not None:
+                render_detailed = QtGui.QAction("Render detailed", self.menu)
+                render_detailed.triggered.connect(self._on_render_detailed)
+                self.menu.addAction(render_detailed)
+                self.menu.render_detailed = render_detailed
             
             green = QtGui.QAction("Turn green", self.menu)
             green.triggered.connect(self.setGreen)
@@ -539,6 +549,28 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
 
     def setAlpha(self, a):
         self.setOpacity(a/255.)
+
+    def _on_render_detailed(self):
+        """Handle the 'Render detailed' context menu action."""
+        if self._detail_render_callback is None:
+            return
+        
+        # Get the clicked rectangle index from the stored event position
+        if hasattr(self, '_context_menu_event_pos'):
+            rect_index = self._get_rect_at_position(self._context_menu_event_pos)
+            if rect_index is not None and rect_index < len(self.data):
+                rect_data = self.data[rect_index]
+                # Convert tuple to IntervalRectsItemData if needed
+                if not isinstance(rect_data, IntervalRectsItemData):
+                    (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data
+                    rect_data = IntervalRectsItemData(start_t, series_vertical_offset, duration_t, series_height, pen, brush)
+                # Call the callback
+                try:
+                    self._detail_render_callback(rect_index, rect_data)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error in detail_render_callback: {e}", exc_info=True)
 
 
 class CustomLegendItemSample(ReprPrintableItemMixin, ItemSample):
