@@ -357,35 +357,13 @@ class TrackRenderer(QtCore.QObject):
             for idx, interval_series in intervals_df.iterrows():
                 # Convert Series to single-row DataFrame for DetailRenderer methods
                 interval_df = intervals_df.iloc[[idx]]
-                # #region agent log
-                import json
-                t_start_val = interval_series.get('t_start', None)
-                t_duration_val = interval_series.get('t_duration', None)
-                t_start_type = type(t_start_val).__name__ if t_start_val is not None else 'None'
-                t_duration_type = type(t_duration_val).__name__ if t_duration_val is not None else 'None'
-                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_renderer.py:308', 'message': 'update_viewport interval processing', 'data': {'track_id': self.track_id, 'idx': str(idx), 't_start': str(t_start_val), 't_start_type': t_start_type, 't_duration': str(t_duration_val), 't_duration_type': t_duration_type}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                # #endregion
                 cache_key = self.datasource.get_detail_cache_key(interval_series)
-                # #region agent log
-                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_renderer.py:311', 'message': 'cache_key generated in update_viewport', 'data': {'cache_key': cache_key, 'cache_key_type': type(cache_key).__name__}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                # #endregion
                 new_visible_keys.add(cache_key)
                 
                 # If not already visible and not already loaded, fetch detail
                 if cache_key not in self.visible_intervals:
                     # Check cache first for non-video tracks
-                    # #region agent log
-                    import json
-                    with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                        f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B', 'location': 'track_renderer.py:317', 'message': 'checking cache in update_viewport', 'data': {'cache_key': cache_key, 'visible_intervals_count': len(self.visible_intervals)}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                    # #endregion
                     cached_data = self.async_fetcher.get_cached_data(cache_key)
-                    # #region agent log
-                    with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                        f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B', 'location': 'track_renderer.py:318', 'message': 'cache lookup result', 'data': {'cache_key': cache_key, 'cached_data_is_none': cached_data is None, 'cached_data_type': type(cached_data).__name__ if cached_data is not None else 'None'}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                    # #endregion
                     if cached_data is not None:
                         # Use cached data immediately
                         cache_hits += 1
@@ -439,11 +417,6 @@ class TrackRenderer(QtCore.QObject):
             detail_data: The fetched detail data
             error: Error if fetch failed, None otherwise
         """
-        # #region agent log
-        import json
-        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'D', 'location': 'track_renderer.py:361', 'message': '_on_detail_data_ready entry', 'data': {'track_id': track_id, 'self_track_id': self.track_id, 'cache_key': cache_key, 'cache_key_in_visible': cache_key in self.visible_intervals, 'detail_data_type': type(detail_data).__name__ if detail_data is not None else 'None', 'has_error': error is not None}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-        # #endregion
         logger.debug(f"TrackRenderer[{self.track_id}] _on_detail_data_ready(track_id={track_id}, cache_key='{cache_key}')")
         # g.graphics.track_renderer - DEBUG - TrackRenderer[EEG_Epoc X] Rendered detail for cache_key='EEG_Epoc X_0.000_0.000' - created 14 graphics objects
         # 2026-02-03 11:27:20 - pypho_timeline.rendering.graphics.track_renderer - DEBUG - TrackRenderer[MOTION_Epoc X Motion] _on_detail_data_ready(track_id='EEG_Epoc X', cache_key='EEG_Epoc X_0.000_0.000')
