@@ -358,8 +358,8 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         self.intervals_df['series_height'] = 1.0
         
         # Create pens and brushes
-        color = pg.mkColor('blue')
-        color.setAlphaF(0.3)
+        color = pg.mkColor('grey')
+        color.setAlphaF(0.7)
         pen = pg.mkPen(color, width=1)
         brush = pg.mkBrush(color)
         self.intervals_df['pen'] = [pen] * len(self.intervals_df)

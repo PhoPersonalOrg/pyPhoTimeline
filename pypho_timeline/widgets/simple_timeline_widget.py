@@ -364,8 +364,10 @@ def perform_process_all_streams(streams):
         intervals_df['series_height'] = 0.9
         
         # Create pens and brushes
-        color = pg.mkColor('blue')
-        color.setAlphaF(0.3)
+        # color = pg.mkColor('blue')
+        # color.setAlphaF(0.3)
+        color = pg.mkColor('grey')
+        color.setAlphaF(0.7)
         pen = pg.mkPen(color, width=1)
         brush = pg.mkBrush(color)
         intervals_df['pen'] = [pen]
