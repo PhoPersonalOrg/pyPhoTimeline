@@ -4139,7 +4139,7 @@ wheels = [
 
 [[package]]
 name = "py-pho-timeline"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "attrs" },
@@ -4253,12 +4253,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d6/92/608fbdad566ebe499297a86aae5f2a5263818ceeecd16733006f1600403c/pycryptodome-3.23.0-pp310-pypy310_pp73-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:a7fc76bf273353dc7e5207d172b83f569540fc9a28d63171061c42e361d22353", size = 1702440, upload-time = "2025-05-17T17:21:27.991Z" },
     { url = "https://files.pythonhosted.org/packages/d1/92/2eadd1341abd2989cce2e2740b4423608ee2014acb8110438244ee97d7ff/pycryptodome-3.23.0-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:45c69ad715ca1a94f778215a11e66b7ff989d792a4d63b68dc586a1da1392ff5", size = 1803005, upload-time = "2025-05-17T17:21:31.37Z" },
 ]
-
-[[package]]
-name = "pycscope"
-version = "1.2.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/2c/6a/fdda7d0b7c2ad0ad4e654ff47743aeff8827967f3dfe3c2edcec3632ee14/pycscope-1.2.1.tar.gz", hash = "sha256:3c6a08263be7a49e71bc8dc0b6c70b3667f6760f9220005a9d452dee8c524950", size = 55680, upload-time = "2013-03-16T09:21:20.864Z" }
 
 [[package]]
 name = "pydantic"
@@ -4582,7 +4576,6 @@ dependencies = [
     { name = "params" },
     { name = "pip" },
     { name = "pybursts" },
-    { name = "pycscope" },
     { name = "pyopengl-accelerate" },
     { name = "pyphocorehelpers" },
     { name = "pyqt-builder" },
@@ -4623,7 +4616,6 @@ requires-dist = [
     { name = "params", specifier = ">=0.9.0,<0.10" },
     { name = "pip", specifier = "~=24.0" },
     { name = "pybursts", git = "https://github.com/CommanderPho/pybursts.git?rev=master" },
-    { name = "pycscope", specifier = ">=1.2.1,<2" },
     { name = "pyopengl-accelerate", specifier = ">=3.1.6,<4" },
     { name = "pyphocorehelpers", editable = "../pyPhoCoreHelpers" },
     { name = "pyqt-builder", specifier = ">=1.15.3,<2" },

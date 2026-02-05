@@ -118,7 +118,8 @@ class TimelineBuilder:
         # Use multi-file method for backward compatibility
         return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size)
     
-    # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
+
+    # @function_attributes(short_name=None, tags=['MAIN', 'used], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
     def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from multiple XDF files, merging streams by name.
         
@@ -664,6 +665,8 @@ class TimelineBuilder:
         print("Close the window to exit.\n")
         
         return timeline
+    
+
     
     # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self._add_tracks_to_timeline'], used_by=[], creation_date='2026-02-03 19:58', related_items=[])
     def update_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource], update_time_range: bool = True) -> SimpleTimelineWidget:
