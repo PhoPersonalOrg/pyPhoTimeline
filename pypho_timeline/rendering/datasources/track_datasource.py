@@ -451,16 +451,106 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         
         t_start = interval['t_start']
         
-        # Check if using datetime
-        is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df['t_start'])
+        # Check if using datetime in intervals_df
+        intervals_is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df['t_start'])
         
-        if is_datetime:
+        # Check if detailed_df 't' column is datetime
+        detailed_is_datetime = False
+        if 't' in self.detailed_df.columns:
+            detailed_is_datetime = pd.api.types.is_datetime64_any_dtype(self.detailed_df['t'])
+        
+        # Calculate t_end based on intervals_df type
+        if intervals_is_datetime:
             t_end = t_start + pd.to_timedelta(interval['t_duration'], unit='s')
         else:
             t_end = t_start + interval['t_duration']
         
-        # Ensure detailed_df 't' column matches the type
+        # Ensure t_start and t_end match the dtype of detailed_df['t'] for comparison
         if 't' in self.detailed_df.columns:
+            if detailed_is_datetime:
+                # Check if detailed_df['t'] is timezone-aware and get its timezone
+                detailed_tz = None
+                detailed_tz_aware = False
+                # Check dtype first (for DatetimeTZDtype)
+                if hasattr(self.detailed_df['t'].dtype, 'tz') and self.detailed_df['t'].dtype.tz is not None:
+                    detailed_tz = self.detailed_df['t'].dtype.tz
+                    detailed_tz_aware = True
+                else:
+                    # Check by sampling a value (for regular datetime64 that might have timezone-aware values)
+                    try:
+                        if len(self.detailed_df) > 0:
+                            sample_val = self.detailed_df['t'].iloc[0]
+                            if isinstance(sample_val, pd.Timestamp) and sample_val.tz is not None:
+                                detailed_tz = sample_val.tz
+                                detailed_tz_aware = True
+                    except (IndexError, AttributeError, TypeError):
+                        pass
+                
+                # Convert t_start and t_end to datetime if they're not already
+                if not isinstance(t_start, (datetime, pd.Timestamp)):
+                    if isinstance(t_start, (int, float)):
+                        if detailed_tz_aware and detailed_tz is not None:
+                            t_start = pd.Timestamp.fromtimestamp(t_start, tz=detailed_tz)
+                        else:
+                            t_start = pd.Timestamp.fromtimestamp(t_start)
+                    else:
+                        t_start = pd.Timestamp(t_start)
+                        # After conversion, ensure timezone matches
+                        if detailed_tz_aware and detailed_tz is not None:
+                            if t_start.tzinfo is None:
+                                t_start = t_start.tz_localize(detailed_tz)
+                            elif t_start.tzinfo != detailed_tz:
+                                t_start = t_start.tz_convert(detailed_tz)
+                        else:
+                            if t_start.tzinfo is not None:
+                                t_start = t_start.tz_convert('UTC').tz_localize(None)
+                else:
+                    # Ensure timezone awareness matches detailed_df
+                    if detailed_tz_aware and detailed_tz is not None:
+                        if t_start.tzinfo is None:
+                            t_start = t_start.tz_localize(detailed_tz)
+                        elif t_start.tzinfo != detailed_tz:
+                            t_start = t_start.tz_convert(detailed_tz)
+                    else:
+                        if t_start.tzinfo is not None:
+                            # Convert to UTC then remove timezone to make it naive
+                            t_start = t_start.tz_convert('UTC').tz_localize(None)
+                
+                if not isinstance(t_end, (datetime, pd.Timestamp)):
+                    if isinstance(t_end, (int, float)):
+                        if detailed_tz_aware and detailed_tz is not None:
+                            t_end = pd.Timestamp.fromtimestamp(t_end, tz=detailed_tz)
+                        else:
+                            t_end = pd.Timestamp.fromtimestamp(t_end)
+                    else:
+                        t_end = pd.Timestamp(t_end)
+                        # After conversion, ensure timezone matches
+                        if detailed_tz_aware and detailed_tz is not None:
+                            if t_end.tzinfo is None:
+                                t_end = t_end.tz_localize(detailed_tz)
+                            elif t_end.tzinfo != detailed_tz:
+                                t_end = t_end.tz_convert(detailed_tz)
+                        else:
+                            if t_end.tzinfo is not None:
+                                t_end = t_end.tz_convert('UTC').tz_localize(None)
+                else:
+                    # Ensure timezone awareness matches detailed_df
+                    if detailed_tz_aware and detailed_tz is not None:
+                        if t_end.tzinfo is None:
+                            t_end = t_end.tz_localize(detailed_tz)
+                        elif t_end.tzinfo != detailed_tz:
+                            t_end = t_end.tz_convert(detailed_tz)
+                    else:
+                        if t_end.tzinfo is not None:
+                            # Convert to UTC then remove timezone to make it naive
+                            t_end = t_end.tz_convert('UTC').tz_localize(None)
+            else:
+                # Convert t_start and t_end to float if they're datetime
+                if isinstance(t_start, (datetime, pd.Timestamp)):
+                    t_start = t_start.timestamp() if hasattr(t_start, 'timestamp') else pd.Timestamp(t_start).timestamp()
+                if isinstance(t_end, (datetime, pd.Timestamp)):
+                    t_end = t_end.timestamp() if hasattr(t_end, 'timestamp') else pd.Timestamp(t_end).timestamp()
+            
             mask = (self.detailed_df['t'] >= t_start) & (self.detailed_df['t'] < t_end)
         else:
             mask = pd.Series([False] * len(self.detailed_df))

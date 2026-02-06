@@ -1,6 +1,7 @@
 """TrackRenderer - Manages overview rectangles and detail overlays for timeline tracks."""
 from typing import Dict, List, Optional, Set, Any
 import logging
+from datetime import datetime
 import pandas as pd
 from qtpy import QtCore
 import pyphoplacecellanalysis.External.pyqtgraph as pg
@@ -557,10 +558,22 @@ class TrackRenderer(QtCore.QObject):
             if self.vispy_renderer.current_epochs_data:
                 epochs_df = pd.DataFrame(self.vispy_renderer.current_epochs_data)
                 if len(epochs_df) > 0:
-                    x_min = epochs_df['t_start'].min()
-                    x_max = (epochs_df['t_start'] + epochs_df['t_duration']).max()
-                    y_min = epochs_df['series_vertical_offset'].min()
-                    y_max = (epochs_df['series_vertical_offset'] + epochs_df['series_height']).max()
+                    # Check if t_start is datetime and convert to float if needed
+                    x_min_val = epochs_df['t_start'].min()
+                    if isinstance(x_min_val, (datetime, pd.Timestamp)):
+                        x_min = x_min_val.timestamp() if hasattr(x_min_val, 'timestamp') else pd.Timestamp(x_min_val).timestamp()
+                    else:
+                        x_min = float(x_min_val)
+                    
+                    # Calculate x_max
+                    if pd.api.types.is_datetime64_any_dtype(epochs_df['t_start']):
+                        x_max_val = (epochs_df['t_start'] + pd.to_timedelta(epochs_df['t_duration'], unit='s')).max()
+                        x_max = x_max_val.timestamp() if hasattr(x_max_val, 'timestamp') else pd.Timestamp(x_max_val).timestamp()
+                    else:
+                        x_max = float((epochs_df['t_start'] + epochs_df['t_duration']).max())
+                    
+                    y_min = float(epochs_df['series_vertical_offset'].min())
+                    y_max = float((epochs_df['series_vertical_offset'] + epochs_df['series_height']).max())
                     return (x_min, x_max, y_min, y_max)
             return None
         

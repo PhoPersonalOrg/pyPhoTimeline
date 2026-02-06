@@ -323,9 +323,48 @@ class VispyVideoEpochRenderer(QtCore.QObject):
         if viewport_start is not None and viewport_end is not None:
             self.viewport_start = viewport_start
             self.viewport_end = viewport_end
-            # Filter epochs overlapping viewport
-            mask = (epochs_df['t_start'] + epochs_df['t_duration'] >= viewport_start) & \
-                   (epochs_df['t_start'] <= viewport_end)
+            
+            # Check if epochs_df uses datetime columns
+            is_datetime = pd.api.types.is_datetime64_any_dtype(epochs_df['t_start'])
+            
+            # Convert viewport times to match epochs_df dtype
+            if is_datetime:
+                # Convert float viewport times to datetime
+                if isinstance(viewport_start, (int, float)):
+                    viewport_start_dt = pd.Timestamp.fromtimestamp(viewport_start, tz='UTC')
+                else:
+                    viewport_start_dt = pd.Timestamp(viewport_start)
+                if isinstance(viewport_end, (int, float)):
+                    viewport_end_dt = pd.Timestamp.fromtimestamp(viewport_end, tz='UTC')
+                else:
+                    viewport_end_dt = pd.Timestamp(viewport_end)
+                
+                # Ensure timezone-aware
+                if viewport_start_dt.tzinfo is None:
+                    viewport_start_dt = viewport_start_dt.tz_localize('UTC')
+                if viewport_end_dt.tzinfo is None:
+                    viewport_end_dt = viewport_end_dt.tz_localize('UTC')
+                
+                # Calculate t_end for each interval using timedelta
+                t_end_col = epochs_df['t_start'] + pd.to_timedelta(epochs_df['t_duration'], unit='s')
+                # Filter epochs overlapping viewport
+                mask = (t_end_col >= viewport_start_dt) & (epochs_df['t_start'] <= viewport_end_dt)
+            else:
+                # Convert datetime viewport times to float if needed
+                if isinstance(viewport_start, (datetime, pd.Timestamp)):
+                    viewport_start_float = viewport_start.timestamp() if hasattr(viewport_start, 'timestamp') else pd.Timestamp(viewport_start).timestamp()
+                else:
+                    viewport_start_float = viewport_start
+                if isinstance(viewport_end, (datetime, pd.Timestamp)):
+                    viewport_end_float = viewport_end.timestamp() if hasattr(viewport_end, 'timestamp') else pd.Timestamp(viewport_end).timestamp()
+                else:
+                    viewport_end_float = viewport_end
+                
+                # Use float arithmetic
+                t_end_col = epochs_df['t_start'] + epochs_df['t_duration']
+                # Filter epochs overlapping viewport
+                mask = (t_end_col >= viewport_start_float) & (epochs_df['t_start'] <= viewport_end_float)
+            
             epochs_df = epochs_df[mask].copy()
         
         # Convert DataFrame to list of dicts
@@ -346,8 +385,20 @@ class VispyVideoEpochRenderer(QtCore.QObject):
         
         # Update camera range if needed
         if len(epochs_df) > 0:
-            t_start = float(epochs_df['t_start'].min())
-            t_end = float((epochs_df['t_start'] + epochs_df['t_duration']).max())
+            # Check if t_start is datetime and convert to float if needed
+            t_start_val = epochs_df['t_start'].min()
+            if isinstance(t_start_val, (datetime, pd.Timestamp)):
+                t_start = t_start_val.timestamp() if hasattr(t_start_val, 'timestamp') else pd.Timestamp(t_start_val).timestamp()
+            else:
+                t_start = float(t_start_val)
+            
+            # Calculate t_end
+            if pd.api.types.is_datetime64_any_dtype(epochs_df['t_start']):
+                t_end_val = (epochs_df['t_start'] + pd.to_timedelta(epochs_df['t_duration'], unit='s')).max()
+                t_end = t_end_val.timestamp() if hasattr(t_end_val, 'timestamp') else pd.Timestamp(t_end_val).timestamp()
+            else:
+                t_end = float((epochs_df['t_start'] + epochs_df['t_duration']).max())
+            
             y_min = float(epochs_df['series_vertical_offset'].min())
             y_max = float((epochs_df['series_vertical_offset'] + epochs_df['series_height']).max())
             
