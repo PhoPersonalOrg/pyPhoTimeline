@@ -292,8 +292,8 @@ class BaseTrackDatasource(ABC):
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get a unique cache key for an interval's detailed data.
         
-        Default implementation generates a key from `t_start` and `t_duration`.
-        Override if you need a more specific key format.
+        Default implementation generates a key from `t_start` and `t_duration`,
+        supporting float, datetime, and timedelta types. Override if you need a more specific key format.
         
         Args:
             interval: Series with at least 't_start' and 't_duration' columns
@@ -303,7 +303,39 @@ class BaseTrackDatasource(ABC):
         """
         t_start = interval.get('t_start', 0.0)
         t_duration = interval.get('t_duration', 0.0)
-        return f"{self.custom_datasource_name}_{t_start:.6f}_{t_duration:.6f}"
+        if hasattr(t_start, 'item'):
+            try:
+                t_start = t_start.item()
+            except (ValueError, AttributeError):
+                pass
+        if hasattr(t_duration, 'item'):
+            try:
+                t_duration = t_duration.item()
+            except (ValueError, AttributeError):
+                pass
+        if isinstance(t_start, (datetime, pd.Timestamp)):
+            t_start_str = f"{t_start.timestamp():.6f}"
+        else:
+            try:
+                ts = pd.Timestamp(t_start)
+                t_start_str = f"{ts.timestamp():.6f}"
+            except (ValueError, TypeError, AttributeError):
+                try:
+                    t_start_str = f"{float(t_start):.6f}"
+                except (ValueError, TypeError):
+                    t_start_str = str(t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
+        if isinstance(t_duration, (timedelta, pd.Timedelta)):
+            t_duration_str = f"{t_duration.total_seconds():.6f}"
+        else:
+            try:
+                td = pd.Timedelta(t_duration)
+                t_duration_str = f"{td.total_seconds():.6f}"
+            except (ValueError, TypeError, AttributeError):
+                try:
+                    t_duration_str = f"{float(t_duration):.6f}"
+                except (ValueError, TypeError):
+                    t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
+        return f"{self.custom_datasource_name}_{t_start_str}_{t_duration_str}"
     
     def update_visualization_properties(self, dataframe_vis_columns_function):
         """Updates visualization columns in the dataframe.
@@ -559,16 +591,17 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         
         # Apply downsampling if enabled
         if self.enable_downsampling and (self.max_points_per_second is not None) and (len(result_df) > 0):
-            # Calculate target point count based on interval duration
-            t_duration: float = interval.get('t_duration', (t_end - t_start))
-            max_allowed_points: int = int(t_duration * self.max_points_per_second) ## compute the max allowed points in the current interval
-            curr_df_points_per_sec: float = float(len(result_df['t']))/t_duration
-
-            # Only downsample if we have more points than target
+            raw_duration = interval.get('t_duration', (t_end - t_start))
+            if isinstance(raw_duration, (timedelta, pd.Timedelta)):
+                t_duration_sec: float = raw_duration.total_seconds()
+            else:
+                t_duration_sec = float(raw_duration)
+            max_allowed_points: int = int(t_duration_sec * self.max_points_per_second)
+            curr_df_points_per_sec: float = float(len(result_df['t'])) / t_duration_sec
             if len(result_df) > max_allowed_points:
                 from pypho_timeline.utils.downsampling import downsample_dataframe
                 result_df = downsample_dataframe(result_df, max_points=max_allowed_points, time_col='t')
-                curr_downsampled_points_per_sec = float(len(result_df['t']))/t_duration
+                curr_downsampled_points_per_sec = float(len(result_df['t'])) / t_duration_sec
 
         return result_df
     
