@@ -135,7 +135,7 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
         if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
             # Convert datetime to Unix timestamps
-            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values ## slow
+            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values ## #TODO 2026-02-06 20:20: - [ ] Extremely slow (~5 seconds), plus returns all the values, not just the ones in this interval, PLUS it connects them by intermediate lines
         else:
             t_values = t_col_aligned.values
 
