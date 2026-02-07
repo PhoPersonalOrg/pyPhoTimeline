@@ -138,7 +138,7 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
             t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values ## #TODO 2026-02-06 20:20: - [ ] Extremely slow (~5 seconds), plus returns all the values, not just the ones in this interval, PLUS it connects them by intermediate lines
         else:
             t_values = t_col_aligned.values
-
+        ## #TODO 2026-02-06 21:14: - [ ] is downsampling working?
         # Plot each channel with its distinct color
         for a_found_channel_name in found_channel_names:
             y_values = normalized_channel_df[a_found_channel_name].values

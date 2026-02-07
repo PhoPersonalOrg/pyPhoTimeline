@@ -1,4 +1,5 @@
 """TrackRenderer - Manages overview rectangles and detail overlays for timeline tracks."""
+import numpy as np
 from typing import Dict, List, Optional, Set, Any
 import logging
 from datetime import datetime
@@ -441,6 +442,17 @@ class TrackRenderer(QtCore.QObject):
         if len(interval) > 0:
             t_start = interval.iloc[0].get('t_start', None)
             t_duration = interval.iloc[0].get('t_duration', None)
+
+            ## datetime converted versions for filtering `detailed_df`
+            t_start_dt = interval.iloc[0].get('t_start_dt', None)
+            t_end_dt = interval.iloc[0].get('t_end_dt', None)
+
+            if ((t_start_dt is not None) and (t_end_dt is not None) and isinstance(detail_data, pd.DataFrame)):
+                ## filter detail_data down to the current interval range... I hope this is right at least, I think it could be so long as `interval` is the data interval to render and not the viewport or somethings
+                logger.debug(f"TrackRenderer[{self.track_id}] _render_detail - filtering df down to correct interval range: (t_start_dt='{t_start_dt}', t_end_dt={t_end_dt}, t_start={t_start})")
+                detail_data = detail_data[np.logical_and((detail_data['t'] >= t_start_dt), (detail_data['t'] <= t_end_dt))] 
+                
+                
             t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
             t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
         else:
@@ -464,6 +476,7 @@ class TrackRenderer(QtCore.QObject):
                 self.detail_renderer.channel_visibility = self.channel_visibility.copy()
                 logger.debug(f"TrackRenderer[{self.track_id}] _render_detail() - set channel_visibility on detail_renderer: {self.channel_visibility}")
             
+            # Where the main rendering occurs ____________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
             graphics_objects = self.detail_renderer.render_detail(
                 self.plot_item, interval, detail_data
             )

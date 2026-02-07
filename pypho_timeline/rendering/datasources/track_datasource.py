@@ -606,10 +606,13 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
                 t_duration_sec = float(raw_duration)
             max_allowed_points: int = int(t_duration_sec * self.max_points_per_second)
             curr_df_points_per_sec: float = float(len(result_df['t'])) / t_duration_sec
+            print(f'curr_df_points_per_sec: {curr_df_points_per_sec}')
             if len(result_df) > max_allowed_points:
                 from pypho_timeline.utils.downsampling import downsample_dataframe
                 result_df = downsample_dataframe(result_df, max_points=max_allowed_points, time_col='t')
                 curr_downsampled_points_per_sec = float(len(result_df['t'])) / t_duration_sec
+                print(f'curr_downsampled_points_per_sec: {curr_downsampled_points_per_sec}')
+
 
         return result_df
     
