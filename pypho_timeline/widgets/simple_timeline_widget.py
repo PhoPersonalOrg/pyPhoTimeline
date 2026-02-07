@@ -351,7 +351,20 @@ def perform_process_all_streams(streams):
         stream_start = float(timestamps[0])
         stream_end = float(timestamps[-1])
         stream_duration = stream_end - stream_start
-        
+        if stream_duration <= 0 and len(timestamps) > 1:
+            ts_arr = np.asarray(timestamps, dtype=float)
+            diffs = np.diff(ts_arr)
+            median_dt = float(np.median(diffs)) if len(diffs) > 0 else 0.0
+            if median_dt > 0:
+                stream_duration = median_dt * (len(ts_arr) - 1)
+            else:
+                try:
+                    nominal_srate = float(s['info'].get('nominal_srate', [[128.0]])[0][0])
+                    stream_duration = (len(ts_arr) - 1) / max(nominal_srate, 1.0)
+                except (TypeError, KeyError, IndexError, ValueError):
+                    stream_duration = 1.0
+            stream_end = stream_start + stream_duration
+
         # Create interval DataFrame with proper structure
         intervals_df = pd.DataFrame({
             't_start': [stream_start],
@@ -615,6 +628,19 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             stream_start = float(timestamps[0])
             stream_end = float(timestamps[-1])
             stream_duration = stream_end - stream_start
+            if stream_duration <= 0 and len(timestamps) > 1:
+                ts_arr = np.asarray(timestamps, dtype=float)
+                diffs = np.diff(ts_arr)
+                median_dt = float(np.median(diffs)) if len(diffs) > 0 else 0.0
+                if median_dt > 0:
+                    stream_duration = median_dt * (len(ts_arr) - 1)
+                else:
+                    try:
+                        nominal_srate = float(stream['info'].get('nominal_srate', [[128.0]])[0][0])
+                        stream_duration = (len(ts_arr) - 1) / max(nominal_srate, 1.0)
+                    except (TypeError, KeyError, IndexError, ValueError):
+                        stream_duration = 1.0
+                stream_end = stream_start + stream_duration
 
             # timestamps = np.array([unix_timestamp_to_datetime(datetime_to_unix_timestamp(dt)) for dt in timestamps_absolute])
             # timestamps = np.array([unix_timestamp_to_datetime(v) for v in timestamps])
