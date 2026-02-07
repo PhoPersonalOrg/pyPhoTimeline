@@ -1,6 +1,6 @@
 """GenericPlotDetailRenderer - Generic renderer for arbitrary plot data."""
 from typing import List, Mapping, Tuple, Any, Callable, Optional, Dict, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import pyphoplacecellanalysis.External.pyqtgraph as pg
@@ -185,7 +185,7 @@ class IntervalPlotDetailRenderer(DetailRenderer):
     
 
     def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
-        """Get bounds for the position plot.
+        """Get bounds for the position plot. Always returns float bounds (Unix timestamps for time axis).
         
         Args:
             interval: The interval DataFrame (single row) with 't_start' and 't_duration'
@@ -194,33 +194,35 @@ class IntervalPlotDetailRenderer(DetailRenderer):
         Returns:
             Tuple of (x_min, x_max, y_min, y_max)
         """
+        def _interval_to_float_bounds(interval: pd.DataFrame) -> Tuple[float, float]:
+            t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
+            t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                t_start_float = datetime_to_unix_timestamp(t_start)
+                dur_sec = float(t_duration) if not isinstance(t_duration, (timedelta, pd.Timedelta)) else t_duration.total_seconds()
+                return (float(t_start_float), float(t_start_float + dur_sec))
+            t_start_float = float(t_start)
+            dur_sec = float(t_duration) if not isinstance(t_duration, (timedelta, pd.Timedelta)) else t_duration.total_seconds()
+            return (t_start_float, float(t_start_float + dur_sec))
+
         if detail_data is None or len(detail_data) == 0:
-            t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
-            t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
-            return (t_start, t_start + t_duration, 0.0, 1.0)
-        
+            x_min, x_max = _interval_to_float_bounds(interval)
+            return (x_min, x_max, 0.0, 1.0)
         if not isinstance(detail_data, pd.DataFrame):
-            t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
-            t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
-            return (t_start, t_start + t_duration, 0.0, 1.0)
-        
-        t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
-        t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
-        t_end = t_start + t_duration
-        
+            x_min, x_max = _interval_to_float_bounds(interval)
+            return (x_min, x_max, 0.0, 1.0)
+        t_min, t_max = _interval_to_float_bounds(interval)
         if self.y_column is not None and self.y_column in detail_data.columns:
-            # 2D position: bounds are x and y ranges
             x_min, x_max = detail_data['x'].min(), detail_data['x'].max()
             y_min, y_max = detail_data[self.y_column].min(), detail_data[self.y_column].max()
-            # Add padding
             x_pad = (x_max - x_min) * 0.1 if x_max > x_min else 1.0
             y_pad = (y_max - y_min) * 0.1 if y_max > y_min else 1.0
             return (x_min - x_pad, x_max + x_pad, y_min - y_pad, y_max + y_pad)
         else:
-            # 1D position: x vs time
             x_min, x_max = detail_data['x'].min(), detail_data['x'].max()
             x_pad = (x_max - x_min) * 0.1 if x_max > x_min else 1.0
-            return (t_start, t_end, x_min - x_pad, x_max + x_pad)
+            return (t_min, t_max, x_min - x_pad, x_max + x_pad)
 
 
 

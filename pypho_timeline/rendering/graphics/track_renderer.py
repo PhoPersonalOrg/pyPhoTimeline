@@ -8,7 +8,7 @@ import pyphoplacecellanalysis.External.pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, DetailRenderer
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
-from pypho_timeline.rendering.async_detail_fetcher import AsyncDetailFetcher
+from pypho_timeline.rendering.async_detail_fetcher import AsyncDetailFetcher, _format_interval_for_log, _format_time_value_for_log
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.utils.logging_util import get_rendering_logger
 
@@ -326,7 +326,7 @@ class TrackRenderer(QtCore.QObject):
         # Defer the actual processing to avoid blocking the UI thread
         # This allows other tracks to continue processing even if this one is slow
         def process_viewport_update():
-            logger.debug(f"TrackRenderer[{self.track_id}] update_viewport(start={viewport_start:.3f}, end={viewport_end:.3f})")
+            logger.debug(f"TrackRenderer[{self.track_id}] update_viewport(start={_format_time_value_for_log(viewport_start)}, end={_format_time_value_for_log(viewport_end)})")
             
             # Optimize for video tracks: skip detail fetching entirely
             is_video_track = VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource)
@@ -366,22 +366,12 @@ class TrackRenderer(QtCore.QObject):
                     # Check cache first for non-video tracks
                     cached_data = self.async_fetcher.get_cached_data(cache_key)
                     if cached_data is not None:
-                        # Use cached data immediately
                         cache_hits += 1
-                        t_start = interval_series.get('t_start', None)
-                        t_duration = interval_series.get('t_duration', None)
-                        t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
-                        t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
-                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' (t_start={t_start_str}, t_duration={t_duration_str}) - cache HIT, rendering immediately")
+                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' ({_format_interval_for_log(interval_series)}) - cache HIT, rendering immediately")
                         self._render_detail(interval_df, cache_key, cached_data)
                     else:
-                        # Fetch asynchronously (still pass Series for datasource compatibility)
                         cache_misses += 1
-                        t_start = interval_series.get('t_start', None)
-                        t_duration = interval_series.get('t_duration', None)
-                        t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
-                        t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
-                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' (t_start={t_start_str}, t_duration={t_duration_str}) - cache MISS, requesting async fetch")
+                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' ({_format_interval_for_log(interval_series)}) - cache MISS, requesting async fetch")
                         self.async_fetcher.fetch_detail_async(self.track_id, interval_series, self.datasource) ## I believe after this asynchronously completes, `self._on_detail_data_ready` is called.
                 else:
                     already_visible += 1
@@ -479,7 +469,7 @@ class TrackRenderer(QtCore.QObject):
             )
             
             num_graphics = len(graphics_objects) if graphics_objects is not None else 0
-            logger.debug(f"TrackRenderer[{self.track_id}] Rendered detail for cache_key='{cache_key}' - created {num_graphics} graphics objects")
+            logger.debug(f"TrackRenderer[{self.track_id}] _render_detail() - Rendered detail for cache_key='{cache_key}' - created {num_graphics} graphics objects")
             
             # Store graphics objects for cleanup
             self.detail_graphics[cache_key] = graphics_objects
