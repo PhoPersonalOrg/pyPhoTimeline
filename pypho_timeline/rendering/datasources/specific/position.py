@@ -12,6 +12,8 @@ import pyphoplacecellanalysis.External.pyqtgraph as pg
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 
+from pypho_timeline.utils.logging_util import get_rendering_logger
+logger = get_rendering_logger(__name__)
 
 # ==================================================================================================================================================================================================================================================================================== #
 # PositionPlotDetailRenderer - Renders position data as line plots.                                                                                                                                                                                                                              #

@@ -16,6 +16,8 @@ from pypho_timeline.rendering.datasources.track_datasource import TrackDatasourc
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin
 
+from pypho_timeline.utils.logging_util import get_rendering_logger
+logger = get_rendering_logger(__name__)
 
 # ==================================================================================================================================================================================================================================================================================== #
 # MotionPlotDetailRenderer - Renders motion data as line plots.                                                                                                                                                                                                                              #

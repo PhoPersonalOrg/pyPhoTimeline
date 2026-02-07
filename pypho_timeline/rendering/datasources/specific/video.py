@@ -16,6 +16,8 @@ except ImportError:
 from phopylslhelper.file_metadata_caching.video_metadata import VideoMetadataParser
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
         
+from pypho_timeline.utils.logging_util import get_rendering_logger
+logger = get_rendering_logger(__name__)
 
 # ==================================================================================================================================================================================================================================================================================== #
 # Helper function to convert VideoMetadataParser output to intervals_df format                                                                                                                                                                                                       #

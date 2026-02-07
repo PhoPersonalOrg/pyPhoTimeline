@@ -6,6 +6,9 @@ from datetime import datetime
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
+from pypho_timeline.utils.logging_util import get_rendering_logger
+logger = get_rendering_logger(__name__)
+
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGPlotDetailRenderer - Renders eeg data as line plots.                                                                                                                                                                                                                              #
 # ==================================================================================================================================================================================================================================================================================== #
@@ -97,6 +100,8 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
             graphics_objects = a_detail_renderer.render_detail(plot_item=a_plot_item, interval=None, detail_data=a_ds.detailed_df) # List[PlotDataItem]
 
         """
+        logger.debug(f"EEGPlotDetailRenderer[].render_detail(plot_item: {plot_item},\n\tinterval='{interval}',\n\t detail_data={detail_data}) - starting")
+    
         if detail_data is None or len(detail_data) == 0:
             return []
         
@@ -130,7 +135,7 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
         if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
             # Convert datetime to Unix timestamps
-            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
+            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values ## slow
         else:
             t_values = t_col_aligned.values
 
