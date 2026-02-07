@@ -2,11 +2,10 @@
 name: Fix XDF example to show actual stream data
 overview: Fix the XDF example to disable example tracks and properly display XDF stream intervals like PhoOfflineEEGAnalysis does, instead of showing generic example tracks.
 todos: []
+isProject: false
 ---
 
-# Fix XDF Example to Show Ac
-
-tual Stream Data
+# Fix XDF Example to Show Actual Stream Data
 
 ## Problem
 
@@ -93,3 +92,4 @@ timeline = SimpleTimelineWidget(
     add_example_tracks=False  # Don't add example tracks for XDF data
 )
 ```
+
