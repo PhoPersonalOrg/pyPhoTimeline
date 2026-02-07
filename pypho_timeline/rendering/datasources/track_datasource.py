@@ -20,7 +20,7 @@ from qtpy import QtCore
 
 from pypho_timeline.rendering.datasources.interval_datasource import IntervalsDatasource
 import pyphoplacecellanalysis.External.pyqtgraph as pg
-
+from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime
 
 
 
@@ -376,7 +376,15 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         self._detail_renderer = detail_renderer
         
         self.detailed_df = detailed_df
+        
+        if ('t_start_dt' not in intervals_df) or ('t_end_dt' not in intervals_df):
+            intervals_df['t_start_dt'] = intervals_df['t_start'].map(lambda x: unix_timestamp_to_datetime(x))
+            intervals_df['t_end_dt'] = intervals_df['t_end'].map(lambda x: unix_timestamp_to_datetime(x))
+            # Change column type to datetime64[ns] for columns: 't_start_dt', 't_end_dt' -- this is so they can be matched against `detailed_df['t']`
+            intervals_df = intervals_df.astype({'t_start_dt': 'datetime64[ns]', 't_end_dt': 'datetime64[ns]'})
+
         self.intervals_df = intervals_df.copy()
+        
         if custom_datasource_name is None:
             custom_datasource_name = "GenericIntervalTrack"
         self.custom_datasource_name = custom_datasource_name

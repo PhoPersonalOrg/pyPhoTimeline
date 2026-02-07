@@ -238,6 +238,13 @@ def datetime_to_unix_timestamp(dt: Union[datetime, np.ndarray, List[datetime]]) 
     Returns:
         Unix timestamp as float (seconds since epoch) for scalar input,
         or List[float] for array/list input
+
+    Usage:
+
+        from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, datetime_to_float, float_to_datetime
+        
+        datetime_to_unix_timestamp
+
     """
     if isinstance(dt, (np.ndarray, list)):
         # Convert to pandas DatetimeIndex for vectorized processing
@@ -422,8 +429,6 @@ def float_to_datetime(timestamp: Union[float, np.ndarray, List[float]], referenc
         seconds = float(timestamp)
         result = ref_dt + timedelta(seconds=seconds)
         return result
-
-
 
 
 def format_seconds_as_hhmmss(seconds: float, include_fractional: bool = True) -> str:
