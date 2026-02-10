@@ -141,7 +141,7 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         single_channel_height: float = 1.0 / float(nPlots)
         
         # Plot each channel with its distinct color
-        for a_found_channel_name in found_channel_names:
+        for i, a_found_channel_name in enumerate(found_channel_names):
             y_values = normalized_channel_df[a_found_channel_name].values
             y_values = y_values * single_channel_height ## scale by the single channel height
             
