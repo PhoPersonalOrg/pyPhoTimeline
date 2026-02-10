@@ -136,9 +136,15 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         else:
             t_values = t_col_aligned.values
 
+
+        nPlots: int = len(found_channel_names)
+        single_channel_height: float = 1.0 / float(nPlots)
+        
         # Plot each channel with its distinct color
         for a_found_channel_name in found_channel_names:
             y_values = normalized_channel_df[a_found_channel_name].values
+            y_values = y_values * single_channel_height ## scale by the single channel height
+            
             # Get the color for this channel based on its index in channel_names
             channel_index = self.channel_names.index(a_found_channel_name)
             channel_color = self.pen_colors[channel_index]
@@ -146,6 +152,7 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
             plot_data_item = pg.PlotDataItem(t_values, y_values, pen=pen, connect='finite', name=a_found_channel_name)
             # plot_item.axes.y
             plot_item.addItem(plot_data_item)
+            plot_data_item.setPos(0, (float(i)*single_channel_height)) ## position aligned with the channel
             graphics_objects.append(plot_data_item)
 
         
@@ -252,11 +259,17 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         channel_columns = [col for col in self.channel_names if col in detail_data.columns]
         if channel_columns:
             # Find min/max across all channels
-            y_min = min(detail_data[col].min() for col in channel_columns)
-            y_max = max(detail_data[col].max() for col in channel_columns)
+            # y_min = min(detail_data[col].min() for col in channel_columns)
+            # y_max = max(detail_data[col].max() for col in channel_columns)
+            y_min = np.nanmin(np.nanmin(detail_data[col]) for col in channel_columns)
+            y_max = np.nanmax(np.nanmax(detail_data[col]) for col in channel_columns)
             # Add padding
             y_pad = (y_max - y_min) * 0.1 if y_max > y_min else 1.0
-            return (t_start, t_end, (y_min - y_pad), (y_max + y_pad))
+            # Add padding
+            y_final_min: float = (y_min - y_pad)
+            y_final_max: float = (y_max + y_pad)    
+            return (t_start, t_end, y_final_min, y_final_max)
+
         else:
             # No channels found, use default bounds
             return (t_start, t_end, 0.0, 1.0)

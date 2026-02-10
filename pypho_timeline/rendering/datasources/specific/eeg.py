@@ -73,6 +73,8 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         else:
             self.pen_colors = None
 
+
+
     
     def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render eeg data as line plots for each channel.
@@ -158,7 +160,7 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
             plot_data_item.setPos(0, (float(i)*single_channel_height))
             graphics_objects.append(plot_data_item)
         
-        plot_item.setYRange(0, 1, padding=0)
+        # plot_item.setYRange(0, 1, padding=0)
 
         return graphics_objects
     
@@ -248,18 +250,20 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         channel_columns = [col for col in self.channel_names if col in detail_data.columns]
         if channel_columns:
             # Find min/max across all channels
-            y_min = min(detail_data[col].min() for col in channel_columns)
-            y_max = max(detail_data[col].max() for col in channel_columns)
+            y_min = np.nanmin(np.nanmin(detail_data[col]) for col in channel_columns)
+            y_max = np.nanmax(np.nanmax(detail_data[col]) for col in channel_columns)
             # Add padding
             y_pad = (y_max - y_min) * 0.1 if y_max > y_min else 1.0
-            
+            y_final_min: float = (y_min - y_pad)
+            y_final_max: float = (y_max + y_pad)
+
             # Convert t_start and t_end to Unix timestamps if they're datetime objects
             if isinstance(t_start, (datetime, pd.Timestamp)):
                 t_start = datetime_to_unix_timestamp(t_start)
             if isinstance(t_end, (datetime, pd.Timestamp)):
                 t_end = datetime_to_unix_timestamp(t_end)
             
-            return (t_start, t_end, (y_min - y_pad), (y_max + y_pad))
+            return (t_start, t_end, y_final_min, y_final_max)
         else:
             # No channels found, use default bounds
             # Convert t_start and t_end to Unix timestamps if they're datetime objects
