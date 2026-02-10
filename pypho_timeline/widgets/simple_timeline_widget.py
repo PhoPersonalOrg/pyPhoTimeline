@@ -19,7 +19,7 @@ from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidget
 from pypho_timeline.rendering.detail_renderers import DataframePlotDetailRenderer
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
-from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, PositionTrackDatasource, VideoTrackDatasource
+from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, VideoTrackDatasource
 from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode

@@ -63,7 +63,6 @@ from pypho_timeline.rendering import (
     TrackDatasource,
     DetailRenderer,
     AsyncDetailFetcher,
-    PositionPlotDetailRenderer,
     VideoThumbnailDetailRenderer,
     GenericPlotDetailRenderer,
 )
@@ -103,7 +102,6 @@ __all__ = [
     'TrackDatasource',
     'DetailRenderer',
     'AsyncDetailFetcher',
-    'PositionPlotDetailRenderer',
     'VideoThumbnailDetailRenderer',
     'GenericPlotDetailRenderer',
 ]

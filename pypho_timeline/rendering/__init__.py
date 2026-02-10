@@ -34,7 +34,6 @@ from pypho_timeline.rendering.async_detail_fetcher import (
     AsyncDetailFetcher
 )
 from pypho_timeline.rendering.detail_renderers import (
-    PositionPlotDetailRenderer,
     VideoThumbnailDetailRenderer,
     GenericPlotDetailRenderer
 )
@@ -59,7 +58,6 @@ __all__ = [
     # Async fetching
     'AsyncDetailFetcher',
     # Detail renderers
-    'PositionPlotDetailRenderer',
     'VideoThumbnailDetailRenderer',
     'GenericPlotDetailRenderer',
 ]

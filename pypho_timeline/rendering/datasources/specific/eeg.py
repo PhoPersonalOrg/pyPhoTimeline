@@ -139,17 +139,27 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         else:
             t_values = t_col_aligned.values
         ## #TODO 2026-02-06 21:14: - [ ] is downsampling working?
+
+        nPlots: int = len(found_channel_names)
+        single_channel_height: float = 1.0 / float(nPlots)
+
         # Plot each channel with its distinct color
-        for a_found_channel_name in found_channel_names:
+        for i, a_found_channel_name in enumerate(found_channel_names):
             y_values = normalized_channel_df[a_found_channel_name].values
+            y_values = y_values * single_channel_height ## scale by the single channel height
             # Get the color for this channel based on its index in channel_names
             channel_index = self.channel_names.index(a_found_channel_name)
             channel_color = self.pen_colors[channel_index]
             pen = pg.mkPen(channel_color, width=self.pen_width)
+            # plot_data_item = pg.PlotDataItem(t_values, y_values, pen=pen, connect='finite', name=a_found_channel_name)
             plot_data_item = pg.PlotDataItem(t_values, y_values, pen=pen, connect='finite', name=a_found_channel_name)
+            # plot_data_item = pg.PlotCurveItem(pen=pen, skipFiniteCheck=True)
             plot_item.addItem(plot_data_item)
+            plot_data_item.setPos(0, (float(i)*single_channel_height))
             graphics_objects.append(plot_data_item)
         
+        plot_item.setYRange(0, 1, padding=0)
+
         return graphics_objects
     
 
