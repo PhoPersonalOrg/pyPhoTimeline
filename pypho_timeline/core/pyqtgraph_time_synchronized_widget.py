@@ -522,7 +522,7 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                                                     slot=lambda evt: self.on_crosshair_mouse_moved(evt[0], vb, vLine, name, matrix, xbins, ybins))
             
             # Connect enter/leave events
-            plot_item.getViewBox().setMouseEnabled(x=True, y=True)
+            plot_item.getViewBox().setMouseEnabled(x=True, y=False)
             plot_item.scene().sigMouseEntered.connect(lambda: self.on_crosshair_enter_view(plot_item, name))
             plot_item.scene().sigMouseExited.connect(lambda: self.on_crosshair_leave_view(plot_item, name))
             

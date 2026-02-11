@@ -347,6 +347,9 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             self._current_hovered_rect = None
 
     def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.MiddleButton:
+            event.ignore()
+            return
         if self.clickable:
             # Handle right-click for context menu
             if event.button() == QtCore.Qt.MouseButton.RightButton:
@@ -360,6 +363,9 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             self.pressed = True
 
     def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.MiddleButton:
+            event.ignore()
+            return
         if self.clickable:
             pressed = False
             self.clicked.emit()
