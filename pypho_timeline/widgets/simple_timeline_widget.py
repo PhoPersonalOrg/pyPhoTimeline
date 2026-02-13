@@ -19,7 +19,7 @@ from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidget
 from pypho_timeline.rendering.detail_renderers import DataframePlotDetailRenderer
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
-from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, PositionTrackDatasource, VideoTrackDatasource
+from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, VideoTrackDatasource
 from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
@@ -351,7 +351,20 @@ def perform_process_all_streams(streams):
         stream_start = float(timestamps[0])
         stream_end = float(timestamps[-1])
         stream_duration = stream_end - stream_start
-        
+        if stream_duration <= 0 and len(timestamps) > 1:
+            ts_arr = np.asarray(timestamps, dtype=float)
+            diffs = np.diff(ts_arr)
+            median_dt = float(np.median(diffs)) if len(diffs) > 0 else 0.0
+            if median_dt > 0:
+                stream_duration = median_dt * (len(ts_arr) - 1)
+            else:
+                try:
+                    nominal_srate = float(s['info'].get('nominal_srate', [[128.0]])[0][0])
+                    stream_duration = (len(ts_arr) - 1) / max(nominal_srate, 1.0)
+                except (TypeError, KeyError, IndexError, ValueError):
+                    stream_duration = 1.0
+            stream_end = stream_start + stream_duration
+
         # Create interval DataFrame with proper structure
         intervals_df = pd.DataFrame({
             't_start': [stream_start],
@@ -364,8 +377,10 @@ def perform_process_all_streams(streams):
         intervals_df['series_height'] = 0.9
         
         # Create pens and brushes
-        color = pg.mkColor('blue')
-        color.setAlphaF(0.3)
+        # color = pg.mkColor('blue')
+        # color.setAlphaF(0.3)
+        color = pg.mkColor('grey')
+        color.setAlphaF(0.7)
         pen = pg.mkPen(color, width=1)
         brush = pg.mkBrush(color)
         intervals_df['pen'] = [pen]
@@ -591,7 +606,8 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             file_ref_dt = file_reference_datetimes.get(file_path)
             if (file_ref_dt is not None) and (timestamps is not None): # 
                 # Convert relative timestamps to absolute datetimes using file's reference
-                timestamps_absolute = [float_to_datetime(float(ts), file_ref_dt) for ts in timestamps]
+                # timestamps_absolute = [float_to_datetime(float(ts), file_ref_dt) for ts in timestamps]
+                timestamps_absolute = float_to_datetime(timestamps, file_ref_dt) ## use fectorized version
 
                 #TODO 2026-02-04 05:15: - [ ] Changing from using relative to earliest reference to unix timestamps (absolute)
                 # # Convert absolute datetimes back to relative timestamps using earliest reference
@@ -599,7 +615,8 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                 #     timestamps = np.array([datetime_to_float(dt, earliest_reference_datetime) for dt in timestamps_absolute])
 
                 # Convert to unix timestamps (absolute) instead ______________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
-                timestamps = np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute]) ## this does actually make e09 instead of e06
+                # timestamps = np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute]) ## this does actually make e09 instead of e06
+                timestamps = datetime_to_unix_timestamp(timestamps_absolute) ## use fectorized version
                 ## yeah they work: [unix_timestamp_to_datetime(v) for v in np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute])] ## actually these are real datetimes, instead of  Timestamp('2026-02-04 21:20:49.471665+0000', tz='UTC') `timestamps_absolute`
 
             else:
@@ -611,9 +628,23 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             stream_start = float(timestamps[0])
             stream_end = float(timestamps[-1])
             stream_duration = stream_end - stream_start
+            if stream_duration <= 0 and len(timestamps) > 1:
+                ts_arr = np.asarray(timestamps, dtype=float)
+                diffs = np.diff(ts_arr)
+                median_dt = float(np.median(diffs)) if len(diffs) > 0 else 0.0
+                if median_dt > 0:
+                    stream_duration = median_dt * (len(ts_arr) - 1)
+                else:
+                    try:
+                        nominal_srate = float(stream['info'].get('nominal_srate', [[128.0]])[0][0])
+                        stream_duration = (len(ts_arr) - 1) / max(nominal_srate, 1.0)
+                    except (TypeError, KeyError, IndexError, ValueError):
+                        stream_duration = 1.0
+                stream_end = stream_start + stream_duration
 
             # timestamps = np.array([unix_timestamp_to_datetime(datetime_to_unix_timestamp(dt)) for dt in timestamps_absolute])
-            timestamps = np.array([unix_timestamp_to_datetime(v) for v in timestamps])
+            # timestamps = np.array([unix_timestamp_to_datetime(v) for v in timestamps])
+            timestamps = unix_timestamp_to_datetime(timestamps) ## use fectorized version
 
 
             ## copied directly from video_metadata_to_intervals_df(...) which works:

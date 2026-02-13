@@ -121,7 +121,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
     clicked = QtCore.pyqtSignal()
     ## data must have fields: start_t, series_vertical_offset, duration_t, series_height, pen, brush
 
-    def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False):
+    def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False, detail_render_callback=None):
         # menu creation is deferred because it is expensive and often
         # the user will never see the menu anyway.
         self.menu = None
@@ -131,6 +131,8 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
         self.data = data  ## data must have fields: start_t, series_vertical_offset, duration_t, series_height, pen, brush
         self.generatePicture()
         self.setAcceptHoverEvents(True)
+        # Note: In pyqtgraph, overriding mousePressEvent should be sufficient for mouse events
+        # Mouse events are typically accepted by default when event handlers are overridden
         self._current_hovered_rect = None  # Track which rectangle is currently hovered
         self._current_hovered_item_tooltip_format_fn = None
         if format_tooltip_fn is None:
@@ -141,6 +143,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
 
         self._current_hovered_item_tooltip_format_fn = format_tooltip_fn
         self._item_label_format_fn = format_label_fn
+        self._detail_render_callback = detail_render_callback  # Callback for detailed rendering: (rect_index: int, rect_data: IntervalRectsItemData) -> None
 
         self._labels = []
         self.rebuild_label_items()
@@ -202,6 +205,33 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
         ## or else we will get artifacts and possibly crashing.
         ## (in this case, QPicture does all the work of computing the bounding rect for us)
         return QtCore.QRectF(self.picture.boundingRect())
+    
+    def shape(self):
+        """Return the shape of the item for hit testing.
+        
+        This method is used by pyqtgraph to determine if mouse events should be sent to this item.
+        We return a QPainterPath that includes all the rectangles.
+        """
+        path = QtGui.QPainterPath()
+        for rect_data in self.data:
+            # Handle both tuples and IntervalRectsItemData objects
+            if isinstance(rect_data, IntervalRectsItemData):
+                start_t = rect_data.start_t
+                series_vertical_offset = rect_data.series_vertical_offset
+                duration_t = rect_data.duration_t
+                series_height = rect_data.series_height
+            else:
+                # Tuple unpacking (backward compatibility)
+                (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data
+            
+            # Ensure start_t is numeric for Qt rendering
+            if isinstance(start_t, (datetime, pd.Timestamp)):
+                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+                start_t = datetime_to_unix_timestamp(start_t)
+            
+            rect = QtCore.QRectF(start_t, series_vertical_offset, duration_t, series_height)
+            path.addRect(rect)
+        return path
 
     @property
     def format_item_tooltip_fn(self) -> Callable:
@@ -317,10 +347,25 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             self._current_hovered_rect = None
 
     def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.MiddleButton:
+            event.ignore()
+            return
         if self.clickable:
-            pressed = True
+            # Handle right-click for context menu
+            if event.button() == QtCore.Qt.MouseButton.RightButton:
+                logger.debug(f'IntervalRectsItem.mousePressEvent - right button pressed at {event.pos()}')
+                # Store the clicked position to identify which rectangle was clicked
+                self._context_menu_event_pos = event.pos()
+                if self.raiseContextMenu(event):
+                    event.accept()
+                    return
+            # For left-click, just track that it was pressed
+            self.pressed = True
 
     def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.MiddleButton:
+            event.ignore()
+            return
         if self.clickable:
             pressed = False
             self.clicked.emit()
@@ -447,27 +492,67 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             self._mouseShape = self.mapFromItem(view, mousePath)
         return self._mouseShape
 
-    # On right-click, raise the context menu
-    def mouseClickEvent(self, ev):
-        print(f'IntervalRectsItem.mouseClickEvent(ev: {ev})')
-        if ev.button() == QtCore.Qt.MouseButton.RightButton:
-            if self.raiseContextMenu(ev):
-                ev.accept() # note that I think this means it won't pass the right click along to its parent view, might messup widget-wide menus
-
     def raiseContextMenu(self, ev):
         """Works to spawn the context menu in the appropriate location."""
-        print(f'IntervalRectsItem.raiseContextMenu(ev: {ev})')
-        menu = self.getContextMenus()
+        logger.debug(f'IntervalRectsItem.raiseContextMenu(ev: {ev})')
+        menu = self.getContextMenus(ev)
         
-        pos = ev.screenPos()
-        menu.popup(QtCore.QPoint(int(pos.x()), int(pos.y())))
-        return True
+        # Check if menu has any actions
+        if menu is None or menu.isEmpty():
+            logger.debug(f'IntervalRectsItem.raiseContextMenu - menu is empty or None')
+            return False
+        
+        # Get screen position for menu popup
+        # Try multiple methods to get the global position
+        pos = None
+        if hasattr(ev, 'screenPos'):
+            pos = ev.screenPos()
+        elif hasattr(ev, 'globalPos'):
+            pos = ev.globalPos()
+        else:
+            # Try to get from scene position
+            scene_pos = ev.scenePos() if hasattr(ev, 'scenePos') else ev.pos()
+            view = self.getViewBox()
+            if view is not None:
+                # Get the view widget to convert to global coordinates
+                view_widget = view.parent()
+                if view_widget is not None:
+                    try:
+                        # Convert scene position to global screen coordinates
+                        global_pos = view_widget.mapToGlobal(view_widget.mapFromScene(scene_pos))
+                        pos = global_pos
+                    except Exception as e:
+                        logger.debug(f'IntervalRectsItem.raiseContextMenu - error converting position: {e}')
+                        pos = scene_pos
+                else:
+                    pos = scene_pos
+            else:
+                pos = scene_pos
+        
+        if pos is not None:
+            try:
+                menu.popup(QtCore.QPoint(int(pos.x()), int(pos.y())))
+                logger.debug(f'IntervalRectsItem.raiseContextMenu - menu popped up at ({pos.x()}, {pos.y()})')
+                return True
+            except Exception as e:
+                logger.error(f'IntervalRectsItem.raiseContextMenu - error showing menu: {e}', exc_info=True)
+                return False
+        else:
+            logger.warning(f'IntervalRectsItem.raiseContextMenu - could not determine screen position')
+            return False
 
     def getContextMenus(self, event=None):
         """Builds the context menus as needed."""
         if self.menu is None:
             self.menu = QtWidgets.QMenu()
             self.menu.setTitle("IntervalRectItem options..")
+            
+            # Add "Render detailed" action if callback is provided
+            if self._detail_render_callback is not None:
+                render_detailed = QtGui.QAction("Render detailed", self.menu)
+                render_detailed.triggered.connect(self._on_render_detailed)
+                self.menu.addAction(render_detailed)
+                self.menu.render_detailed = render_detailed
             
             green = QtGui.QAction("Turn green", self.menu)
             green.triggered.connect(self.setGreen)
@@ -539,6 +624,28 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
 
     def setAlpha(self, a):
         self.setOpacity(a/255.)
+
+    def _on_render_detailed(self):
+        """Handle the 'Render detailed' context menu action."""
+        if self._detail_render_callback is None:
+            return
+        
+        # Get the clicked rectangle index from the stored event position
+        if hasattr(self, '_context_menu_event_pos'):
+            rect_index = self._get_rect_at_position(self._context_menu_event_pos)
+            if rect_index is not None and rect_index < len(self.data):
+                rect_data = self.data[rect_index]
+                # Convert tuple to IntervalRectsItemData if needed
+                if not isinstance(rect_data, IntervalRectsItemData):
+                    (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data
+                    rect_data = IntervalRectsItemData(start_t, series_vertical_offset, duration_t, series_height, pen, brush)
+                # Call the callback
+                try:
+                    self._detail_render_callback(rect_index, rect_data)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error in detail_render_callback: {e}", exc_info=True)
 
 
 class CustomLegendItemSample(ReprPrintableItemMixin, ItemSample):

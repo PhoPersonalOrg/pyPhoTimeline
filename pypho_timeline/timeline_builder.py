@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union
 from datetime import datetime, timezone, timedelta
 import logging
+import re
 import numpy as np
 import pandas as pd
 import pyxdf
@@ -101,7 +102,7 @@ class TimelineBuilder:
 
     
     ## MAIN FUNCTION
-    def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
+    def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from an XDF file.
         
         Args:
@@ -111,12 +112,14 @@ class TimelineBuilder:
             add_example_tracks: Whether to add example tracks (default: False)
             window_title: Custom window title (default: auto-generated from filename)
             window_size: Window size as (width, height) tuple (default: (1000, 800))
+            stream_allowlist: Optional list of regex patterns. If provided, only streams matching any pattern are loaded.
+            stream_blocklist: Optional list of regex patterns. If provided, streams matching any pattern are excluded.
             
         Returns:
             SimpleTimelineWidget instance, or None if no streams found
         """
         # Use multi-file method for backward compatibility
-        return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size)
+        return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist, **kwargs)
     
 
     # @function_attributes(short_name=None, tags=['MAIN', 'used], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
@@ -133,6 +136,8 @@ class TimelineBuilder:
             add_example_tracks: Whether to add example tracks (default: False)
             window_title: Custom window title (default: auto-generated from filenames)
             window_size: Window size as (width, height) tuple (default: (1000, 800))
+            stream_allowlist: Optional list of regex patterns. If provided, only streams matching any pattern are loaded.
+            stream_blocklist: Optional list of regex patterns. If provided, streams matching any pattern are excluded.
             
         Returns:
             SimpleTimelineWidget instance, or None if no streams found
@@ -143,6 +148,18 @@ class TimelineBuilder:
                 Path("file1.xdf"),
                 Path("file2.xdf")
             ])
+            
+            # Only load EEG and Motion streams
+            timeline = builder.build_from_xdf_files(
+                xdf_file_paths=[Path("file1.xdf")],
+                stream_allowlist=[r"EEG.*", r"MOTION.*"]
+            )
+            
+            # Exclude logger streams
+            timeline = builder.build_from_xdf_files(
+                xdf_file_paths=[Path("file1.xdf")],
+                stream_blocklist=[r".*Logger.*", r".*Event.*"]
+            )
         """
         if not xdf_file_paths:
             raise ValueError("xdf_file_paths list cannot be empty")
@@ -164,6 +181,11 @@ class TimelineBuilder:
             print(f"Loading XDF file: {xdf_file_path} ...")
             streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
             print(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
+            
+            # Filter streams if allowlist/blocklist is provided
+            if stream_allowlist is not None or stream_blocklist is not None:
+                streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+            
             all_streams_by_file.append(streams)
             all_file_headers.append(file_header)
         
@@ -278,7 +300,7 @@ class TimelineBuilder:
     
 
     # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
-    def build_from_streams(self, streams: List, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
+    def build_from_streams(self, streams: List, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from pre-loaded streams.
         
         Args:
@@ -288,10 +310,16 @@ class TimelineBuilder:
             add_example_tracks: Whether to add example tracks (default: False)
             window_title: Custom window title (default: "pyPhoTimeline")
             window_size: Window size as (width, height) tuple (default: (1000, 800))
+            stream_allowlist: Optional list of regex patterns. If provided, only streams matching any pattern are loaded.
+            stream_blocklist: Optional list of regex patterns. If provided, streams matching any pattern are excluded.
             
         Returns:
             SimpleTimelineWidget instance, or None if no streams found
         """
+        # Filter streams if allowlist/blocklist is provided
+        if stream_allowlist is not None or stream_blocklist is not None:
+            streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+        
         # Process streams to get datasources
         all_streams, all_streams_datasources = self._process_xdf_streams(streams)
         
@@ -319,7 +347,7 @@ class TimelineBuilder:
     
 
     # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
-    def build_from_eeg_raw_and_stream_info(self, eeg_raws: List, stream_infos_df: pd.DataFrame, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), **kwargs) -> Optional[SimpleTimelineWidget]:
+    def build_from_eeg_raw_and_stream_info(self, eeg_raws: List, stream_infos_df: pd.DataFrame, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from MNE Raw objects and XDF stream info DataFrame.
         
         Args:
@@ -330,6 +358,8 @@ class TimelineBuilder:
             add_example_tracks: Whether to add example tracks (default: False)
             window_title: Custom window title (default: auto-generated)
             window_size: Window size as (width, height) tuple (default: (1000, 800))
+            stream_allowlist: Optional list of regex patterns. If provided, only streams matching any pattern are loaded.
+            stream_blocklist: Optional list of regex patterns. If provided, streams matching any pattern are excluded.
             
         Returns:
             SimpleTimelineWidget instance, or None if no valid datasources found
@@ -339,6 +369,13 @@ class TimelineBuilder:
             timeline = builder.build_from_eeg_raw_and_stream_info(
                 eeg_raws=_out_eeg_raw,
                 stream_infos_df=_out_xdf_stream_infos_df
+            )
+            
+            # Only load EEG streams
+            timeline = builder.build_from_eeg_raw_and_stream_info(
+                eeg_raws=_out_eeg_raw,
+                stream_infos_df=_out_xdf_stream_infos_df,
+                stream_allowlist=[r"EEG.*"]
             )
         """
         if not MNE_AVAILABLE:
@@ -354,6 +391,43 @@ class TimelineBuilder:
         
         if 'xdf_dataset_idx' not in stream_infos_df.columns:
             raise ValueError("stream_infos_df must contain 'xdf_dataset_idx' column")
+        
+        # Filter stream_infos_df if allowlist/blocklist is provided
+        if stream_allowlist is not None or stream_blocklist is not None:
+            if stream_allowlist is not None and stream_blocklist is not None:
+                raise ValueError("Cannot specify both stream_allowlist and stream_blocklist. Only one can be provided.")
+            
+            if 'name' not in stream_infos_df.columns:
+                print("Warning: 'name' column not found in stream_infos_df, cannot filter by stream name")
+            else:
+                original_count = len(stream_infos_df)
+                mask = pd.Series([True] * len(stream_infos_df), index=stream_infos_df.index)
+                
+                if stream_allowlist is not None:
+                    # Include only if matches any pattern in allowlist
+                    name_matches = stream_infos_df['name'].apply(
+                        lambda name: any(re.search(pattern, str(name)) for pattern in stream_allowlist)
+                    )
+                    mask = mask & name_matches
+                elif stream_blocklist is not None:
+                    # Exclude if matches any pattern in blocklist
+                    name_matches = stream_infos_df['name'].apply(
+                        lambda name: any(re.search(pattern, str(name)) for pattern in stream_blocklist)
+                    )
+                    mask = mask & ~name_matches
+                
+                stream_infos_df = stream_infos_df[mask].copy()
+                filtered_count = original_count - len(stream_infos_df)
+                
+                if filtered_count > 0:
+                    filter_type = "allowlist" if stream_allowlist is not None else "blocklist"
+                    patterns = stream_allowlist if stream_allowlist is not None else stream_blocklist
+                    print(f"Filtered out {filtered_count} stream info row(s) using {filter_type} {patterns}")
+                    print(f"Kept {len(stream_infos_df)} out of {original_count} stream info row(s) after filtering")
+                
+                if stream_infos_df.empty:
+                    print("No stream info rows remaining after filtering.")
+                    return None
         
         print("=" * 60)
         print(f"pyPhoTimeline - Load from {len(eeg_raws)} MNE Raw objects and {len(stream_infos_df)} stream info rows")
@@ -979,6 +1053,53 @@ class TimelineBuilder:
         """
         return perform_process_all_streams(streams=streams)
     
+    def _filter_streams_by_name(self, streams: List, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> List:
+        """Filter streams by name using regex patterns.
+        
+        Args:
+            streams: List of stream dictionaries from pyxdf
+            stream_allowlist: Optional list of regex patterns. If provided, only streams matching any pattern are kept.
+            stream_blocklist: Optional list of regex patterns. If provided, streams matching any pattern are excluded.
+            
+        Returns:
+            Filtered list of streams
+            
+        Raises:
+            ValueError: If both allowlist and blocklist are provided
+        """
+        if stream_allowlist is not None and stream_blocklist is not None:
+            raise ValueError("Cannot specify both stream_allowlist and stream_blocklist. Only one can be provided.")
+        
+        if stream_allowlist is None and stream_blocklist is None:
+            return streams
+        
+        filtered_streams = []
+        filtered_out_names = []
+        
+        for stream in streams:
+            stream_name = stream['info']['name'][0]
+            should_include = True
+            
+            if stream_allowlist is not None:
+                # Include only if matches any pattern in allowlist
+                should_include = any(re.search(pattern, stream_name) for pattern in stream_allowlist)
+            elif stream_blocklist is not None:
+                # Exclude if matches any pattern in blocklist
+                should_include = not any(re.search(pattern, stream_name) for pattern in stream_blocklist)
+            
+            if should_include:
+                filtered_streams.append(stream)
+            else:
+                filtered_out_names.append(stream_name)
+        
+        if filtered_out_names:
+            filter_type = "allowlist" if stream_allowlist is not None else "blocklist"
+            patterns = stream_allowlist if stream_allowlist is not None else stream_blocklist
+            print(f"Filtered out {len(filtered_out_names)} stream(s) using {filter_type} {patterns}: {filtered_out_names}")
+        
+        print(f"Kept {len(filtered_streams)} out of {len(streams)} stream(s) after filtering")
+        
+        return filtered_streams
 
     # @function_attributes(short_name=None, tags=['MAIN', 'add'], input_requires=[], output_provides=[], uses=[], used_by=['self.update_timeline', 'self.build_from_datasources'], creation_date='2026-02-03 19:57', related_items=[])
     def _add_tracks_to_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource], enable_hide_extra_track_x_axes: bool=False, use_absolute_datetime_track_mode: bool = True) -> None:

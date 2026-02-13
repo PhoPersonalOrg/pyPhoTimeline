@@ -20,7 +20,7 @@ from qtpy import QtCore
 
 from pypho_timeline.rendering.datasources.interval_datasource import IntervalsDatasource
 import pyphoplacecellanalysis.External.pyqtgraph as pg
-
+from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime
 
 
 
@@ -292,8 +292,8 @@ class BaseTrackDatasource(ABC):
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get a unique cache key for an interval's detailed data.
         
-        Default implementation generates a key from `t_start` and `t_duration`.
-        Override if you need a more specific key format.
+        Default implementation generates a key from `t_start` and `t_duration`,
+        supporting float, datetime, and timedelta types. Override if you need a more specific key format.
         
         Args:
             interval: Series with at least 't_start' and 't_duration' columns
@@ -303,7 +303,39 @@ class BaseTrackDatasource(ABC):
         """
         t_start = interval.get('t_start', 0.0)
         t_duration = interval.get('t_duration', 0.0)
-        return f"{self.custom_datasource_name}_{t_start:.6f}_{t_duration:.6f}"
+        if hasattr(t_start, 'item'):
+            try:
+                t_start = t_start.item()
+            except (ValueError, AttributeError):
+                pass
+        if hasattr(t_duration, 'item'):
+            try:
+                t_duration = t_duration.item()
+            except (ValueError, AttributeError):
+                pass
+        if isinstance(t_start, (datetime, pd.Timestamp)):
+            t_start_str = f"{t_start.timestamp():.6f}"
+        else:
+            try:
+                ts = pd.Timestamp(t_start)
+                t_start_str = f"{ts.timestamp():.6f}"
+            except (ValueError, TypeError, AttributeError):
+                try:
+                    t_start_str = f"{float(t_start):.6f}"
+                except (ValueError, TypeError):
+                    t_start_str = str(t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
+        if isinstance(t_duration, (timedelta, pd.Timedelta)):
+            t_duration_str = f"{t_duration.total_seconds():.6f}"
+        else:
+            try:
+                td = pd.Timedelta(t_duration)
+                t_duration_str = f"{td.total_seconds():.6f}"
+            except (ValueError, TypeError, AttributeError):
+                try:
+                    t_duration_str = f"{float(t_duration):.6f}"
+                except (ValueError, TypeError):
+                    t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
+        return f"{self.custom_datasource_name}_{t_start_str}_{t_duration_str}"
     
     def update_visualization_properties(self, dataframe_vis_columns_function):
         """Updates visualization columns in the dataframe.
@@ -344,7 +376,15 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         self._detail_renderer = detail_renderer
         
         self.detailed_df = detailed_df
+        
+        if ('t_start_dt' not in intervals_df) or ('t_end_dt' not in intervals_df):
+            intervals_df['t_start_dt'] = intervals_df['t_start'].map(lambda x: unix_timestamp_to_datetime(x))
+            intervals_df['t_end_dt'] = intervals_df['t_end'].map(lambda x: unix_timestamp_to_datetime(x))
+            # Change column type to datetime64[ns] for columns: 't_start_dt', 't_end_dt' -- this is so they can be matched against `detailed_df['t']`
+            intervals_df = intervals_df.astype({'t_start_dt': 'datetime64[ns]', 't_end_dt': 'datetime64[ns]'})
+
         self.intervals_df = intervals_df.copy()
+        
         if custom_datasource_name is None:
             custom_datasource_name = "GenericIntervalTrack"
         self.custom_datasource_name = custom_datasource_name
@@ -358,8 +398,8 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         self.intervals_df['series_height'] = 1.0
         
         # Create pens and brushes
-        color = pg.mkColor('blue')
-        color.setAlphaF(0.3)
+        color = pg.mkColor('grey')
+        color.setAlphaF(0.7)
         pen = pg.mkPen(color, width=1)
         brush = pg.mkBrush(color)
         self.intervals_df['pen'] = [pen] * len(self.intervals_df)
@@ -445,22 +485,121 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
     
 
     def fetch_detailed_data(self, interval: pd.Series) -> pd.DataFrame:
-        """Fetch position data for an interval with optional downsampling."""
+        """Fetch position data for an interval with optional downsampling.
+        # BUG 2026-02-06 21:48: - [ ] BUG IS FOR SURE HERE 
+        """
         if self.detailed_df is None:
             return pd.DataFrame()  # Return empty DataFrame if no position data available
         
-        t_start = interval['t_start']
+        t_start_col_name: str = 't_start_dt'
+        t_end_col_name: str = 't_end_dt'
+
+
+        # t_start = interval['t_start']
+        t_start = interval[t_start_col_name]        
+        t_end = interval[t_end_col_name]
+
+        # Check if using datetime in intervals_df
+        intervals_is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df[t_start_col_name])
         
-        # Check if using datetime
-        is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df['t_start'])
-        
-        if is_datetime:
-            t_end = t_start + pd.to_timedelta(interval['t_duration'], unit='s')
-        else:
-            t_end = t_start + interval['t_duration']
-        
-        # Ensure detailed_df 't' column matches the type
+        # Check if detailed_df 't' column is datetime
+        detailed_is_datetime = False
         if 't' in self.detailed_df.columns:
+            detailed_is_datetime = pd.api.types.is_datetime64_any_dtype(self.detailed_df['t'])
+        
+        # # Calculate t_end based on intervals_df type
+        # if intervals_is_datetime:
+        #     t_end = t_start + pd.to_timedelta(interval['t_duration'], unit='s')
+        # else:
+        #     t_end = t_start + interval['t_duration']
+
+        
+        # Ensure t_start and t_end match the dtype of detailed_df['t'] for comparison
+        if 't' in self.detailed_df.columns:
+            # if detailed_is_datetime:
+            #     # Check if detailed_df['t'] is timezone-aware and get its timezone
+            #     detailed_tz = None
+            #     detailed_tz_aware = False
+            #     # Check dtype first (for DatetimeTZDtype)
+            #     if hasattr(self.detailed_df['t'].dtype, 'tz') and self.detailed_df['t'].dtype.tz is not None:
+            #         detailed_tz = self.detailed_df['t'].dtype.tz
+            #         detailed_tz_aware = True
+            #     else:
+            #         # Check by sampling a value (for regular datetime64 that might have timezone-aware values)
+            #         try:
+            #             if len(self.detailed_df) > 0:
+            #                 sample_val = self.detailed_df['t'].iloc[0]
+            #                 if isinstance(sample_val, pd.Timestamp) and sample_val.tz is not None:
+            #                     detailed_tz = sample_val.tz
+            #                     detailed_tz_aware = True
+            #         except (IndexError, AttributeError, TypeError):
+            #             pass
+                
+            #     # Convert t_start and t_end to datetime if they're not already
+            #     if not isinstance(t_start, (datetime, pd.Timestamp)):
+            #         if isinstance(t_start, (int, float)):
+            #             if detailed_tz_aware and detailed_tz is not None:
+            #                 t_start = pd.Timestamp.fromtimestamp(t_start, tz=detailed_tz)
+            #             else:
+            #                 t_start = pd.Timestamp.fromtimestamp(t_start)
+            #         else:
+            #             t_start = pd.Timestamp(t_start)
+            #             # After conversion, ensure timezone matches
+            #             if detailed_tz_aware and detailed_tz is not None:
+            #                 if t_start.tzinfo is None:
+            #                     t_start = t_start.tz_localize(detailed_tz)
+            #                 elif t_start.tzinfo != detailed_tz:
+            #                     t_start = t_start.tz_convert(detailed_tz)
+            #             else:
+            #                 if t_start.tzinfo is not None:
+            #                     t_start = t_start.tz_convert('UTC').tz_localize(None)
+            #     else:
+            #         # Ensure timezone awareness matches detailed_df
+            #         if detailed_tz_aware and detailed_tz is not None:
+            #             if t_start.tzinfo is None:
+            #                 t_start = t_start.tz_localize(detailed_tz)
+            #             elif t_start.tzinfo != detailed_tz:
+            #                 t_start = t_start.tz_convert(detailed_tz)
+            #         else:
+            #             if t_start.tzinfo is not None:
+            #                 # Convert to UTC then remove timezone to make it naive
+            #                 t_start = t_start.tz_convert('UTC').tz_localize(None)
+                
+            #     if not isinstance(t_end, (datetime, pd.Timestamp)):
+            #         if isinstance(t_end, (int, float)):
+            #             if detailed_tz_aware and detailed_tz is not None:
+            #                 t_end = pd.Timestamp.fromtimestamp(t_end, tz=detailed_tz)
+            #             else:
+            #                 t_end = pd.Timestamp.fromtimestamp(t_end)
+            #         else:
+            #             t_end = pd.Timestamp(t_end)
+            #             # After conversion, ensure timezone matches
+            #             if detailed_tz_aware and detailed_tz is not None:
+            #                 if t_end.tzinfo is None:
+            #                     t_end = t_end.tz_localize(detailed_tz)
+            #                 elif t_end.tzinfo != detailed_tz:
+            #                     t_end = t_end.tz_convert(detailed_tz)
+            #             else:
+            #                 if t_end.tzinfo is not None:
+            #                     t_end = t_end.tz_convert('UTC').tz_localize(None)
+            #     else:
+            #         # Ensure timezone awareness matches detailed_df
+            #         if detailed_tz_aware and detailed_tz is not None:
+            #             if t_end.tzinfo is None:
+            #                 t_end = t_end.tz_localize(detailed_tz)
+            #             elif t_end.tzinfo != detailed_tz:
+            #                 t_end = t_end.tz_convert(detailed_tz)
+            #         else:
+            #             if t_end.tzinfo is not None:
+            #                 # Convert to UTC then remove timezone to make it naive
+            #                 t_end = t_end.tz_convert('UTC').tz_localize(None)
+            # else:
+            #     # Convert t_start and t_end to float if they're datetime
+            #     if isinstance(t_start, (datetime, pd.Timestamp)):
+            #         t_start = t_start.timestamp() if hasattr(t_start, 'timestamp') else pd.Timestamp(t_start).timestamp()
+            #     if isinstance(t_end, (datetime, pd.Timestamp)):
+            #         t_end = t_end.timestamp() if hasattr(t_end, 'timestamp') else pd.Timestamp(t_end).timestamp()
+            
             mask = (self.detailed_df['t'] >= t_start) & (self.detailed_df['t'] < t_end)
         else:
             mask = pd.Series([False] * len(self.detailed_df))
@@ -469,17 +608,22 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         
         # Apply downsampling if enabled
         if self.enable_downsampling and (self.max_points_per_second is not None) and (len(result_df) > 0):
-            # Calculate target point count based on interval duration
-            t_duration: float = interval.get('t_duration', (t_end - t_start))
-            max_allowed_points: int = int(t_duration * self.max_points_per_second) ## compute the max allowed points in the current interval
-            curr_df_points_per_sec: float = float(len(result_df['t']))/t_duration
-
-            # Only downsample if we have more points than target
+            raw_duration = interval.get('t_duration', (t_end - t_start))
+            if isinstance(raw_duration, (timedelta, pd.Timedelta)):
+                t_duration_sec: float = raw_duration.total_seconds()
+            else:
+                t_duration_sec = float(raw_duration)
+            print(f't_duration_sec: {t_duration_sec}')
+            max_allowed_points: int = int(t_duration_sec * self.max_points_per_second)
+            curr_df_points_per_sec: float = float(len(result_df['t'])) / t_duration_sec
+            print(f'curr_df_points_per_sec: {curr_df_points_per_sec}')
             if len(result_df) > max_allowed_points:
                 from pypho_timeline.utils.downsampling import downsample_dataframe
                 result_df = downsample_dataframe(result_df, max_points=max_allowed_points, time_col='t')
-                curr_downsampled_points_per_sec = float(len(result_df['t']))/t_duration
+                curr_downsampled_points_per_sec = float(len(result_df['t'])) / t_duration_sec
+                print(f'curr_downsampled_points_per_sec: {curr_downsampled_points_per_sec}')
 
+        print(f'result_df')
         return result_df
     
 
@@ -500,12 +644,6 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
             
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
-        # #region agent log
-        import json
-        interval_type = type(interval).__name__
-        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:501', 'message': 'get_detail_cache_key entry', 'data': {'interval_type': interval_type, 'has_t_start': 't_start' in interval.index if hasattr(interval, 'index') else False, 'has_t_duration': 't_duration' in interval.index if hasattr(interval, 'index') else False}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-        # #endregion
         # Extract values from Series - use .iloc[0] if it's a single-row DataFrame converted to Series
         # or direct access if it's already a Series
         if isinstance(interval, pd.Series):
@@ -515,24 +653,12 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
             # Fallback for DataFrame row
             t_start = interval.get('t_start') if hasattr(interval, 'get') else interval['t_start']
             t_duration = interval.get('t_duration') if hasattr(interval, 'get') else interval['t_duration']
-        # #region agent log
-        t_start_type = type(t_start).__name__ if t_start is not None else 'None'
-        t_duration_type = type(t_duration).__name__ if t_duration is not None else 'None'
-        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:513', 'message': 'extracted t_start and t_duration', 'data': {'t_start': str(t_start), 't_start_type': t_start_type, 't_duration': str(t_duration), 't_duration_type': t_duration_type}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-        # #endregion
         
         # Convert pandas scalars/numpy types to Python native types
         # This is critical for proper type checking and formatting
         if hasattr(t_start, 'item'):
             try:
-                t_start_before = t_start
                 t_start = t_start.item()
-                # #region agent log
-                import json
-                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:529', 'message': 'after item() call', 'data': {'t_start_before_type': type(t_start_before).__name__, 't_start_after_type': type(t_start).__name__, 't_start_after': str(t_start)}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                # #endregion
             except (ValueError, AttributeError):
                 pass  # Not a scalar, keep as-is
         if hasattr(t_duration, 'item'):
@@ -546,21 +672,8 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         try:
             # Check if it's a datetime/Timestamp
             if isinstance(t_start, (datetime, pd.Timestamp)):
-                # #region agent log
-                import json
-                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:543', 'message': 'before timestamp() call', 'data': {'t_start': str(t_start), 't_start_type': type(t_start).__name__, 'is_datetime': isinstance(t_start, datetime), 'is_timestamp': isinstance(t_start, pd.Timestamp)}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                # #endregion
                 timestamp_value = t_start.timestamp()
-                # #region agent log
-                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:546', 'message': 'after timestamp() call', 'data': {'timestamp_value': timestamp_value, 'timestamp_type': type(timestamp_value).__name__}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                # #endregion
                 t_start_str = f"{timestamp_value:.3f}"
-                # #region agent log
-                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:549', 'message': 'after formatting', 'data': {'t_start_str': t_start_str}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                # #endregion
             elif isinstance(t_start, pd.Timestamp):
                 t_start_str = f"{t_start.timestamp():.3f}"
             else:
@@ -611,11 +724,6 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
             t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
         
         result_key = f"{self.custom_datasource_name}_{t_start_str}_{t_duration_str}"
-        # #region agent log
-        import json
-        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_datasource.py:581', 'message': 'get_detail_cache_key result', 'data': {'result_key': result_key, 't_start_str': t_start_str, 't_duration_str': t_duration_str}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-        # #endregion
         return result_key
 
     @classmethod

@@ -1,13 +1,15 @@
 """TrackRenderer - Manages overview rectangles and detail overlays for timeline tracks."""
+import numpy as np
 from typing import Dict, List, Optional, Set, Any
 import logging
+from datetime import datetime
 import pandas as pd
 from qtpy import QtCore
 import pyphoplacecellanalysis.External.pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, DetailRenderer
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
-from pypho_timeline.rendering.async_detail_fetcher import AsyncDetailFetcher
+from pypho_timeline.rendering.async_detail_fetcher import AsyncDetailFetcher, _format_interval_for_log, _format_time_value_for_log
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.utils.logging_util import get_rendering_logger
 
@@ -66,6 +68,7 @@ class TrackRenderer(QtCore.QObject):
         self.detail_renderer: DetailRenderer = datasource.get_detail_renderer()
         self.detail_graphics: Dict[str, List[pg.GraphicsObject]] = {}  # cache_key -> graphics objects
         self.visible_intervals: Set[str] = set()  # Set of cache keys currently in viewport
+        self._overview_df: Optional[pd.DataFrame] = None  # Store overview intervals for mapping rectangle indices
         
         # Channel visibility state (for channel-based renderers)
         self.channel_visibility: Dict[str, bool] = {}
@@ -107,6 +110,9 @@ class TrackRenderer(QtCore.QObject):
             overview_df = self.datasource.get_overview_intervals()
             num_intervals = len(overview_df)
             logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - found {num_intervals} intervals in overview")
+            
+            # Store overview_df for mapping rectangle indices to intervals
+            self._overview_df = overview_df.copy()
             
             # Use vispy renderer if enabled
             if self.use_vispy and VispyVideoEpochRenderer is not None:
@@ -242,9 +248,54 @@ class TrackRenderer(QtCore.QObject):
                     return ''
                 format_label_fn = video_label_formatter
             
+            # Create detail render callback if detail renderer is available
+            detail_render_callback = None
+            if self.detail_renderer is not None:
+                def detail_render_callback_fn(rect_index: int, rect_data: IntervalRectsItemData):
+                    """Callback to render detailed view for a specific interval rectangle.
+                    
+                    Args:
+                        rect_index: Index of the rectangle in IntervalRectsItem.data
+                        rect_data: IntervalRectsItemData for the rectangle
+                    """
+                    logger.info(f"TrackRenderer[{self.track_id}] detail_render_callback called for rect_index={rect_index}")
+                    
+                    # Get the corresponding interval from overview_df
+                    if self._overview_df is None or rect_index >= len(self._overview_df):
+                        logger.warning(f"TrackRenderer[{self.track_id}] Invalid rect_index={rect_index} for overview_df length={len(self._overview_df) if self._overview_df is not None else 0}")
+                        return
+                    
+                    # Get interval as Series
+                    interval_series = self._overview_df.iloc[rect_index]
+                    
+                    # Convert to single-row DataFrame for _render_detail
+                    interval_df = self._overview_df.iloc[[rect_index]]
+                    
+                    # Get cache key
+                    cache_key = self.datasource.get_detail_cache_key(interval_series)
+                    logger.debug(f"TrackRenderer[{self.track_id}] detail_render_callback - cache_key='{cache_key}'")
+                    
+                    # Add to visible_intervals to prevent it from being cleared
+                    self.visible_intervals.add(cache_key)
+                    
+                    # Check if detail data is already cached
+                    cached_data = self.async_fetcher.get_cached_data(cache_key)
+                    if cached_data is not None:
+                        # Render immediately with cached data
+                        logger.debug(f"TrackRenderer[{self.track_id}] detail_render_callback - using cached data for cache_key='{cache_key}'")
+                        self._render_detail(interval_df, cache_key, cached_data)
+                        self.detail_loaded.emit(self.track_id, interval_df, cached_data)
+                    else:
+                        # Fetch asynchronously
+                        logger.debug(f"TrackRenderer[{self.track_id}] detail_render_callback - fetching detail data asynchronously for cache_key='{cache_key}'")
+                        self.async_fetcher.fetch_detail_async(self.track_id, interval_series, self.datasource)
+                        # Note: _on_detail_data_ready will be called when data is ready
+                
+                detail_render_callback = detail_render_callback_fn
+            
             # Build the interval rects item
             self.overview_rects_item = Render2DEventRectanglesHelper.build_IntervalRectsItem_from_interval_datasource(
-                self.datasource, format_label_fn=format_label_fn
+                self.datasource, format_label_fn=format_label_fn, detail_render_callback=detail_render_callback
             )
             
             # Remove old overview if exists
@@ -276,7 +327,7 @@ class TrackRenderer(QtCore.QObject):
         # Defer the actual processing to avoid blocking the UI thread
         # This allows other tracks to continue processing even if this one is slow
         def process_viewport_update():
-            logger.debug(f"TrackRenderer[{self.track_id}] update_viewport(start={viewport_start:.3f}, end={viewport_end:.3f})")
+            logger.debug(f"TrackRenderer[{self.track_id}] update_viewport(start={_format_time_value_for_log(viewport_start)}, end={_format_time_value_for_log(viewport_end)})")
             
             # Optimize for video tracks: skip detail fetching entirely
             is_video_track = VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource)
@@ -308,52 +359,20 @@ class TrackRenderer(QtCore.QObject):
             for idx, interval_series in intervals_df.iterrows():
                 # Convert Series to single-row DataFrame for DetailRenderer methods
                 interval_df = intervals_df.iloc[[idx]]
-                # #region agent log
-                import json
-                t_start_val = interval_series.get('t_start', None)
-                t_duration_val = interval_series.get('t_duration', None)
-                t_start_type = type(t_start_val).__name__ if t_start_val is not None else 'None'
-                t_duration_type = type(t_duration_val).__name__ if t_duration_val is not None else 'None'
-                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_renderer.py:308', 'message': 'update_viewport interval processing', 'data': {'track_id': self.track_id, 'idx': str(idx), 't_start': str(t_start_val), 't_start_type': t_start_type, 't_duration': str(t_duration_val), 't_duration_type': t_duration_type}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                # #endregion
                 cache_key = self.datasource.get_detail_cache_key(interval_series)
-                # #region agent log
-                with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                    f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'track_renderer.py:311', 'message': 'cache_key generated in update_viewport', 'data': {'cache_key': cache_key, 'cache_key_type': type(cache_key).__name__}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                # #endregion
                 new_visible_keys.add(cache_key)
                 
                 # If not already visible and not already loaded, fetch detail
                 if cache_key not in self.visible_intervals:
                     # Check cache first for non-video tracks
-                    # #region agent log
-                    import json
-                    with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                        f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B', 'location': 'track_renderer.py:317', 'message': 'checking cache in update_viewport', 'data': {'cache_key': cache_key, 'visible_intervals_count': len(self.visible_intervals)}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                    # #endregion
                     cached_data = self.async_fetcher.get_cached_data(cache_key)
-                    # #region agent log
-                    with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-                        f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B', 'location': 'track_renderer.py:318', 'message': 'cache lookup result', 'data': {'cache_key': cache_key, 'cached_data_is_none': cached_data is None, 'cached_data_type': type(cached_data).__name__ if cached_data is not None else 'None'}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-                    # #endregion
                     if cached_data is not None:
-                        # Use cached data immediately
                         cache_hits += 1
-                        t_start = interval_series.get('t_start', None)
-                        t_duration = interval_series.get('t_duration', None)
-                        t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
-                        t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
-                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' (t_start={t_start_str}, t_duration={t_duration_str}) - cache HIT, rendering immediately")
+                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' ({_format_interval_for_log(interval_series)}) - cache HIT, rendering immediately")
                         self._render_detail(interval_df, cache_key, cached_data)
                     else:
-                        # Fetch asynchronously (still pass Series for datasource compatibility)
                         cache_misses += 1
-                        t_start = interval_series.get('t_start', None)
-                        t_duration = interval_series.get('t_duration', None)
-                        t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
-                        t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
-                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' (t_start={t_start_str}, t_duration={t_duration_str}) - cache MISS, requesting async fetch")
+                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' ({_format_interval_for_log(interval_series)}) - cache MISS, requesting async fetch")
                         self.async_fetcher.fetch_detail_async(self.track_id, interval_series, self.datasource) ## I believe after this asynchronously completes, `self._on_detail_data_ready` is called.
                 else:
                     already_visible += 1
@@ -390,11 +409,6 @@ class TrackRenderer(QtCore.QObject):
             detail_data: The fetched detail data
             error: Error if fetch failed, None otherwise
         """
-        # #region agent log
-        import json
-        with open(r'c:\Users\pho\repos\EmotivEpoc\PhoOfflineEEGAnalysis\.cursor\debug.log', 'a') as f:
-            f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'D', 'location': 'track_renderer.py:361', 'message': '_on_detail_data_ready entry', 'data': {'track_id': track_id, 'self_track_id': self.track_id, 'cache_key': cache_key, 'cache_key_in_visible': cache_key in self.visible_intervals, 'detail_data_type': type(detail_data).__name__ if detail_data is not None else 'None', 'has_error': error is not None}, 'timestamp': __import__('time').time() * 1000}) + '\n')
-        # #endregion
         logger.debug(f"TrackRenderer[{self.track_id}] _on_detail_data_ready(track_id={track_id}, cache_key='{cache_key}')")
         # g.graphics.track_renderer - DEBUG - TrackRenderer[EEG_Epoc X] Rendered detail for cache_key='EEG_Epoc X_0.000_0.000' - created 14 graphics objects
         # 2026-02-03 11:27:20 - pypho_timeline.rendering.graphics.track_renderer - DEBUG - TrackRenderer[MOTION_Epoc X Motion] _on_detail_data_ready(track_id='EEG_Epoc X', cache_key='EEG_Epoc X_0.000_0.000')
@@ -428,6 +442,17 @@ class TrackRenderer(QtCore.QObject):
         if len(interval) > 0:
             t_start = interval.iloc[0].get('t_start', None)
             t_duration = interval.iloc[0].get('t_duration', None)
+
+            ## datetime converted versions for filtering `detailed_df`
+            t_start_dt = interval.iloc[0].get('t_start_dt', None)
+            t_end_dt = interval.iloc[0].get('t_end_dt', None)
+
+            if ((t_start_dt is not None) and (t_end_dt is not None) and isinstance(detail_data, pd.DataFrame)):
+                ## filter detail_data down to the current interval range... I hope this is right at least, I think it could be so long as `interval` is the data interval to render and not the viewport or somethings
+                logger.debug(f"TrackRenderer[{self.track_id}] _render_detail - filtering df down to correct interval range: (t_start_dt='{t_start_dt}', t_end_dt={t_end_dt}, t_start={t_start})")
+                detail_data = detail_data[np.logical_and((detail_data['t'] >= t_start_dt), (detail_data['t'] <= t_end_dt))] 
+                
+                
             t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
             t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
         else:
@@ -451,12 +476,13 @@ class TrackRenderer(QtCore.QObject):
                 self.detail_renderer.channel_visibility = self.channel_visibility.copy()
                 logger.debug(f"TrackRenderer[{self.track_id}] _render_detail() - set channel_visibility on detail_renderer: {self.channel_visibility}")
             
+            # Where the main rendering occurs ____________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
             graphics_objects = self.detail_renderer.render_detail(
                 self.plot_item, interval, detail_data
             )
             
             num_graphics = len(graphics_objects) if graphics_objects is not None else 0
-            logger.debug(f"TrackRenderer[{self.track_id}] Rendered detail for cache_key='{cache_key}' - created {num_graphics} graphics objects")
+            logger.debug(f"TrackRenderer[{self.track_id}] _render_detail() - Rendered detail for cache_key='{cache_key}' - created {num_graphics} graphics objects")
             
             # Store graphics objects for cleanup
             self.detail_graphics[cache_key] = graphics_objects
@@ -535,10 +561,22 @@ class TrackRenderer(QtCore.QObject):
             if self.vispy_renderer.current_epochs_data:
                 epochs_df = pd.DataFrame(self.vispy_renderer.current_epochs_data)
                 if len(epochs_df) > 0:
-                    x_min = epochs_df['t_start'].min()
-                    x_max = (epochs_df['t_start'] + epochs_df['t_duration']).max()
-                    y_min = epochs_df['series_vertical_offset'].min()
-                    y_max = (epochs_df['series_vertical_offset'] + epochs_df['series_height']).max()
+                    # Check if t_start is datetime and convert to float if needed
+                    x_min_val = epochs_df['t_start'].min()
+                    if isinstance(x_min_val, (datetime, pd.Timestamp)):
+                        x_min = x_min_val.timestamp() if hasattr(x_min_val, 'timestamp') else pd.Timestamp(x_min_val).timestamp()
+                    else:
+                        x_min = float(x_min_val)
+                    
+                    # Calculate x_max
+                    if pd.api.types.is_datetime64_any_dtype(epochs_df['t_start']):
+                        x_max_val = (epochs_df['t_start'] + pd.to_timedelta(epochs_df['t_duration'], unit='s')).max()
+                        x_max = x_max_val.timestamp() if hasattr(x_max_val, 'timestamp') else pd.Timestamp(x_max_val).timestamp()
+                    else:
+                        x_max = float((epochs_df['t_start'] + epochs_df['t_duration']).max())
+                    
+                    y_min = float(epochs_df['series_vertical_offset'].min())
+                    y_max = float((epochs_df['series_vertical_offset'] + epochs_df['series_height']).max())
                     return (x_min, x_max, y_min, y_max)
             return None
         

@@ -97,6 +97,8 @@ class Render2DEventRectanglesHelper:
         
         Input:
             interval_datasource: IntervalsDatasource (or compatible object with .df property)
+            **kwargs: Additional arguments passed to IntervalRectsItem constructor
+                     (e.g., format_tooltip_fn, format_label_fn, detail_render_callback)
         Returns:
             IntervalRectsItem
         """        
@@ -108,7 +110,7 @@ class Render2DEventRectanglesHelper:
         active_df = interval_datasource.df
         ## build the output tuple list: fields are (start_t, series_vertical_offset, duration_t, series_height, pen, brush).
         curr_IntervalRectsItem_interval_tuples = cls._build_interval_tuple_list_from_dataframe(active_df)
-        ## build the IntervalRectsItem
+        ## build the IntervalRectsItem (pass through all kwargs including detail_render_callback)
         return IntervalRectsItem(curr_IntervalRectsItem_interval_tuples, **kwargs)
     
     

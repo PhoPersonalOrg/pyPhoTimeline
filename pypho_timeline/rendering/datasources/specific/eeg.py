@@ -6,6 +6,9 @@ from datetime import datetime
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
+from pypho_timeline.utils.logging_util import get_rendering_logger
+logger = get_rendering_logger(__name__)
+
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGPlotDetailRenderer - Renders eeg data as line plots.                                                                                                                                                                                                                              #
 # ==================================================================================================================================================================================================================================================================================== #
@@ -70,6 +73,8 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         else:
             self.pen_colors = None
 
+
+
     
     def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render eeg data as line plots for each channel.
@@ -97,6 +102,8 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
             graphics_objects = a_detail_renderer.render_detail(plot_item=a_plot_item, interval=None, detail_data=a_ds.detailed_df) # List[PlotDataItem]
 
         """
+        logger.debug(f"EEGPlotDetailRenderer[].render_detail(plot_item: {plot_item},\n\tinterval='{interval}',\n\t detail_data={detail_data}) - starting")
+    
         if detail_data is None or len(detail_data) == 0:
             return []
         
@@ -130,21 +137,31 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
         if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
             # Convert datetime to Unix timestamps
-            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
+            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values ## #TODO 2026-02-06 20:20: - [ ] Extremely slow (~5 seconds), plus returns all the values, not just the ones in this interval, PLUS it connects them by intermediate lines
         else:
             t_values = t_col_aligned.values
+        ## #TODO 2026-02-06 21:14: - [ ] is downsampling working?
+
+        nPlots: int = len(found_channel_names)
+        single_channel_height: float = 1.0 / float(nPlots)
 
         # Plot each channel with its distinct color
-        for a_found_channel_name in found_channel_names:
+        for i, a_found_channel_name in enumerate(found_channel_names):
             y_values = normalized_channel_df[a_found_channel_name].values
+            y_values = y_values * single_channel_height ## scale by the single channel height
             # Get the color for this channel based on its index in channel_names
             channel_index = self.channel_names.index(a_found_channel_name)
             channel_color = self.pen_colors[channel_index]
             pen = pg.mkPen(channel_color, width=self.pen_width)
+            # plot_data_item = pg.PlotDataItem(t_values, y_values, pen=pen, connect='finite', name=a_found_channel_name)
             plot_data_item = pg.PlotDataItem(t_values, y_values, pen=pen, connect='finite', name=a_found_channel_name)
+            # plot_data_item = pg.PlotCurveItem(pen=pen, skipFiniteCheck=True)
             plot_item.addItem(plot_data_item)
+            plot_data_item.setPos(0, (float(i)*single_channel_height))
             graphics_objects.append(plot_data_item)
         
+        # plot_item.setYRange(0, 1, padding=0)
+
         return graphics_objects
     
 
@@ -233,18 +250,20 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         channel_columns = [col for col in self.channel_names if col in detail_data.columns]
         if channel_columns:
             # Find min/max across all channels
-            y_min = min(detail_data[col].min() for col in channel_columns)
-            y_max = max(detail_data[col].max() for col in channel_columns)
+            y_min = np.nanmin(np.nanmin(detail_data[col]) for col in channel_columns)
+            y_max = np.nanmax(np.nanmax(detail_data[col]) for col in channel_columns)
             # Add padding
             y_pad = (y_max - y_min) * 0.1 if y_max > y_min else 1.0
-            
+            y_final_min: float = (y_min - y_pad)
+            y_final_max: float = (y_max + y_pad)
+
             # Convert t_start and t_end to Unix timestamps if they're datetime objects
             if isinstance(t_start, (datetime, pd.Timestamp)):
                 t_start = datetime_to_unix_timestamp(t_start)
             if isinstance(t_end, (datetime, pd.Timestamp)):
                 t_end = datetime_to_unix_timestamp(t_end)
             
-            return (t_start, t_end, (y_min - y_pad), (y_max + y_pad))
+            return (t_start, t_end, y_final_min, y_final_max)
         else:
             # No channels found, use default bounds
             # Convert t_start and t_end to Unix timestamps if they're datetime objects

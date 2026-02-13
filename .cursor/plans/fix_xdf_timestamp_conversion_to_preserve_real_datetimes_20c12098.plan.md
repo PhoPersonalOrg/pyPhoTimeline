@@ -68,11 +68,9 @@ Convert each file's relative timestamps to absolute datetimes using that file's 
 1. For each XDF file, extract reference datetime from header using `get_reference_datetime_from_xdf_header()`
 2. Find the earliest reference datetime across all files
 3. For each stream in each file:
-
-   - Get relative timestamps from stream (relative to that file's start)
-   - Convert to absolute datetimes: `float_to_datetime(timestamp, file_reference_datetime)`
-   - Convert back to relative timestamps: `datetime_to_float(absolute_datetime, earliest_reference_datetime)`
-
+  - Get relative timestamps from stream (relative to that file's start)
+  - Convert to absolute datetimes: `float_to_datetime(timestamp, file_reference_datetime)`
+  - Convert back to relative timestamps: `datetime_to_float(absolute_datetime, earliest_reference_datetime)`
 4. Store normalized timestamps in datasources (still as floats, but now relative to common reference)
 5. Display uses `earliest_reference_datetime` to convert back to absolute datetimes for display
 
@@ -112,3 +110,4 @@ After implementation, verify:
 - Timeline displays show correct absolute datetimes
 - All tracks appear at their correct absolute time positions
 - No timestamp misalignment between tracks from different files
+

@@ -34,9 +34,9 @@ def configure_logging(log_level=logging.DEBUG, log_file: Optional[Path] = None, 
     # Remove existing handlers to avoid duplicates
     logger.handlers.clear()
     
-    # Create formatter
+    # Create formatter (include threadName for async/debugging)
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        '%(asctime)s - %(name)s - %(levelname)s - [%(threadName)s] - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
@@ -135,7 +135,7 @@ def add_qt_log_handler(logger: logging.Logger, log_widget, log_level=logging.DEB
     else:
         # Use default formatter
         handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            '%(asctime)s - %(name)s - %(levelname)s - [%(threadName)s] - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         ))
     

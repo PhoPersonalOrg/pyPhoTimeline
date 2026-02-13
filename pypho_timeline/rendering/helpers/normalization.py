@@ -223,8 +223,6 @@ class ChannelNormalizationModeNormalizingMixin:
         self.normalization_reference_df: Optional[pd.DataFrame] = normalization_reference_df
         # if self.normalization_reference_df is not None:
             
-        
-
         normalize_over_full_data: bool = (self.normalization_reference_df is not None)
 
 
