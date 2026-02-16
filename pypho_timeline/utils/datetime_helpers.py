@@ -286,7 +286,15 @@ def unix_timestamp_to_datetime(ts: Union[float, np.ndarray, List[float]]) -> Uni
         # Convert Timestamp objects to datetime objects
         return [dt.to_pydatetime() if isinstance(dt, pd.Timestamp) else dt for dt in datetimes]
     
-    # Scalar value
+    # Scalar value - accept already-datetime (e.g. pandas Timestamp) and return as UTC datetime
+    if isinstance(ts, (pd.Timestamp, datetime)):
+        if isinstance(ts, pd.Timestamp):
+            ts = ts.to_pydatetime()
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        else:
+            ts = ts.astimezone(timezone.utc)
+        return ts
     return datetime.fromtimestamp(ts, tz=timezone.utc)
 
 

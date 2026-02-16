@@ -379,7 +379,12 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         
         if ('t_start_dt' not in intervals_df) or ('t_end_dt' not in intervals_df):
             intervals_df['t_start_dt'] = intervals_df['t_start'].map(lambda x: unix_timestamp_to_datetime(x))
-            intervals_df['t_end_dt'] = intervals_df['t_end'].map(lambda x: unix_timestamp_to_datetime(x))
+            if 't_end' in intervals_df.columns:
+                intervals_df['t_end_dt'] = intervals_df['t_end'].map(lambda x: unix_timestamp_to_datetime(x))
+            elif 't_duration' in intervals_df.columns:
+                intervals_df['t_end_dt'] = intervals_df['t_start_dt'] + pd.to_timedelta(intervals_df['t_duration'], unit='s')
+            else:
+                raise ValueError("intervals_df must have either 't_end' or 't_duration' to compute t_end_dt")
             # Change column type to datetime64[ns] for columns: 't_start_dt', 't_end_dt' -- this is so they can be matched against `detailed_df['t']`
             intervals_df = intervals_df.astype({'t_start_dt': 'datetime64[ns]', 't_end_dt': 'datetime64[ns]'})
 
