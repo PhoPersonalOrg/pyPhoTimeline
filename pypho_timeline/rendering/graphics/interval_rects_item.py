@@ -148,6 +148,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
         self._labels = []
         self.rebuild_label_items()
 
+
     def generatePicture(self):
         ## pre-computing a QPicture object allows paint() to run much more quickly, 
         ## rather than re-drawing the shapes every time.
@@ -182,6 +183,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
 
         p.end()
     
+
     def update_data(self, new_data):
         """Update the data in-place and regenerate the picture
         
@@ -197,15 +199,18 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
         if self.item_label_format_fn is not None:
             self.rebuild_label_items()
     
+
     def paint(self, p, *args):
         p.drawPicture(0, 0, self.picture)
     
+
     def boundingRect(self):
         ## boundingRect _must_ indicate the entire area that will be drawn on
         ## or else we will get artifacts and possibly crashing.
         ## (in this case, QPicture does all the work of computing the bounding rect for us)
         return QtCore.QRectF(self.picture.boundingRect())
     
+
     def shape(self):
         """Return the shape of the item for hit testing.
         
@@ -233,6 +238,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             path.addRect(rect)
         return path
 
+
     @property
     def format_item_tooltip_fn(self) -> Callable:
         """The format_item_tooltip_fn property."""
@@ -241,6 +247,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
     def format_item_tooltip_fn(self, value: Callable):
         is_changing: bool = (self._current_hovered_item_tooltip_format_fn != value)
         self._current_hovered_item_tooltip_format_fn = value
+
 
     @property
     def item_label_format_fn(self):
@@ -252,6 +259,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
         self._item_label_format_fn = value
         if is_changing:
             self.rebuild_label_items()
+
 
     def rebuild_label_items(self, debug_print: bool=False):
         """Rebuilds self._labels after update."""
@@ -300,11 +308,13 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
         if debug_print:
             print(f'\tdone.')
 
+
     ## Copy Constructors:
     def __copy__(self):
         independent_data_copy = RectangleRenderTupleHelpers.copy_data(self.data)
         return IntervalRectsItem(independent_data_copy)
     
+
     def __deepcopy__(self, memo):
         independent_data_copy = RectangleRenderTupleHelpers.copy_data(self.data)
         return IntervalRectsItem(independent_data_copy)
@@ -316,6 +326,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
     def hoverEnterEvent(self, event):
         if self.clickable:
             self.hoverEnter.emit()
+
 
     def hoverMoveEvent(self, event):
         """Handle hover move events to show tooltips for individual rectangles."""
@@ -339,12 +350,14 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
                 # Hide tooltip when not over any rectangle
                 QtWidgets.QToolTip.hideText()
 
+
     def hoverLeaveEvent(self, event):
         if self.clickable:
             self.hoverExit.emit()
             # Hide tooltip when leaving the item
             QtWidgets.QToolTip.hideText()
             self._current_hovered_rect = None
+
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.MiddleButton:
@@ -361,6 +374,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
                     return
             # For left-click, just track that it was pressed
             self.pressed = True
+
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.MiddleButton:
@@ -399,6 +413,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
                 return i
         return None
     
+
     @classmethod
     def _default_format_tooltip_for_rect_data(cls, rect_index: int, rect_data_tuple: Tuple, datetime_tooltip_format: str='%Y-%m-%d %H:%M:%S') -> str:
         """Default tooltip formatter for rectangle data.

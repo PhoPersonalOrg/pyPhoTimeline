@@ -167,6 +167,7 @@ class AsyncDetailFetcher(QtCore.QObject):
         self._process_timer.start(10)  # Check every 10ms
         logger.info(f"[{threading.current_thread().name}] AsyncDetailFetcher __init__ - initialized with max_cache_size={max_cache_size}, max_threads={max_threads}")
     
+
     def fetch_detail_async(self, track_id: str, interval: pd.Series, 
                           datasource: TrackDatasource, callback: Optional[Callable] = None):
         """Queue an async fetch for detailed data.
@@ -210,6 +211,7 @@ class AsyncDetailFetcher(QtCore.QObject):
         logger.debug(f"[{thread_name}] AsyncDetailFetcher.fetch_detail_async() - starting worker for cache_key='{cache_key}', activeThreads={active_threads}")
         self._thread_pool.start(worker)
     
+
     def _process_result_queue(self):
         """Process results from worker queue (called by QTimer on main thread)."""
         thread_name = threading.current_thread().name
@@ -237,6 +239,7 @@ class AsyncDetailFetcher(QtCore.QObject):
         if processed > 0 or errors > 0:
             logger.debug(f"[{thread_name}] AsyncDetailFetcher._process_result_queue() - processed {processed} results, {errors} errors")
     
+
     def _on_worker_finished(self, track_id: str, cache_key: str, interval: pd.DataFrame, 
                           detail_data: Any, error: Optional[Exception]):
         """Handle when worker finishes fetching data (called from _process_result_queue on main thread).
@@ -274,6 +277,7 @@ class AsyncDetailFetcher(QtCore.QObject):
             logger.debug(f"[{thread_name}] AsyncDetailFetcher._on_worker_finished() - emitting detail_data_ready signal for cache_key='{cache_key}'")
             self.detail_data_ready.emit(track_id, cache_key, interval, detail_data, error)
     
+
     def cancel_pending_fetches(self, track_id: str, interval_keys: List[str]):
         """Cancel pending fetches for specific intervals.
         
@@ -301,6 +305,7 @@ class AsyncDetailFetcher(QtCore.QObject):
                 del self._pending_workers[track_id]
             logger.debug(f"[{thread_name}] AsyncDetailFetcher.cancel_pending_fetches() - cancelled {cancelled_count} workers for track_id={track_id}")
     
+
     def cancel_all_pending_fetches(self, track_id: Optional[str] = None):
         """Cancel all pending fetches for a track, or all tracks if track_id is None.
         
@@ -334,6 +339,7 @@ class AsyncDetailFetcher(QtCore.QObject):
                 else:
                     logger.debug(f"[{thread_name}] AsyncDetailFetcher.cancel_all_pending_fetches() - no pending workers for track_id={track_id}")
     
+
     def get_cached_data(self, cache_key: str) -> Optional[Any]:
         """Get cached detail data if available.
         
@@ -352,6 +358,7 @@ class AsyncDetailFetcher(QtCore.QObject):
             logger.debug(f"[{thread_name}] AsyncDetailFetcher.get_cached_data() - cache MISS for cache_key='{cache_key}'")
             return None
     
+
     def clear_cache(self, track_id: Optional[str] = None):
         """Clear cached data.
         
@@ -372,6 +379,7 @@ class AsyncDetailFetcher(QtCore.QObject):
                     del self._cache[key]
                 logger.debug(f"[{thread_name}] AsyncDetailFetcher.clear_cache() - cleared {len(keys_to_remove)} cache entries for track_id={track_id}")
     
+
     def get_cache_stats(self) -> Dict[str, int]:
         """Get cache statistics.
         

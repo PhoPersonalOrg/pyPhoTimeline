@@ -318,7 +318,8 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
         if self._is_updating_from_widget:
             return  # Skip if update is from widget to prevent circular updates
         self.add_rendered_intervals(datasource, name=datasource.custom_datasource_name, debug_print=False)  # updates the rendered intervals on the change
-        
+    
+    
     def add_rendered_intervals(self, interval_datasource: Union[pd.DataFrame, Any], name=None, child_plots=None, debug_print=False, **vis_kwargs):
         """Adds or updates the intervals specified by the interval_datasource to the plots.
         

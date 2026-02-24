@@ -20,19 +20,24 @@ from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
 
 
+from deffcode import Sourcer ## for metadata extraction
 from deffcode import FFdecoder
 import imageio
-from deffcode import Sourcer ## for metadata extraction
+
 
 class VideoDeffcodeHelpers:
     """ 
     from pypho_timeline.rendering.datasources.specific.video import VideoDeffcodeHelpers
 
     """
+    included_primary_metadata_fields = ['source_video_framerate', 'source_duration_sec', 'approx_video_nframes']
+    included_secondary_metadata_fields = ['source_extension', 'source_video_resolution', 'source_video_pixfmt', 'source_video_orientation', 'source_video_decoder']
+    advanced_metadata_fields = ['source_video_bitrate', 'source_audio_bitrate', 'source_audio_samplerate', 'source_has_video', 'source_has_audio', 'source_has_image_sequence']
+
     @classmethod
-    def fetch_video_metadata_and_thumbnail_for_cache(cls, a_video_file: Union[str, Path], save_output_thumbnail: bool=False):
+    def fetch_video_metadata_for_cache(cls, a_video_file: Union[str, Path], debug_log_metadata: bool=False) -> Optional[Tuple[Dict, Dict]]:
         """
-            frame = VideoDeffcodeHelpers.fetch_video_metadata_and_thumbnail_for_cache(a_video_file=a_video_file, save_output_thumbnail=False)
+            vid_metadata, sourcer = VideoDeffcodeHelpers.fetch_video_metadata_for_cache(a_video_file=a_video_file, debug_log_metadata=False)
 
         """
         if isinstance(a_video_file, str):
@@ -42,10 +47,80 @@ class VideoDeffcodeHelpers:
 
         # initialize and formulate the decoder using suitable source
         sourcer = Sourcer(video_file_str_path).probe_stream()
+        vid_metadata = sourcer.retrieve_metadata()
 
-        # print metadata as `json.dump`
-        logger.info(sourcer.retrieve_metadata(pretty_json=True))
-        # print(sourcer.retrieve_metadata(pretty_json=True))
+        if debug_log_metadata:
+            # print metadata as `json.dump`
+            logger.info(vid_metadata)
+            # print(sourcer.retrieve_metadata(pretty_json=True))
+
+        primary_vid_metadata = {k:v for k, v in vid_metadata.items() if k in cls.included_primary_metadata_fields}
+        # secondary_vid_metadata =  {k:v for k, v in vid_metadata.items() if k in cls.included_primary_metadata_fields}
+        return primary_vid_metadata, vid_metadata
+
+
+    @classmethod
+    def fetch_video_thumbnails_for_cache(cls, a_video_file: Union[str, Path], frame_offsets: List[float], save_output_thumbnail: bool=False):
+        """
+            frame_offsets = []
+            frames_list = VideoDeffcodeHelpers.fetch_video_thumbnails_for_cache(a_video_file=a_video_file, frame_offsets=frame_offsets, save_output_thumbnail=False)
+
+        """
+        if isinstance(a_video_file, str):
+            a_video_file = Path(a_video_file)
+
+        video_file_str_path: str = a_video_file.as_posix()
+        frames_list = []
+
+        for i, a_frame_offset in enumerate(frame_offsets):
+            a_frame_offset_string: str = str(float(a_frame_offset))
+            # define the FFmpeg parameter to jump to 00:00:01.45(or 1s and 45msec)
+            # in time in the video before it starts reading it and get one single frame
+            a_ffparams = {"-ffprefixes": ["-ss", a_frame_offset_string], "-frames:v": 1}
+
+            # initialize and formulate the decoder with suitable source
+            a_decoder = FFdecoder(video_file_str_path, **a_ffparams).formulate()
+
+            # grab the RGB24(default) frame from the decoder
+            frame = next(a_decoder.generateFrame(), None)
+            frames_list.append(frame)
+
+            # check if frame is None
+            if not(frame is None):                
+                # Save our output
+                if save_output_thumbnail:
+                    thumbnail_path = a_video_file.with_suffix(f'_{a_frame_offset_string}_thumb.png')
+                    imageio.imwrite(thumbnail_path, frame)
+            else:
+                raise ValueError(f"Something is wrong for frame: {a_frame_offset_string} with file {a_decoder}, a_ffparams: {a_ffparams}!")
+
+            # terminate the decoder
+            a_decoder.terminate()
+        ## END for i, a_frame_offset in enumerate(frame_offsets)...
+
+        return frames_list
+
+
+
+
+    @classmethod
+    def fetch_video_metadata_and_thumbnail_for_cache(cls, a_video_file: Union[str, Path], needs_metadata: bool = False, save_output_thumbnail: bool=False):
+        """
+            frame = VideoDeffcodeHelpers.fetch_video_metadata_and_thumbnail_for_cache(a_video_file=a_video_file, save_output_thumbnail=False)
+
+        """
+        if isinstance(a_video_file, str):
+            a_video_file = Path(a_video_file)
+
+        video_file_str_path: str = a_video_file.as_posix()
+
+        if needs_metadata:
+            # initialize and formulate the decoder using suitable source
+            sourcer = Sourcer(video_file_str_path).probe_stream()
+
+            # print metadata as `json.dump`
+            logger.info(sourcer.retrieve_metadata(pretty_json=True))
+            # print(sourcer.retrieve_metadata(pretty_json=True))
 
         # define the FFmpeg parameter to jump to 00:00:01.45(or 1s and 45msec)
         # in time in the video before it starts reading it and get one single frame
@@ -153,6 +228,7 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         self.spacing = spacing
         self.thumbnail_size = thumbnail_size
     
+
     def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render video frames as thumbnails.
         
@@ -164,7 +240,9 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         Returns:
             List of GraphicsObject items added (ImageItem objects)
         """
+        debug(f"VideoThumbnailDetailRenderer.render_detail(plot_item: {plot_item}, interval: {interval}, detail_data: {detail_data})")
         if detail_data is None:
+            
             return []
         
         graphics_objects = []
@@ -292,6 +370,7 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         
         return img
     
+
     def clear_detail(self, plot_item: pg.PlotItem, graphics_objects: List[pg.GraphicsObject]) -> None:
         """Remove video thumbnail graphics objects.
         
@@ -304,6 +383,7 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             if hasattr(obj, 'setParentItem'):
                 obj.setParentItem(None)
     
+
     def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
         """Get bounds for the video thumbnails.
         
@@ -482,6 +562,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         Returns:
             Dictionary with 'frames' (list of numpy arrays) and 'timestamps' (array)
         """
+        use_VideoDeffcode: bool = True
         if not CV2_AVAILABLE:
             # Fallback to synthetic frames if cv2 not available
             n_frames = max(1, int(interval['t_duration'] * self.frames_per_second))
@@ -500,49 +581,71 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         if not video_path.exists():
             return {'frames': [], 'timestamps': np.array([])}
         
+
+        # Calculate frame extraction parameters
+        interval_start = interval['t_start']
+        interval_duration = interval['t_duration']
+        target_n_frames: int = max(1, int(interval_duration * self.frames_per_second))
+
+        # Extract frames
+        frames = []
+        timestamps = []
+
         try:
-            # Open video
-            cap = cv2.VideoCapture(str(video_path))
-            if not cap.isOpened():
-                return {'frames': [], 'timestamps': np.array([])}
-            
-            # Get video properties
-            video_fps = cap.get(cv2.CAP_PROP_FPS)
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            
-            if video_fps <= 0 or total_frames == 0:
-                cap.release()
-                return {'frames': [], 'timestamps': np.array([])}
-            
-            # Calculate frame extraction parameters
-            interval_start = interval['t_start']
-            interval_duration = interval['t_duration']
-            target_n_frames = max(1, int(interval_duration * self.frames_per_second))
-            
-            # Calculate frame indices to extract
-            frame_indices = np.linspace(0, total_frames - 1, target_n_frames, dtype=int)
-            
-            # Extract frames
-            frames = []
-            timestamps = []
-            
-            for frame_idx in frame_indices:
-                # Seek to frame
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                ret, frame = cap.read()
+            if use_VideoDeffcode:
+                info(f'USING VideoDeffcode:')
+                primary_vid_metadata, vid_metadata = VideoDeffcodeHelpers.fetch_video_metadata_for_cache(a_video_file=video_path, debug_log_metadata=False)
+                source_duration_sec: float = primary_vid_metadata['source_duration_sec']
+                info(f'\tsource_duration_sec: {source_duration_sec}')
+                source_step_sec: float = (float(target_n_frames) / source_duration_sec)
+                info(f'\tsource_step_sec: {source_step_sec}')
+                # frame = VideoDeffcodeHelpers.fetch_video_metadata_and_thumbnail_for_cache(a_video_file=video_path, needs_metadata=False, save_output_thumbnail=False)
+                frame_offsets_sec = np.arange(start=0.0, stop=source_duration_sec, step=source_step_sec)
+                info(f'frame_offsets: {frame_offsets_sec}')
+                frames = VideoDeffcodeHelpers.fetch_video_thumbnails_for_cache(a_video_file=video_path, frame_offsets=frame_offsets_sec, save_output_thumbnail=False)
+                # Calculate timestamp relative to interval start
+                # frame_time_in_video = frame_idx / video_fps
+                timestamps.append(interval_start + frame_offsets_sec)
+
+                return {'frames': frames, 'timestamps': np.array(timestamps)}
+
+
+            else:
+                ## USING CV2:
+                info(f'USING CV2:')
+                # Open video
+                cap = cv2.VideoCapture(str(video_path))
+                if not cap.isOpened():
+                    return {'frames': [], 'timestamps': np.array([])}
                 
-                if ret and frame is not None:
-                    # Resize if thumbnail_size is specified
-                    if self.thumbnail_size is not None:
-                        width, height = self.thumbnail_size
-                        frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
+                # Get video properties
+                video_fps = cap.get(cv2.CAP_PROP_FPS)
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                
+                if video_fps <= 0 or total_frames == 0:
+                    cap.release()
+                    return {'frames': [], 'timestamps': np.array([])}
+
+                # Calculate frame indices to extract
+                frame_indices = np.linspace(0, (total_frames - 1), target_n_frames, dtype=int)
+                            
+                for frame_idx in frame_indices:
+                    # Seek to frame
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                    ret, frame = cap.read()
                     
-                    frames.append(frame)
-                    # Calculate timestamp relative to interval start
-                    frame_time_in_video = frame_idx / video_fps
-                    timestamps.append(interval_start + frame_time_in_video)
-            
-            cap.release()
+                    if ret and frame is not None:
+                        # Resize if thumbnail_size is specified
+                        if self.thumbnail_size is not None:
+                            width, height = self.thumbnail_size
+                            frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
+                        
+                        frames.append(frame)
+                        # Calculate timestamp relative to interval start
+                        frame_time_in_video = frame_idx / video_fps
+                        timestamps.append(interval_start + frame_time_in_video)
+                ## END for frame_idx in frame_indices
+                cap.release()
             
             return {'frames': frames, 'timestamps': np.array(timestamps)}
             
@@ -550,10 +653,12 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
             # Return empty frames on error
             return {'frames': [], 'timestamps': np.array([])}
     
+
     def get_detail_renderer(self):
         """Get detail renderer for video."""
         return VideoThumbnailDetailRenderer(thumbnail_height=50.0, spacing=0.1, thumbnail_size=self.thumbnail_size)
     
+
     def get_detail_cache_key(self, interval: pd.Series) -> str:
         """Get cache key for interval."""
         base_key = super().get_detail_cache_key(interval)
