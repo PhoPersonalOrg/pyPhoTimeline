@@ -19,6 +19,57 @@ from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
 
+
+from deffcode import FFdecoder
+import imageio
+from deffcode import Sourcer ## for metadata extraction
+
+class VideoDeffcodeHelpers:
+    """ 
+    from pypho_timeline.rendering.datasources.specific.video import VideoDeffcodeHelpers
+
+    """
+    @classmethod
+    def fetch_video_metadata_and_thumbnail_for_cache(cls, a_video_file: Union[str, Path], save_output_thumbnail: bool=False):
+        """
+            frame = VideoDeffcodeHelpers.fetch_video_metadata_and_thumbnail_for_cache(a_video_file=a_video_file, save_output_thumbnail=False)
+
+        """
+        if isinstance(a_video_file, str):
+            a_video_file = Path(a_video_file)
+
+        video_file_str_path: str = a_video_file.as_posix()
+
+        # initialize and formulate the decoder using suitable source
+        sourcer = Sourcer(video_file_str_path).probe_stream()
+
+        # print metadata as `json.dump`
+        logger.info(sourcer.retrieve_metadata(pretty_json=True))
+        # print(sourcer.retrieve_metadata(pretty_json=True))
+
+        # define the FFmpeg parameter to jump to 00:00:01.45(or 1s and 45msec)
+        # in time in the video before it starts reading it and get one single frame
+        ffparams = {"-ffprefixes": ["-ss", "00:00:01.45"], "-frames:v": 1}
+
+        # initialize and formulate the decoder with suitable source
+        decoder = FFdecoder(video_file_str_path, **ffparams).formulate()
+
+        # grab the RGB24(default) frame from the decoder
+        frame = next(decoder.generateFrame(), None)
+
+        # check if frame is None
+        if not(frame is None):
+            # Save our output
+            if save_output_thumbnail:
+                thumbnail_path = a_video_file.with_suffix(f'_thumb.png')
+                imageio.imwrite(thumbnail_path, frame)
+        else:
+            raise ValueError("Something is wrong!")
+
+        # terminate the decoder
+        decoder.terminate()
+        return frame
+
 # ==================================================================================================================================================================================================================================================================================== #
 # Helper function to convert VideoMetadataParser output to intervals_df format                                                                                                                                                                                                       #
 # ==================================================================================================================================================================================================================================================================================== #
