@@ -91,12 +91,11 @@ class NowCurrentDatetimeLineRenderingMixin:
         # Create a thick red pen
         self.plots.now_lines.red_pen = pg.mkPen(color='red', width=3)
         self.plots.now_lines.now_line_items = {}
-
-        now_timestamp = self.plots_data['now_lines'].now_timestamp
-        vline = pg.InfiniteLine(angle=90, movable=False, pos=now_timestamp)
-        vline.setPen(self.plots.now_lines.red_pen)
-        plot_item.addItem(vline, ignoreBounds=True)
-        self.plots.now_lines.now_line_items[plot_item] = vline
+        # now_timestamp = self.plots_data['now_lines'].now_timestamp
+        # vline = pg.InfiniteLine(angle=90, movable=False, pos=now_timestamp)
+        # vline.setPen(self.plots.now_lines.red_pen)
+        # plot_item.addItem(vline, ignoreBounds=True)
+        # self.plots.now_lines.now_line_items[plot_item] = vline
 
 
 
@@ -118,7 +117,39 @@ class NowCurrentDatetimeLineRenderingMixin:
     @pyqtExceptionPrintingSlot()
     def NowCurrentDatetimeLineRenderingMixin_on_destroy(self):
         """Perform teardown/destruction of anything that needs to be manually removed or released."""
-        pass
+        for plot_item, vline in self.plots.now_lines.now_line_items.items():
+            if (plot_item is not None) and (vline is not None):
+                # vline.setParent(None)
+                plot_item.removeItem(vline)
+        self.plots.now_lines.now_line_items = {} ## clear
+
+
+    def add_new_now_line_for_plot_item(self, plot_item):
+        """ creates a new now line for the specified plot_item if needed. 
+        """
+        vline = self.plots.now_lines.now_line_items.get(plot_item, None)
+        if vline is None:
+            ## build a new item:
+            now_timestamp = self.plots_data['now_lines'].now_timestamp
+            vline = pg.InfiniteLine(angle=90, movable=False, pos=now_timestamp)
+            vline.setPen(pg.mkPen(self.plots.now_lines.red_pen))
+            plot_item.addItem(vline, ignoreBounds=True)
+            self.plots.now_lines.now_line_items[plot_item] = vline
+        else:
+            return vline ## return existing vline
+
+
+    @pyqtExceptionPrintingSlot()
+    def update_now_lines(self):
+        """ called to refresh the now (current) datetime for all now line items and updates the lines themselves if they exist. """
+        # Get current datetime
+        self.plots_data['now_lines'].now_dt = datetime.now()
+        # Convert to unix timestamp
+        self.plots_data['now_lines'].now_timestamp = datetime_to_unix_timestamp(self.plots_data['now_lines'].now_dt)
+        for plot_item, vline in self.plots.now_lines.now_line_items.items():
+            if (plot_item is not None) and (vline is not None):
+                vline.setPosition(self.plots_data['now_lines'].now_timestamp) ## moves the item
+
 
 
 class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventIntervalMonitoringMixin):
@@ -234,6 +265,11 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
 
         self.LiveWindowEventIntervalMonitoringMixin_on_buildUI()
         self.NowCurrentDatetimeLineRenderingMixin_on_buildUI()
+        
+        if len(self.interval_rendering_plots) > 0:
+            for a_plot_item in self.interval_rendering_plots:
+                if a_plot_item is not None:
+                    self.add_new_now_line_for_plot_item(plot_item=a_plot_item)
 
     @pyqtExceptionPrintingSlot()
     def EpochRenderingMixin_on_destroy(self):

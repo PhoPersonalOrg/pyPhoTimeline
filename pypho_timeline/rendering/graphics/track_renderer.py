@@ -37,6 +37,11 @@ class TrackRenderer(QtCore.QObject):
     - Monitoring viewport changes to detect intervals entering/exiting
     - Triggering async fetches for detailed data
     - Overlaying detailed views on top of overview rectangles
+
+    Usage:
+
+        from pypho_timeline.rendering.graphics.track_renderer import TrackRenderer
+
     """
     
     # Signal emitted when detail data is loaded for an interval
