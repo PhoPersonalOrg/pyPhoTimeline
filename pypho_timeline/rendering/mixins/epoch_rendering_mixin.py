@@ -22,6 +22,9 @@ from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsI
 from pypho_timeline.rendering.graphics.rectangle_helpers import RectangleRenderTupleHelpers
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.rendering.mixins.live_window_monitoring_mixin import LiveWindowEventIntervalMonitoringMixin
+import pyqtgraph as pg
+from datetime import datetime
+from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 # Import IntervalsDatasource from external package (or use interface)
 try:
@@ -66,7 +69,59 @@ class RenderedEpochsItemsContainer(iPythonKeyCompletingMixin, DynamicParameters)
                     self[a_plot].format_item_tooltip_fn = deepcopy(rendered_rects_item.format_item_tooltip_fn)
 
 
-class EpochRenderingMixin(LiveWindowEventIntervalMonitoringMixin):
+class NowCurrentDatetimeLineRenderingMixin:
+    """ renders little red "now" datetime lines in the active view
+
+    """
+    @pyqtExceptionPrintingSlot()
+    def NowCurrentDatetimeLineRenderingMixin_on_init(self):
+        """Perform any parameters setting/checking during init."""
+        self.plots_data['now_lines'] = RenderPlotsData('NowCurrentDatetimeLineRenderingMixin')
+        # Get current datetime
+        self.plots_data['now_lines'].now_dt = datetime.now()
+        # Convert to unix timestamp
+        self.plots_data['now_lines'].now_timestamp = datetime_to_unix_timestamp(self.plots_data['now_lines'].now_dt)
+
+
+
+    @pyqtExceptionPrintingSlot()
+    def NowCurrentDatetimeLineRenderingMixin_on_setup(self):
+        """Perform setup/creation of widget/graphical/data objects. Only the core objects are expected to exist on the implementor (root widget, etc)."""
+        self.plots.now_lines = RenderPlots('NowCurrentDatetimeLineRenderingMixin')  # the container to hold the time rectangles
+        # Create a thick red pen
+        self.plots.now_lines.red_pen = pg.mkPen(color='red', width=3)
+        self.plots.now_lines.now_line_items = {}
+
+        now_timestamp = self.plots_data['now_lines'].now_timestamp
+        vline = pg.InfiniteLine(angle=90, movable=False, pos=now_timestamp)
+        vline.setPen(self.plots.now_lines.red_pen)
+        plot_item.addItem(vline, ignoreBounds=True)
+        self.plots.now_lines.now_line_items[plot_item] = vline
+
+
+
+    @pyqtExceptionPrintingSlot()
+    def NowCurrentDatetimeLineRenderingMixin_on_buildUI(self):
+        """Perform setup/creation of widget/graphical/data objects. Only the core objects are expected to exist on the implementor (root widget, etc)."""
+        now_lines = self.plots_data.get('now_lines', None)
+        if now_lines is None:
+            ## needs init:
+            self.NowCurrentDatetimeLineRenderingMixin_on_init()
+
+        rendered_now_lines = getattr(self.plots, 'now_lines', None)
+        if rendered_now_lines is None:
+            ## needs setup:
+            self.NowCurrentDatetimeLineRenderingMixin_on_setup()
+
+
+
+    @pyqtExceptionPrintingSlot()
+    def NowCurrentDatetimeLineRenderingMixin_on_destroy(self):
+        """Perform teardown/destruction of anything that needs to be manually removed or released."""
+        pass
+
+
+class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventIntervalMonitoringMixin):
     """Implementors render Epochs/Intervals as little rectangles.
     
     Requires:
@@ -142,6 +197,7 @@ class EpochRenderingMixin(LiveWindowEventIntervalMonitoringMixin):
         """Perform any parameters setting/checking during init."""
         self.plots_data['interval_datasources'] = RenderPlotsData('EpochRenderingMixin')
         self.LiveWindowEventIntervalMonitoringMixin_on_init()
+        self.NowCurrentDatetimeLineRenderingMixin_on_init()
         self._is_updating_from_widget = False  # Flag to prevent circular updates
 
     @pyqtExceptionPrintingSlot()
@@ -149,6 +205,7 @@ class EpochRenderingMixin(LiveWindowEventIntervalMonitoringMixin):
         """Perform setup/creation of widget/graphical/data objects. Only the core objects are expected to exist on the implementor (root widget, etc)."""
         self.plots.rendered_epochs = RenderPlots('EpochRenderingMixin')  # the container to hold the time rectangles
         self.LiveWindowEventIntervalMonitoringMixin_on_setup()
+        self.NowCurrentDatetimeLineRenderingMixin_on_setup()
 
     @pyqtExceptionPrintingSlot()
     def EpochRenderingMixin_on_buildUI(self):
@@ -176,12 +233,14 @@ class EpochRenderingMixin(LiveWindowEventIntervalMonitoringMixin):
                 self.ui.connections = ConnectionsContainer()
 
         self.LiveWindowEventIntervalMonitoringMixin_on_buildUI()
+        self.NowCurrentDatetimeLineRenderingMixin_on_buildUI()
 
     @pyqtExceptionPrintingSlot()
     def EpochRenderingMixin_on_destroy(self):
         """Perform teardown/destruction of anything that needs to be manually removed or released."""
         # TODO: REGISTER AND IMPLEMENT
         self.LiveWindowEventIntervalMonitoringMixin_on_destroy()
+        self.NowCurrentDatetimeLineRenderingMixin_on_destroy()
         raise NotImplementedError
 
     @pyqtExceptionPrintingSlot(float, float)
