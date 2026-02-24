@@ -34,6 +34,11 @@ phopylslhelper = { path = "../PhoPyLSLhelper", editable = true }
 requires = ["setuptools>=80.9.0", "wheel>=0.45.1"]
 build-backend = "setuptools.build_meta"
 
+[dependency-groups]
+dev = [
+    "pyrefly>=0.54.0",
+]
+
 [tool.setuptools]
 packages = ["pypho_timeline"]
 
