@@ -35,7 +35,7 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         from pypho_timeline.rendering.datasources.specific.motion import MotionPlotDetailRenderer
     """
     
-    def __init__(self, pen_width=2, channel_names=['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'], pen_colors=None,
+    def __init__(self, pen_width=1, channel_names=['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'], pen_colors=None,
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
                  arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
@@ -126,6 +126,9 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         normalized_channel_df, (y_min, y_max) = self.compute_normalized_channels(detail_df=df_sorted, channel_names=found_channel_names)
         # normalized_channel_df = normalize_channels(df_sorted, found_channel_names, default_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds)
 
+        channel_graphics_items, channel_label_items = self.add_channel_renderables_if_needed(plot_item=plot_item)
+        graphics_objects = graphics_objects + channel_graphics_items
+
         # Extract t_values aligned with normalized_channel_df's index to ensure shape matches
         # normalized_channel_df may have fewer rows due to index intersection during normalization
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
@@ -139,27 +142,13 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
 
         nPlots: int = len(found_channel_names)
         single_channel_height: float = 1.0 / float(nPlots)
-        t_min = float(np.min(t_values)) if len(t_values) else 0.0
-        grid_pen = pg.mkPen(color=(100, 100, 100, 120), width=1)
 
         # Plot each channel with its distinct color, grid lines at y_min/y_mid/y_max, and track label
         for i, a_found_channel_name in enumerate(found_channel_names):
             channel_index = self.channel_names.index(a_found_channel_name)
             channel_color = self.pen_colors[channel_index]
-            y_lo = float(i) * single_channel_height
-            y_mid = y_lo + 0.5 * single_channel_height
-            y_hi = float(i + 1) * single_channel_height
-            for y_pos in (y_lo, y_mid, y_hi):
-                hline = pg.InfiniteLine(angle=0, movable=False, pos=y_pos, pen=grid_pen)
-                hline.setZValue(-5)
-                plot_item.addItem(hline, ignoreBounds=True)
-                graphics_objects.append(hline)
-            label_color = channel_color if self.pen_colors else 'white'
-            label_item = pg.TextItem(text=a_found_channel_name, anchor=(0, 0.5), color=label_color)
-            label_item.setPos(t_min, y_mid)
-            label_item.setZValue(10)
-            plot_item.addItem(label_item)
-            graphics_objects.append(label_item)
+
+
             y_values = normalized_channel_df[a_found_channel_name].values
             y_values = y_values * single_channel_height ## scale by the single channel height
             pen = pg.mkPen(channel_color, width=self.pen_width)
@@ -180,7 +169,16 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         """
         if graphics_objects is None:
             return
-        
+        conn = getattr(plot_item, '_motion_label_conn', None)
+        if conn is not None:
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
+            del plot_item._motion_label_conn
+        if getattr(plot_item, '_motion_label_items', None) is not None:
+            del plot_item._motion_label_items
+
         for obj in graphics_objects:
             if obj is None:
                 continue
