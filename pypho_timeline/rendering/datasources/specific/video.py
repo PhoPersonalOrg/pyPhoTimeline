@@ -669,7 +669,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
                 path_obj = Path(video_path)
                 if path_obj.exists():
                     mtime = path_obj.stat().st_mtime
-                    return f"video_{video_path}_{mtime:.3f}_{base_key}"
+                    return f"video_{video_path}_{mtime}_{base_key}"
             except Exception:
                 pass
         return f"video_{base_key}"

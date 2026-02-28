@@ -12,7 +12,7 @@ logger = get_rendering_logger(__name__)
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGPlotDetailRenderer - Renders eeg data as line plots.                                                                                                                                                                                                                              #
 # ==================================================================================================================================================================================================================================================================================== #
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
@@ -32,7 +32,7 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
 
     """
     
-    def __init__(self, pen_width=2, channel_names=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'], pen_colors=None,
+    def __init__(self, pen_width=1, channel_names=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'], pen_colors=None,
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
                  arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
@@ -124,6 +124,8 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         found_channel_names: List[str] = [k for k in self.channel_names if (k in df_sorted.columns)]
         found_all_channel_names: bool = len(found_channel_names) == len(self.channel_names)
         assert found_all_channel_names
+
+        channel_graphics_items, channel_label_items = self.add_channel_renderables_if_needed(plot_item=plot_item)
 
         # Filter channels based on visibility if channel_visibility is set
         if hasattr(self, 'channel_visibility') and self.channel_visibility:

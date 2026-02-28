@@ -90,6 +90,7 @@ class LogWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.max_lines = max_lines
         self._auto_scroll_enabled = True
+        self._mark_count = 0
         self._setup_ui()
     
     def _setup_ui(self):
@@ -112,6 +113,9 @@ class LogWidget(QtWidgets.QWidget):
         self.auto_scroll_checkbox.setChecked(True)
         self.auto_scroll_checkbox.stateChanged.connect(self._on_auto_scroll_changed)
         
+        # Mark button
+        mark_button = QtWidgets.QPushButton("Mark")
+        mark_button.clicked.connect(self._on_mark_clicked)
         # Clear button
         clear_button = QtWidgets.QPushButton("Clear")
         clear_button.clicked.connect(self._on_clear_clicked)
@@ -120,6 +124,7 @@ class LogWidget(QtWidgets.QWidget):
         control_layout.addWidget(self.search_input)
         control_layout.addStretch()
         control_layout.addWidget(self.auto_scroll_checkbox)
+        control_layout.addWidget(mark_button)
         control_layout.addWidget(clear_button)
         
         layout.addLayout(control_layout)
@@ -197,12 +202,20 @@ class LogWidget(QtWidgets.QWidget):
         """
         self._auto_scroll_enabled = (state == QtCore.Qt.CheckState.Checked)
     
+    def _on_mark_clicked(self):
+        """Insert a long marker line into the log for easy visual reference."""
+        self._mark_count += 1
+        line = "_" * 90 + f" MARK {self._mark_count} " + "_" * 90 + "\n"
+        self.append_log(line.rstrip(), logging.INFO, "INFO")
+
+
     def _on_clear_clicked(self):
         """Handle clear button click."""
         self.log_display.clear()
         self._all_logs = []
         self._current_filter = ""
         self.search_input.clear()
+        self._mark_count = 0
     
     def _refresh_display(self):
         """Refresh the display based on current filter."""

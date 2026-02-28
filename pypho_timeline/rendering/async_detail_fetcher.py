@@ -14,55 +14,9 @@ import pandas as pd
 from qtpy import QtCore, QtWidgets
 
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource
-from pypho_timeline.utils.logging_util import get_rendering_logger
+from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
 
 logger = get_rendering_logger(__name__)
-
-
-def _format_interval_for_log(interval: pd.Series) -> str:
-    """Format t_start and t_duration for logging; supports float, datetime, timedelta, None. Never raises."""
-    try:
-        t_start = interval.get('t_start', None)
-        t_duration = interval.get('t_duration', None)
-        t_start_str = _format_time_value_for_log(t_start)
-        t_duration_str = _format_duration_value_for_log(t_duration)
-        return f"t_start={t_start_str}, t_duration={t_duration_str}"
-    except Exception as e:
-        return f"<format error: {e}>"
-
-
-def _format_time_value_for_log(value: Any) -> str:
-    """Format a single time value (t_start) for logging. Never raises."""
-    if value is None:
-        return "?"
-    try:
-        if isinstance(value, (datetime, pd.Timestamp)):
-            return value.isoformat() if hasattr(value, 'isoformat') else str(value)
-        try:
-            ts = pd.Timestamp(value)
-            return ts.isoformat()
-        except (ValueError, TypeError, AttributeError):
-            pass
-        return f"{float(value):.3f}"
-    except Exception:
-        return repr(value)
-
-
-def _format_duration_value_for_log(value: Any) -> str:
-    """Format a single duration value (t_duration) for logging. Never raises."""
-    if value is None:
-        return "?"
-    try:
-        if isinstance(value, (timedelta, pd.Timedelta)):
-            return f"{value.total_seconds():.3f}s"
-        try:
-            td = pd.Timedelta(value)
-            return f"{td.total_seconds():.3f}s"
-        except (ValueError, TypeError, AttributeError):
-            pass
-        return f"{float(value):.3f}"
-    except Exception:
-        return repr(value)
 
 
 class DetailFetchWorker(QtCore.QRunnable):

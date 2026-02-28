@@ -31,6 +31,11 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
+import pyqtgraph as pg
+
+from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
+
+logger = get_rendering_logger(__name__)
 
 
 class ChannelNormalizationMode(Enum):
@@ -225,6 +230,9 @@ class ChannelNormalizationModeNormalizingMixin:
             
         normalize_over_full_data: bool = (self.normalization_reference_df is not None)
 
+        self.channel_label_items = [] # : List[Tuple[pg.TextItem, float]]
+        self.channel_graphics_items = []
+ 
 
     def compute_normalized_channels(self, detail_df: pd.DataFrame, channel_names: Optional[Sequence[str]] = None) -> Tuple[pd.DataFrame, Tuple[float, float]]:
         """Return (normalized_df, (y_min, y_max)) for the given detail window.
@@ -280,6 +288,67 @@ class ChannelNormalizationModeNormalizingMixin:
         return normalized_detail, (y_min, y_max)
 
 
+    def add_channel_renderables_if_needed(self, plot_item: pg.PlotItem, force_recreate: bool=False):
+        """ adds the fixed channel label items and the grid for each channel
+
+
+        channel_graphics_items, channel_label_items = self.add_channel_renderables_if_needed(plot_item=self.plot_item)
+
+        """
+        assert (self.channel_names is not None)
+
+        has_channel_items: bool = (len(self.channel_graphics_items) == len(self.channel_names))
+        plot_item_has_channel_items: bool = hasattr(plot_item, '_motion_label_items') and (getattr(plot_item, '_motion_label_items', None) is not None) and (len(plot_item._motion_label_items) == len(self.channel_names))
+        if has_channel_items and plot_item_has_channel_items and (not force_recreate):
+            ## update existing?
+            return self.channel_graphics_items, self.channel_label_items
+
+        # self.channel_graphics_items = []
+        # self.channel_label_items: List[Tuple[pg.TextItem, float]] = []
+        
+        found_channel_names: List[str] = self.channel_names
+
+        # Filter channels based on visibility if channel_visibility is set
+        if hasattr(self, 'channel_visibility') and self.channel_visibility:
+            found_channel_names = [ch for ch in found_channel_names if self.channel_visibility.get(ch, True)]
+
+
+        nPlots: int = len(found_channel_names)
+        single_channel_height: float = 1.0 / float(nPlots)
+        grid_pen = pg.mkPen(color=(100, 100, 100, 120), width=1)
+        vb = plot_item.getViewBox()
+        
+
+        def _update_motion_label_positions() -> None:
+            left_x = vb.viewRange()[0][0]
+            for label_item, y_mid in self.channel_label_items:
+                label_item.setPos(left_x, y_mid)
+
+        # Plot each channel with its distinct color, grid lines at y_min/y_mid/y_max, and track label
+        for i, a_found_channel_name in enumerate(found_channel_names):
+            channel_index = self.channel_names.index(a_found_channel_name)
+            channel_color = self.pen_colors[channel_index]
+            y_lo = float(i) * single_channel_height
+            y_mid = y_lo + 0.5 * single_channel_height
+            y_hi = float(i + 1) * single_channel_height
+            for y_pos in (y_lo, y_mid, y_hi):
+                hline = pg.InfiniteLine(angle=0, movable=False, pos=y_pos, pen=grid_pen)
+                hline.setZValue(-5)
+                plot_item.addItem(hline, ignoreBounds=True)
+                self.channel_graphics_items.append(hline)
+            label_color = channel_color if self.pen_colors else 'white'
+            label_item = pg.TextItem(text=a_found_channel_name, anchor=(0, 0.5), color=label_color)
+            self.channel_label_items.append((label_item, y_mid))
+            label_item.setZValue(10)
+            plot_item.addItem(label_item)
+            self.channel_graphics_items.append(label_item)
+
+        _update_motion_label_positions()
+        plot_item._motion_label_items = self.channel_label_items
+        plot_item._on_update_motion_label_positions = _update_motion_label_positions
+        plot_item._motion_label_conn = vb.sigRangeChanged.connect(plot_item._on_update_motion_label_positions)
+
+        return self.channel_graphics_items, self.channel_label_items
 
 
 

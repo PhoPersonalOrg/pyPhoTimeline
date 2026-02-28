@@ -11,7 +11,7 @@ from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 # from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, NamedColorScheme
 # from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
 # from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin
@@ -35,7 +35,7 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         from pypho_timeline.rendering.datasources.specific.motion import MotionPlotDetailRenderer
     """
     
-    def __init__(self, pen_width=2, channel_names=['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'], pen_colors=None,
+    def __init__(self, pen_width=1, channel_names=['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'], pen_colors=None,
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
                  arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
@@ -126,6 +126,9 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         normalized_channel_df, (y_min, y_max) = self.compute_normalized_channels(detail_df=df_sorted, channel_names=found_channel_names)
         # normalized_channel_df = normalize_channels(df_sorted, found_channel_names, default_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds)
 
+        channel_graphics_items, channel_label_items = self.add_channel_renderables_if_needed(plot_item=plot_item)
+        graphics_objects = graphics_objects + channel_graphics_items
+
         # Extract t_values aligned with normalized_channel_df's index to ensure shape matches
         # normalized_channel_df may have fewer rows due to index intersection during normalization
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
@@ -139,23 +142,21 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
 
         nPlots: int = len(found_channel_names)
         single_channel_height: float = 1.0 / float(nPlots)
-        
-        # Plot each channel with its distinct color
+
+        # Plot each channel with its distinct color, grid lines at y_min/y_mid/y_max, and track label
         for i, a_found_channel_name in enumerate(found_channel_names):
-            y_values = normalized_channel_df[a_found_channel_name].values
-            y_values = y_values * single_channel_height ## scale by the single channel height
-            
-            # Get the color for this channel based on its index in channel_names
             channel_index = self.channel_names.index(a_found_channel_name)
             channel_color = self.pen_colors[channel_index]
+
+
+            y_values = normalized_channel_df[a_found_channel_name].values
+            y_values = y_values * single_channel_height ## scale by the single channel height
             pen = pg.mkPen(channel_color, width=self.pen_width)
             plot_data_item = pg.PlotDataItem(t_values, y_values, pen=pen, connect='finite', name=a_found_channel_name)
-            # plot_item.axes.y
             plot_item.addItem(plot_data_item)
             plot_data_item.setPos(0, (float(i)*single_channel_height)) ## position aligned with the channel
             graphics_objects.append(plot_data_item)
 
-        
         return graphics_objects
     
 
@@ -168,7 +169,16 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         """
         if graphics_objects is None:
             return
-        
+        conn = getattr(plot_item, '_motion_label_conn', None)
+        if conn is not None:
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
+            del plot_item._motion_label_conn
+        if getattr(plot_item, '_motion_label_items', None) is not None:
+            del plot_item._motion_label_items
+
         for obj in graphics_objects:
             if obj is None:
                 continue

@@ -2,12 +2,22 @@
 
 This module provides common logging configuration functions to ensure consistent
 logging behavior across all pypho_timeline modules.
+
+Usage:
+    from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
+
+    logger = get_rendering_logger(__name__)
+
+
+
 """
+from typing import Any, Optional, Dict, Tuple
 import logging
 import logging.handlers
 import sys
 from pathlib import Path
 from typing import Optional
+import pandas as pd
 
 
 def configure_logging(log_level=logging.DEBUG, log_file: Optional[Path] = None, log_to_console: bool = True, log_to_file: bool = True):
@@ -148,6 +158,58 @@ def add_qt_log_handler(logger: logging.Logger, log_widget, log_level=logging.DEB
     
     return handler
 
+
+
+
+
+def _format_time_value_for_log(value: Any) -> str:
+    """Format a single time value (t_start) for logging. Never raises."""
+    if value is None:
+        return "?"
+    try:
+        if isinstance(value, (datetime, pd.Timestamp)):
+            return value.isoformat() if hasattr(value, 'isoformat') else str(value)
+        try:
+            ts = pd.Timestamp(value)
+            return ts.isoformat()
+        except (ValueError, TypeError, AttributeError):
+            pass
+        return f"{float(value)}"
+    except Exception:
+        return repr(value)
+
+
+def _format_duration_value_for_log(value: Any) -> str:
+    """Format a single duration value (t_duration) for logging. Never raises."""
+    if value is None:
+        return "?"
+    try:
+        if isinstance(value, (timedelta, pd.Timedelta)):
+            return f"{value.total_seconds()}s"
+        try:
+            td = pd.Timedelta(value)
+            return f"{td.total_seconds()}s"
+        except (ValueError, TypeError, AttributeError):
+            pass
+        return f"{float(value)}"
+    except Exception:
+        return repr(value)
+
+
+def _format_interval_for_log(interval: pd.Series) -> str:
+    """Format t_start and t_duration for logging; supports float, datetime, timedelta, None. Never raises.
+
+    from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
+
+    """
+    try:
+        t_start = interval.get('t_start', None)
+        t_duration = interval.get('t_duration', None)
+        t_start_str = _format_time_value_for_log(t_start)
+        t_duration_str = _format_duration_value_for_log(t_duration)
+        return f"t_start={t_start_str}, t_duration={t_duration_str}"
+    except Exception as e:
+        return f"<format error: {e}>"
 
 __all__ = ['configure_logging', 'get_rendering_logger', 'add_qt_log_handler']
 
