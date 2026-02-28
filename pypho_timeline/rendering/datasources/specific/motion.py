@@ -11,7 +11,7 @@ from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 # from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, NamedColorScheme
 # from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
 # from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin

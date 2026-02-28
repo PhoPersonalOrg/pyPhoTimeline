@@ -12,7 +12,7 @@ logger = get_rendering_logger(__name__)
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGPlotDetailRenderer - Renders eeg data as line plots.                                                                                                                                                                                                                              #
 # ==================================================================================================================================================================================================================================================================================== #
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
