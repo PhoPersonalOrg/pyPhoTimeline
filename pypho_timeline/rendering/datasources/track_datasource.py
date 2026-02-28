@@ -300,6 +300,18 @@ class BaseTrackDatasource(ABC):
         
         Args:
             interval: Series with at least 't_start' and 't_duration' columns
+
+        interval_series: 
+            t_start                                                   1773126048.489956
+            t_duration                                                      7092.950728
+            t_end                                                     1773133141.440685
+            series_vertical_offset                                                  0.0
+            series_height                                                           1.0
+            pen                         <PyQt5.QtGui.QPen object at 0x000002783F9EF610>
+            brush                     <PyQt5.QtGui.QBrush object at 0x000002783F9EF5A0>
+            t_start_dt                                       2026-03-10 07:00:48.489956
+            t_end_dt                                         2026-03-10 08:59:01.440685
+
             
         Returns:
             String key that uniquely identifies this interval's detailed data
@@ -338,8 +350,11 @@ class BaseTrackDatasource(ABC):
                     t_duration_str = f"{float(t_duration):.6f}"
                 except (ValueError, TypeError):
                     t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
-        return f"{self.custom_datasource_name}_{t_start_str}_{t_duration_str}"
-    
+        cache_key: str =  f"{self.custom_datasource_name}_{t_start_str}_{t_duration_str}"
+        logger.info(f"\tBaseTrackDatasource.get_detail_cache_key(interval: {interval}) -> cache_key='{cache_key}'")
+        return cache_key
+
+
     def update_visualization_properties(self, dataframe_vis_columns_function):
         """Updates visualization columns in the dataframe.
         
@@ -654,19 +669,30 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """Get cache key for interval."""
         # Extract values from Series - use .iloc[0] if it's a single-row DataFrame converted to Series
         # or direct access if it's already a Series
+        active_t_start = None
         if isinstance(interval, pd.Series):
-            t_start = interval.get('t_start', interval.iloc[0] if 't_start' in interval.index else None)
+            t_start_dt = interval.get('t_start_dt', interval.iloc[0] if 't_start_dt' in interval.index else None)
+            active_t_start = t_start_dt
+            if t_start_dt is None:
+                t_start = interval.get('t_start', interval.iloc[0] if 't_start' in interval.index else None)
+                active_t_start = t_start
             t_duration = interval.get('t_duration', interval.iloc[0] if 't_duration' in interval.index else None)
         else:
             # Fallback for DataFrame row
-            t_start = interval.get('t_start') if hasattr(interval, 'get') else interval['t_start']
+            t_start_dt = interval.get('t_start_dt') if hasattr(interval, 'get') else interval['t_start_dt'] ## #TODO 2026-02-28 14:59: - [ ] this one might fail if the column doesn't exist
+            active_t_start = t_start_dt
+            if active_t_start is None:
+                t_start = interval.get('t_start') if hasattr(interval, 'get') else interval['t_start']
+                active_t_start = t_start
+
             t_duration = interval.get('t_duration') if hasattr(interval, 'get') else interval['t_duration']
         
+        assert active_t_start is not None
         # Convert pandas scalars/numpy types to Python native types
         # This is critical for proper type checking and formatting
-        if hasattr(t_start, 'item'):
+        if hasattr(active_t_start, 'item'):
             try:
-                t_start = t_start.item()
+                active_t_start = active_t_start.item()
             except (ValueError, AttributeError):
                 pass  # Not a scalar, keep as-is
         if hasattr(t_duration, 'item'):
@@ -679,60 +705,58 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         t_start_str = None
         try:
             # Check if it's a datetime/Timestamp
-            if isinstance(t_start, (datetime, pd.Timestamp)):
-                timestamp_value = t_start.timestamp()
-                t_start_str = f"{timestamp_value:.3f}"
-            elif isinstance(t_start, pd.Timestamp):
-                t_start_str = f"{t_start.timestamp():.3f}"
+            if isinstance(active_t_start, (datetime, pd.Timestamp)):
+                timestamp_value = active_t_start.timestamp()
+                # t_start_str = f"{timestamp_value:.3f}"
+                t_start_str = str(timestamp_value)
             else:
                 # Try to convert to Timestamp (handles string dates, numpy datetime64, etc.)
                 try:
-                    ts = pd.Timestamp(t_start)
-                    t_start_str = f"{ts.timestamp():.3f}"
+                    ts = pd.Timestamp(active_t_start)
+                    # t_start_str = f"{ts.timestamp():.3f}"
+                    t_start_str = str(ts.timestamp())
                 except (ValueError, TypeError, AttributeError):
                     # Not a datetime, try as numeric
                     try:
-                        t_start_float = float(t_start)
-                        t_start_str = f"{t_start_float:.3f}"
+                        t_start_float = float(active_t_start)
+                        # t_start_str = f"{t_start_float:.3f}"
+                        t_start_str = str(t_start_float)
                     except (ValueError, TypeError):
                         # Last resort: use string representation
-                        t_start_str = str(t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
+                        t_start_str = str(active_t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
         except Exception as e:
             # Ultimate fallback
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error formatting t_start for cache key: {t_start} (type: {type(t_start)}), error: {e}")
-            t_start_str = str(t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
+            logger.error(f"Error formatting t_start for cache key: {active_t_start} (type: {type(active_t_start)}), error: {e}")
+            t_start_str = str(active_t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
         
         # Handle duration/timedelta objects
         t_duration_str = None
         try:
             if isinstance(t_duration, timedelta):
-                t_duration_str = f"{t_duration.total_seconds():.3f}"
+                t_duration_str = f"{t_duration.total_seconds()}"
             elif isinstance(t_duration, pd.Timedelta):
-                t_duration_str = f"{t_duration.total_seconds():.3f}"
+                t_duration_str = f"{t_duration.total_seconds()}"
             else:
                 # Try to convert to Timedelta (handles string durations, numpy timedelta64, etc.)
                 try:
                     td = pd.Timedelta(t_duration)
-                    t_duration_str = f"{td.total_seconds():.3f}"
+                    t_duration_str = f"{td.total_seconds()}"
                 except (ValueError, TypeError, AttributeError):
                     # Not a timedelta, try as numeric
                     try:
                         t_duration_float = float(t_duration)
-                        t_duration_str = f"{t_duration_float:.3f}"
+                        t_duration_str = f"{t_duration_float}"
                     except (ValueError, TypeError):
                         # Last resort: use string representation
                         t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
         except Exception as e:
             # Ultimate fallback
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Error formatting t_duration for cache key: {t_duration} (type: {type(t_duration)}), error: {e}")
             t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
         
         result_key = f"{self.custom_datasource_name}_{t_start_str}_{t_duration_str}"
         return result_key
+
 
     @classmethod
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: Optional[List[pd.DataFrame]] = None, custom_datasource_name: Optional[str] = None, detail_renderer: Optional['DetailRenderer'] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True) -> 'IntervalProvidingTrackDatasource':

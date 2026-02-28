@@ -271,14 +271,16 @@ class TrackRenderer(QtCore.QObject):
                         return
                     
                     # Get interval as Series
-                    interval_series = self._overview_df.iloc[rect_index]
+                    interval_series = self._overview_df.iloc[rect_index] ## rect_index is changing correctly
                     
                     # Convert to single-row DataFrame for _render_detail
                     interval_df = self._overview_df.iloc[[rect_index]]
                     
                     # Get cache key
                     cache_key = self.datasource.get_detail_cache_key(interval_series)
-                    logger.debug(f"TrackRenderer[{self.track_id}] detail_render_callback - cache_key='{cache_key}'")
+                    
+
+                    logger.debug(f"TrackRenderer[{self.track_id}] detail_render_callback - interval_series: {interval_series}, cache_key='{cache_key}'")
                     
                     # Add to visible_intervals to prevent it from being cleared
                     self.visible_intervals.add(cache_key)
@@ -458,8 +460,8 @@ class TrackRenderer(QtCore.QObject):
                 detail_data = detail_data[np.logical_and((detail_data['t'] >= t_start_dt), (detail_data['t'] <= t_end_dt))] 
                 
                 
-            t_start_str = f"{t_start:.3f}" if t_start is not None else "?"
-            t_duration_str = f"{t_duration:.3f}" if t_duration is not None else "?"
+            t_start_str = f"{t_start}" if t_start is not None else "?"
+            t_duration_str = f"{t_duration}" if t_duration is not None else "?"
         else:
             t_start_str = "?"
             t_duration_str = "?"

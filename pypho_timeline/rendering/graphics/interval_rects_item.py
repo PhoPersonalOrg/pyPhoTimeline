@@ -641,10 +641,10 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
     def setAlpha(self, a):
         self.setOpacity(a/255.)
 
+
     def _on_render_detailed(self):
         """Handle the 'Render detailed' context menu action."""
-        if self._detail_render_callback is None:
-            return
+        assert self._detail_render_callback is not None
         
         # Get the clicked rectangle index from the stored event position
         if hasattr(self, '_context_menu_event_pos'):

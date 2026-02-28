@@ -183,7 +183,7 @@ class TimelineBuilder:
             print(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
             
             # Filter streams if allowlist/blocklist is provided
-            if stream_allowlist is not None or stream_blocklist is not None:
+            if (stream_allowlist is not None) or (stream_blocklist is not None):
                 streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
             
             all_streams_by_file.append(streams)

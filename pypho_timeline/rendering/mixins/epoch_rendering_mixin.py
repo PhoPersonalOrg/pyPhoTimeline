@@ -421,9 +421,9 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
             
             end_t = start_t + duration_t
             if a_label:
-                tooltip_text = f"{a_label}\n{name}[{rect_index}]\nStart: {start_t:.3f}\nEnd: {end_t:.3f}\nDuration: {duration_t:.3f}"
+                tooltip_text = f"{a_label}\n{name}[{rect_index}]\nStart: {start_t}\nEnd: {end_t}\nDuration: {duration_t}"
             else:
-                tooltip_text = f"{name}[{rect_index}]\nStart: {start_t:.3f}\nEnd: {end_t:.3f}\nDuration: {duration_t:.3f}"
+                tooltip_text = f"{name}[{rect_index}]\nStart: {start_t}\nEnd: {end_t}\nDuration: {duration_t}"
 
             return tooltip_text
 
