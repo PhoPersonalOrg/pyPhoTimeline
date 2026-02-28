@@ -5,12 +5,8 @@ Based on pyqtgraph's CandlestickItem example, adapted for pypho_timeline.
 """
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 from datetime import datetime
-import logging
 import pandas as pd
 import numpy as np
-
-logger = logging.getLogger(__name__)
-
 from pypho_timeline.utils.mixins import UnpackableMixin
 from attrs import define, field
 from qtpy import QtGui, QtWidgets
@@ -20,6 +16,11 @@ from pyphoplacecellanalysis.External.pyqtgraph.graphicsItems.LegendItem import I
 
 from pypho_timeline.rendering.graphics.rectangle_helpers import RectangleRenderTupleHelpers
 from pypho_timeline.utils.datetime_helpers import format_seconds_as_hhmmss, unix_timestamp_to_datetime
+
+from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
+
+logger = get_rendering_logger(__name__)
+
 
 # Optional mixins - handle with try/except
 try:

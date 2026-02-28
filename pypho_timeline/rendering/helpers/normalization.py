@@ -32,6 +32,10 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
+
+logger = get_rendering_logger(__name__)
+
 
 class ChannelNormalizationMode(Enum):
     """Specifies how multiple channels are normalized for plotting."""
