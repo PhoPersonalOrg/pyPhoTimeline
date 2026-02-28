@@ -139,23 +139,35 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
 
         nPlots: int = len(found_channel_names)
         single_channel_height: float = 1.0 / float(nPlots)
-        
-        # Plot each channel with its distinct color
+        t_min = float(np.min(t_values)) if len(t_values) else 0.0
+        grid_pen = pg.mkPen(color=(100, 100, 100, 120), width=1)
+
+        # Plot each channel with its distinct color, grid lines at y_min/y_mid/y_max, and track label
         for i, a_found_channel_name in enumerate(found_channel_names):
-            y_values = normalized_channel_df[a_found_channel_name].values
-            y_values = y_values * single_channel_height ## scale by the single channel height
-            
-            # Get the color for this channel based on its index in channel_names
             channel_index = self.channel_names.index(a_found_channel_name)
             channel_color = self.pen_colors[channel_index]
+            y_lo = float(i) * single_channel_height
+            y_mid = y_lo + 0.5 * single_channel_height
+            y_hi = float(i + 1) * single_channel_height
+            for y_pos in (y_lo, y_mid, y_hi):
+                hline = pg.InfiniteLine(angle=0, movable=False, pos=y_pos, pen=grid_pen)
+                hline.setZValue(-5)
+                plot_item.addItem(hline, ignoreBounds=True)
+                graphics_objects.append(hline)
+            label_color = channel_color if self.pen_colors else 'white'
+            label_item = pg.TextItem(text=a_found_channel_name, anchor=(0, 0.5), color=label_color)
+            label_item.setPos(t_min, y_mid)
+            label_item.setZValue(10)
+            plot_item.addItem(label_item)
+            graphics_objects.append(label_item)
+            y_values = normalized_channel_df[a_found_channel_name].values
+            y_values = y_values * single_channel_height ## scale by the single channel height
             pen = pg.mkPen(channel_color, width=self.pen_width)
             plot_data_item = pg.PlotDataItem(t_values, y_values, pen=pen, connect='finite', name=a_found_channel_name)
-            # plot_item.axes.y
             plot_item.addItem(plot_data_item)
             plot_data_item.setPos(0, (float(i)*single_channel_height)) ## position aligned with the channel
             graphics_objects.append(plot_data_item)
 
-        
         return graphics_objects
     
 
