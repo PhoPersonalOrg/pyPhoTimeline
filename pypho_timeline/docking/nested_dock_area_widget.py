@@ -2,7 +2,8 @@ from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 
 import pyqtgraph as pg
 from qtpy import QtCore, QtGui, QtWidgets
-from pyqtgraph.dockarea import DockArea
+# from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock, DockDisplayConfig
+from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.DockArea import DockArea
 from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayAreaContentMixin
 
 class NestedDockAreaWidget(DynamicDockDisplayAreaContentMixin, QtWidgets.QWidget):

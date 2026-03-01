@@ -1024,7 +1024,7 @@ class DockLabel(VerticalLabel):
         self.optionsButton = None
         
         # Initialize sync mode state (default: TO_WINDOW)
-        from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.SpikeRasterWidgets.Spike2DRaster import SynchronizedPlotMode
+        from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
         self.current_sync_mode = SynchronizedPlotMode.TO_WINDOW
         
         # Create all possible buttons (always create them)
@@ -1091,7 +1091,7 @@ class DockLabel(VerticalLabel):
     
     def on_sync_mode_btn_clicked(self):
         """Handle timeline sync mode button click - cycles through TO_WINDOW -> TO_GLOBAL_DATA -> NO_SYNC -> TO_WINDOW."""
-        from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.SpikeRasterWidgets.Spike2DRaster import SynchronizedPlotMode
+        from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
         
         # Cycle through states: TO_WINDOW -> TO_GLOBAL_DATA -> NO_SYNC -> TO_WINDOW
         if self.current_sync_mode == SynchronizedPlotMode.TO_WINDOW:

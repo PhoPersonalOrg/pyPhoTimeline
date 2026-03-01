@@ -7,10 +7,10 @@ todos:
     status: pending
   - id: dockarea-dock-py
     content: "dockarea/Dock.py: Replace both SynchronizedPlotMode imports with pypho_timeline.core.synchronized_plot_mode"
-    status: pending
+    status: completed
   - id: dockarea-upstream-qt
     content: "Qt/__init__.py: In docstring replace pyphoplacecellanalysis.External.pyqtgraph.Qt with pyqtgraph.Qt"
-    status: pending
+    status: completed
 isProject: false
 ---
 
