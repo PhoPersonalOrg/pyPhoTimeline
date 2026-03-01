@@ -23,7 +23,7 @@ logger = get_rendering_logger(__name__)
 
 # Optional mixins - handle with try/except
 try:
-    from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.Mixins.ReprPrintableWidgetMixin import ReprPrintableItemMixin
+    from pypho_timeline._embed.repr_printable_mixin import ReprPrintableItemMixin
 except ImportError:
     # Fallback: create minimal stub if mixin not available
     class ReprPrintableItemMixin:
@@ -31,7 +31,8 @@ except ImportError:
 
 # Optional text item - handle with try/except
 try:
-    from pyphoplacecellanalysis.External.pyqtgraph_extensions.graphicsItems.TextItem.AlignableTextItem import CustomRectBoundedTextItem
+    from pypho_timeline._embed.AlignableTextItem import CustomRectBoundedTextItem
+
 except ImportError:
     # Fallback: create minimal stub if not available
     class CustomRectBoundedTextItem:

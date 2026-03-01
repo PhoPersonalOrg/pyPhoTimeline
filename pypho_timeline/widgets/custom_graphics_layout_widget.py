@@ -6,8 +6,9 @@ from pyphocorehelpers.function_helpers import function_attributes
 
 # Simplified mixins - can be made optional if needed
 try:
-    from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.Mixins.ReprPrintableWidgetMixin import ReprPrintableItemMixin
-    from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.Mixins.DraggableGraphicsWidgetMixin import MouseInteractionCriteria, DraggableGraphicsWidgetMixin
+    from pypho_timeline._embed.repr_printable_mixin import ReprPrintableItemMixin
+    from pypho_timeline._embed.DraggableGraphicsWidgetMixin import DraggableGraphicsWidgetMixin
+
 except ImportError:
     # Fallback: create minimal stubs if mixins not available
     class ReprPrintableItemMixin:

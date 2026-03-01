@@ -18,13 +18,6 @@ import pyqtgraph as pg
 from pypho_timeline._embed.interval_datasource import IntervalsDatasource
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 
-# Import IntervalsDatasource from external package (or use interface)
-try:
-    from pyphoplacecellanalysis.General.Model.Datasources.IntervalDatasource import IntervalsDatasource
-except ImportError:
-    # Fallback: define minimal interface if not available
-    IntervalsDatasource = None
-
 
 class Render2DEventRectanglesHelper:
     """Static helper that adds interval/epoch rectangles to 2D raster plots.
@@ -103,10 +96,8 @@ class Render2DEventRectanglesHelper:
         Returns:
             IntervalRectsItem
         """        
-        if IntervalsDatasource is not None and not isinstance(interval_datasource, IntervalsDatasource):
-            # Try to use it anyway if it has the required interface
-            if not hasattr(interval_datasource, 'df'):
-                raise TypeError(f"interval_datasource must have a .df property, but got {type(interval_datasource)}")
+        if not isinstance(interval_datasource, IntervalsDatasource) and not hasattr(interval_datasource, "df"):
+            raise TypeError(f"interval_datasource must be IntervalsDatasource or have a .df property, but got {type(interval_datasource)}")
         
         active_df = interval_datasource.df
         ## build the output tuple list: fields are (start_t, series_vertical_offset, duration_t, series_height, pen, brush).

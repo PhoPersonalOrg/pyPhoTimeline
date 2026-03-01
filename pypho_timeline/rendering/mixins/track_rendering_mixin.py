@@ -7,7 +7,6 @@ from pyqtgraph import SignalProxy
 
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData
-from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource
 from pypho_timeline.rendering.graphics.track_renderer import TrackRenderer
