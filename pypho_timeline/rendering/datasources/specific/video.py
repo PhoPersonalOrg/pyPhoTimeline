@@ -561,7 +561,39 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         
         # Store vispy renderer flag
         self.use_vispy_renderer = use_vispy_renderer
-    
+
+    @classmethod
+    def init_from_saved_metadata_csv(cls, parsed_video_out_file_path: Path, custom_datasource_name: Optional[str] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False) -> "VideoTrackDatasource":
+        """ Initialize from the exported video metadata .csv saved previously via `parsed_video_out_file_path = video_track_datasource.save_metadata_csv()`.
+
+        Usage:
+            from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
+            # After saving: 
+
+            parsed_video_out_parent_path = Path('C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/PhoOfflineEEGAnalysis/output')
+            parsed_video_out_file_path: Path = video_ds.save_metadata_csv(parsed_video_out_parent_path=parsed_video_out_parent_path)
+
+            video_ds: VideoTrackDatasource = VideoTrackDatasource.init_from_saved_metadata_csv(parsed_video_out_file_path=parsed_video_out_file_path)
+
+        """
+        parsed_video_out_file_path = Path(parsed_video_out_file_path)
+        if not parsed_video_out_file_path.exists():
+            raise FileNotFoundError(f"Metadata CSV not found: {parsed_video_out_file_path}")
+        df = pd.read_csv(parsed_video_out_file_path)
+        if df.empty:
+            return cls(video_intervals_df=pd.DataFrame(), custom_datasource_name=custom_datasource_name or "VideoTrack", frames_per_second=frames_per_second, thumbnail_size=thumbnail_size, use_vispy_renderer=use_vispy_renderer)
+        if 't_start' in df.columns:
+            t_start = df['t_start']
+            if pd.api.types.is_string_dtype(t_start) or (t_start.dtype == object and t_start.iloc[0] is not None and isinstance(t_start.iloc[0], str)):
+                df['t_start'] = pd.to_datetime(t_start, utc=True)
+            else:
+                df['t_start'] = pd.to_numeric(t_start, errors='coerce')
+        if 't_duration' in df.columns:
+            df['t_duration'] = pd.to_numeric(df['t_duration'], errors='coerce')
+        if 'video_file_path' in df.columns:
+            df['video_file_path'] = df['video_file_path'].astype(str)
+        return cls(video_intervals_df=df, custom_datasource_name=custom_datasource_name, frames_per_second=frames_per_second, thumbnail_size=thumbnail_size, use_vispy_renderer=use_vispy_renderer)
+
 
     def fetch_detailed_data(self, interval: pd.Series) -> dict:
         """Fetch video frames for an interval using cv2.VideoCapture.
@@ -685,26 +717,32 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         return f"video_{base_key}"
 
 
-    def save_metadata_csv(self):
+    def save_metadata_csv(self, parsed_video_out_parent_path: Optional[Path]=None, parsed_video_out_file_path: Optional[Path]=None) -> Path:
         """ saves the video metadata out to a .csv file """
         video_metadata_df: pd.DataFrame = self.video_metadata_df.copy() # self.df.copy().drop(columns=['pen', 'brush', 'series_vertical_offset', 'series_height'], inplace=False)
         video_metadata_df
 
-        # parsed_video_out_path: Path = Path(r'C:\Users\pho\repos\ACTIVE_DEV\PhoOfflineEEGAnalysis\output').resolve()
-        # parsed_video_out_path: Path = Path(r'C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/PhoOfflineEEGAnalysis/output').resolve()
-        if self.video_folder_path is not None:
-            parsed_video_out_path = self.video_folder_path
-            if isinstance(parsed_video_out_path, str):
-                parsed_video_out_path = Path(parsed_video_out_path)
-        else:
-            parsed_video_out_path = Path('output').resolve()
+        if parsed_video_out_file_path is None:
+            # parsed_video_out_path: Path = Path(r'C:\Users\pho\repos\ACTIVE_DEV\PhoOfflineEEGAnalysis\output').resolve()
+            # parsed_video_out_path: Path = Path(r'C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/PhoOfflineEEGAnalysis/output').resolve()
+            if parsed_video_out_parent_path is None:
+                if self.video_folder_path is not None:
+                    parsed_video_out_parent_path = self.video_folder_path
+                    if isinstance(parsed_video_out_parent_path, str):
+                        parsed_video_out_path = Path(parsed_video_out_parent_path)
+                else:
+                    parsed_video_out_parent_path = Path('output').resolve()
 
-        # parsed_video_out_path: Path = Path(r'C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/PhoOfflineEEGAnalysis/output').resolve()
+            # parsed_video_out_path: Path = Path(r'C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/PhoOfflineEEGAnalysis/output').resolve()
 
-        assert parsed_video_out_path.exists() and parsed_video_out_path.is_dir()
-        
-        today_str: str = datetime.now().strftime("%Y-%m-%d")
-        parsed_video_out_file_path = parsed_video_out_path.joinpath(f'{today_str}_parsed_videos.csv')
+            assert parsed_video_out_parent_path.exists(), f"parsed_video_out_parent_path: '{parsed_video_out_parent_path}' does not exist."
+            assert parsed_video_out_parent_path.is_dir(), f"parsed_video_out_parent_path: '{parsed_video_out_parent_path}' is not a dir."
+            
+            today_str: str = datetime.now().strftime("%Y-%m-%d")
+            parsed_video_out_file_path = parsed_video_out_parent_path.joinpath(f'{today_str}_parsed_videos.csv')
+
+        assert parsed_video_out_file_path is not None
+
         print(f'writing video metadata csv out to "{parsed_video_out_file_path}"...')
         video_metadata_df.to_csv(parsed_video_out_file_path)
         print(f'\tdone.')
