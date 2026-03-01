@@ -6,3 +6,4 @@ debug.log
 *.log.*
 EXTERNAL/LOGGING
 .idea
+.cursorindexingignore*
