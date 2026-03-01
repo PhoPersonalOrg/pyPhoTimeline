@@ -11,7 +11,9 @@ from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingS
 from pyphocorehelpers.programming_helpers import metadata_attributes
 from pyphocorehelpers.function_helpers import function_attributes
 
-from pyqtgraph.dockarea import Dock, DockArea
+# from pyqtgraph.dockarea import Dock, DockArea
+from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock, DockDisplayConfig
+from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.DockArea import DockArea
 
 DockPlanningHelperWidget = None
 
