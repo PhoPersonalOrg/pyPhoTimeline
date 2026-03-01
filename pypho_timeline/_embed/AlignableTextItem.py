@@ -1,7 +1,6 @@
 import sys
 from copy import deepcopy
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
-from PyQt5.QtCore import pyqtSignal
 from qtpy import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 
@@ -35,7 +34,7 @@ class SelectableTextItem(SelectableItemMixin, pg.TextItem):
     
     
     """
-    sigSelectedChanged = pyqtSignal(object, bool) ## emitted when mouse is clicked. Check for event.isAccepted() to see whether the event has already been acted on.
+    sigSelectedChanged = QtCore.Signal(object, bool) ## emitted when mouse is clicked. Check for event.isAccepted() to see whether the event has already been acted on.
     
 
     def __init__(self, text='', color=(200, 200, 200), anchor=(1, 0), is_selected:bool=False, should_use_parent_width:bool=True, **kwargs):
