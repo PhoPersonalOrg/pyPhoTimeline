@@ -4,7 +4,9 @@ import numpy as np
 import pandas as pd
 from qtpy import QtCore
 
-from pyqtgraph.dockarea import Dock
+import pyqtgraph as pg
+from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
+
 from pyphocorehelpers.function_helpers import function_attributes
 
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode

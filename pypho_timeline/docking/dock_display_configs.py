@@ -6,7 +6,7 @@ import numpy as np
 
 from pypho_timeline.utils.colors_util import ColorsUtil
 from qtpy import QtCore, QtGui, QtWidgets
-from pyqtgraph.dockarea import Dock
+# from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
 from pypho_timeline._embed.dock_display_config import DockDisplayConfig
 
 # Optional imports - can be simplified if not available

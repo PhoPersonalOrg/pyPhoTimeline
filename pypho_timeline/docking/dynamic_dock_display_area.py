@@ -11,7 +11,6 @@ from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingS
 from pyphocorehelpers.programming_helpers import metadata_attributes
 from pyphocorehelpers.function_helpers import function_attributes
 
-# from pyqtgraph.dockarea import Dock, DockArea
 from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock, DockDisplayConfig
 from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.DockArea import DockArea
 
@@ -287,11 +286,12 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
             else:
                 kwargs['autoOrientation'] = False
             
-        # Build the new dock item (upstream pyqtgraph Dock: name, size, widget, hideTitle, autoOrientation):
-        kwargs.pop('display_config', None)
-        hide_title = getattr(display_config, 'hideTitleBar', False)
-        auto_orient = kwargs.get('autoOrientation', (getattr(display_config, 'orientation', None) == 'auto'))
-        dDisplayItem = Dock(unique_identifier, size=dockSize, widget=widget, hideTitle=hide_title, autoOrientation=auto_orient, **kwargs)
+        # Build the new dock item:
+        dDisplayItem = Dock(unique_identifier, size=dockSize, widget=widget, display_config=display_config, **kwargs) # add the new display item
+        # kwargs.pop('display_config', None)
+        # hide_title = getattr(display_config, 'hideTitleBar', False)
+        # auto_orient = kwargs.get('autoOrientation', (getattr(display_config, 'orientation', None) == 'auto'))
+        # dDisplayItem = Dock(unique_identifier, size=dockSize, widget=widget, hideTitle=hide_title, autoOrientation=auto_orient, **kwargs)
         if isinstance(dockAddLocationOpts, str):
             print(f'WARN: dockAddLocationOpts should be a tuple containing a string (like `("left", )`), not a string itself! Interpretting dockAddLocationOpts: "{dockAddLocationOpts}" as `dockAddLocationOpts = ("{dockAddLocationOpts}", )`')
             dockAddLocationOpts = (dockAddLocationOpts, )
@@ -701,7 +701,7 @@ class DynamicDockDisplayAreaOwningMixin(BaseDynamicInstanceConformingMixin):
         - Must implement property `dock_manager_widget` that returns the child widget implementing DynamicDockDisplayAreaContentMixin
         
         
-    from pyqtgraph.dockarea import Dock
+    from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
     from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayAreaOwningMixin, DynamicDockDisplayAreaContentMixin
     
     
