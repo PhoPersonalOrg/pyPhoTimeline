@@ -314,24 +314,10 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
             
         Uses: 'RectangleRenderTupleHelpers', 'RenderedEpochsItemsContainer', 'IntervalRectsItem', 'self._perform_add_render_item(...)'
         """
-        # Handle DataFrame input by converting to datasource
+        # Handle DataFrame input by converting to datasource (embedded General2DRenderTimeEpochs does column synonym renaming)
         if isinstance(interval_datasource, pd.DataFrame):
-            ## it's a dataframe, build a datasource
-            # Optional import - TimeColumnAliasesProtocol from neuropy (only used if available)
-            try:
-                from neuropy.utils.mixins.time_slicing import TimeColumnAliasesProtocol
-            except ImportError:
-                TimeColumnAliasesProtocol = None
-            
             interval_df: pd.DataFrame = deepcopy(interval_datasource)
-            if IntervalsDatasource is not None and TimeColumnAliasesProtocol is not None:
-                interval_df = TimeColumnAliasesProtocol.renaming_synonym_columns_if_needed(df=interval_df, required_columns_synonym_dict=IntervalsDatasource._time_column_name_synonyms)
-                if General2DRenderTimeEpochs is not None:
-                    interval_datasource = General2DRenderTimeEpochs.build_render_time_epochs_datasource(interval_df)
-                else:
-                    raise NotImplementedError("General2DRenderTimeEpochs not available - cannot convert DataFrame to datasource")
-            else:
-                raise NotImplementedError("IntervalsDatasource not available - cannot convert DataFrame to datasource")
+            interval_datasource = General2DRenderTimeEpochs.build_render_time_epochs_datasource(interval_df)
 
         assert isinstance(interval_datasource, IntervalsDatasource), f"interval_datasource: must be an IntervalsDatasource object but instead is of type: {type(interval_datasource)}"
         
