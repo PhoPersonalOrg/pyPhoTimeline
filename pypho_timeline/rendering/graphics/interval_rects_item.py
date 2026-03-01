@@ -117,9 +117,9 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
     """
     pressed = False
     clickable = True
-    hoverEnter = QtCore.pyqtSignal()
-    hoverExit = QtCore.pyqtSignal()
-    clicked = QtCore.pyqtSignal()
+    hoverEnter = QtCore.Signal()
+    hoverExit = QtCore.Signal()
+    clicked = QtCore.Signal()
     ## data must have fields: start_t, series_vertical_offset, duration_t, series_height, pen, brush
 
     def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False, detail_render_callback=None):
