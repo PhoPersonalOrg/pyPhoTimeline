@@ -5,3 +5,4 @@ timeline_rendering.log
 debug.log
 *.log.*
 EXTERNAL/LOGGING
+.idea
