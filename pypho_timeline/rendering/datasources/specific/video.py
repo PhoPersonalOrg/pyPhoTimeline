@@ -441,6 +441,14 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         # Option 4: Use list of video file paths
         video_ds = VideoTrackDatasource(video_paths=[Path("video1.mp4"), Path("video2.mp4")])
     """
+    @property
+    def video_metadata_df(self) -> pd.DataFrame:
+        """The video_metadata_df property."""
+        return self.df.drop(columns=['pen', 'brush', 'series_vertical_offset', 'series_height'], inplace=False).copy()
+
+    # @video_metadata_df.setter
+    # def video_metadata_df(self, value):
+    #     self._video_metadata_df = value
     
     def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, video_paths: Optional[List[Union[Path, str]]] = None, 
             custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False):
@@ -528,6 +536,8 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
             custom_datasource_name = "VideoTrack"
         super().__init__(intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name)
 
+        self.video_folder_path = video_folder_path
+        
         # Override visualization properties (parent sets blue, we want blue; parent sets height=1.0, we want 50.0)
         self.intervals_df['series_height'] = 50.0
         
@@ -673,6 +683,32 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
             except Exception:
                 pass
         return f"video_{base_key}"
+
+
+    def save_metadata_csv(self):
+        """ saves the video metadata out to a .csv file """
+        video_metadata_df: pd.DataFrame = self.video_metadata_df.copy() # self.df.copy().drop(columns=['pen', 'brush', 'series_vertical_offset', 'series_height'], inplace=False)
+        video_metadata_df
+
+        # parsed_video_out_path: Path = Path(r'C:\Users\pho\repos\ACTIVE_DEV\PhoOfflineEEGAnalysis\output').resolve()
+        # parsed_video_out_path: Path = Path(r'C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/PhoOfflineEEGAnalysis/output').resolve()
+        if self.video_folder_path is not None:
+            parsed_video_out_path = self.video_folder_path
+            if isinstance(parsed_video_out_path, str):
+                parsed_video_out_path = Path(parsed_video_out_path)
+        else:
+            parsed_video_out_path = Path('output').resolve()
+
+        # parsed_video_out_path: Path = Path(r'C:/Users/pho/repos/EmotivEpoc/ACTIVE_DEV/PhoOfflineEEGAnalysis/output').resolve()
+
+        assert parsed_video_out_path.exists() and parsed_video_out_path.is_dir()
+        
+        today_str: str = datetime.now().strftime("%Y-%m-%d")
+        parsed_video_out_file_path = parsed_video_out_path.joinpath(f'{today_str}_parsed_videos.csv')
+        print(f'writing video metadata csv out to "{parsed_video_out_file_path}"...')
+        video_metadata_df.to_csv(parsed_video_out_file_path)
+        print(f'\tdone.')
+        return parsed_video_out_file_path
 
 
 __all__ = ['VideoThumbnailDetailRenderer', 'VideoTrackDatasource', 'video_metadata_to_intervals_df']
