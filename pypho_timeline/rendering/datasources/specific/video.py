@@ -3,7 +3,8 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+from qtpy import QtCore
+import pyqtgraph as pg
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 
@@ -303,7 +304,7 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             img_item = pg.ImageItem(img_data)
             
             # Set position and size
-            img_item.setRect(pg.QtCore.QRectF(
+            img_item.setRect(QtCore.QRectF(
                 x_start, y_bottom, 
                 thumbnail_width, self.thumbnail_height
             ))

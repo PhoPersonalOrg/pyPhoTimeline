@@ -3,8 +3,8 @@
 Refactored from pyphoplacecellanalysis for use in pypho_timeline.
 """
 from typing import List, Tuple, Optional
-import pyphoplacecellanalysis.External.pyqtgraph as pg
-from pyphoplacecellanalysis.External.pyqtgraph import QtGui
+import pyqtgraph as pg
+from qtpy import QtGui
 
 
 class RectangleRenderTupleHelpers:

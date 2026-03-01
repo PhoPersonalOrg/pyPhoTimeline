@@ -19,7 +19,7 @@ import pandas as pd
 from qtpy import QtCore
 
 from pypho_timeline.rendering.datasources.interval_datasource import IntervalsDatasource
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime
 from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
 

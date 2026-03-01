@@ -1,6 +1,6 @@
 from typing import Callable
-import pyphoplacecellanalysis.External.pyqtgraph as pg
-from pyphoplacecellanalysis.External.pyqtgraph import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
+import pyqtgraph as pg
 from pyphocorehelpers.programming_helpers import metadata_attributes
 from pyphocorehelpers.function_helpers import function_attributes
 

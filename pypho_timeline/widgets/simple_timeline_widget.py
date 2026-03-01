@@ -11,7 +11,7 @@ from typing import Tuple, List, Dict, Optional, Union
 from datetime import datetime, timedelta
 from pathlib import Path
 from qtpy import QtWidgets, QtCore
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, datetime_to_float, get_reference_datetime_from_xdf_header, unix_timestamp_to_datetime
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget

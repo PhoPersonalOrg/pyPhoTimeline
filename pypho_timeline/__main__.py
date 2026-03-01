@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from qtpy import QtWidgets, QtCore
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
 from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin

@@ -14,7 +14,8 @@ try:
 except ImportError:
     Epoch = None
 
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
+from pypho_timeline._embed.interval_datasource import IntervalsDatasource
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 
 # Import IntervalsDatasource from external package (or use interface)

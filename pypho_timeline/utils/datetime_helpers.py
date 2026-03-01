@@ -28,9 +28,9 @@ def create_am_pm_date_axis(orientation='bottom'):
         Custom DateAxisItem instance with AM/PM formatting, or None if DateAxisItem is not available
     """
     try:
-        import pyphoplacecellanalysis.External.pyqtgraph as pg
-        from pyphoplacecellanalysis.External.pyqtgraph import DateAxisItem
-        
+        import pyqtgraph as pg
+        from pyqtgraph import DateAxisItem
+
         class AMPMDateAxisItem(DateAxisItem):
             """Custom DateAxisItem that displays time in 12-hour AM/PM format."""
             
@@ -46,8 +46,8 @@ def create_am_pm_date_axis(orientation='bottom'):
     except (ImportError, AttributeError):
         # Fallback: try to get DateAxisItem directly from pg module
         try:
-            import pyphoplacecellanalysis.External.pyqtgraph as pg
-            if hasattr(pg, 'DateAxisItem'):
+            import pyqtgraph as pg
+            if hasattr(pg, "DateAxisItem"):
                 class AMPMDateAxisItem(pg.DateAxisItem):
                     def tickStrings(self, values, scale, spacing):
                         dt_values = [datetime.fromtimestamp(value, tz=timezone.utc) for value in values]

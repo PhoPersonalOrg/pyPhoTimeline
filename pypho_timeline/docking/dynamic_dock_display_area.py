@@ -6,19 +6,14 @@ import numpy as np
 from pypho_timeline.utils.colors_util import ColorsUtil
 from pypho_timeline.utils.mixins import BaseDynamicInstanceConformingMixin
 
-from pyphoplacecellanalysis.External.pyqtgraph.Qt import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 from pyphocorehelpers.programming_helpers import metadata_attributes
 from pyphocorehelpers.function_helpers import function_attributes
 
-from pyphoplacecellanalysis.External.pyqtgraph.dockarea.Dock import Dock, DockDisplayConfig
-from pyphoplacecellanalysis.External.pyqtgraph.dockarea.DockArea import DockArea
+from pyqtgraph.dockarea import Dock, DockArea
 
-# Optional import for DockPlanningHelperWidget - can be made optional if not available
-try:
-    from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.DockPlanningHelperWidget.DockPlanningHelperWidget import DockPlanningHelperWidget
-except ImportError:
-    DockPlanningHelperWidget = None
+DockPlanningHelperWidget = None
 
 from pypho_timeline.docking.dock_display_configs import CustomDockDisplayConfig, DockDisplayColors
 # NestedDockAreaWidget is imported inside build_wrapping_nested_dock_area to avoid circular import
@@ -148,13 +143,13 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
     def get_leaf_only_flat_dock_identifiers_list(self) -> List[str]:
         """the dock_identifiers only for the leaf (non-group) items"""
         flat_dock_item_tuple_dict: Dict[str, Tuple[Dock, Optional["QtWidgets.QWidget"]]] = self.get_flat_dock_item_tuple_dict()
-        leaf_only_flat_dockwidgets_dict = {k:a_widget for k, (a_dock, a_widget) in flat_dock_item_tuple_dict.items() if ('LEAF' == a_dock.config.additional_metadata.get('type', 'LEAF')) }
+        leaf_only_flat_dockwidgets_dict = {k:a_widget for k, (a_dock, a_widget) in flat_dock_item_tuple_dict.items() if ('LEAF' == (getattr(getattr(a_dock, 'config', None), 'additional_metadata', None) or {}).get('type', 'LEAF')) }
         return list(leaf_only_flat_dockwidgets_dict.keys())
     
     def get_group_only_flat_dock_identifiers_list(self) -> List[str]:
         """the dock_identifiers only for the dock-group items"""
         flat_dock_item_tuple_dict: Dict[str, Tuple[Dock, Optional["QtWidgets.QWidget"]]] = self.get_flat_dock_item_tuple_dict()
-        group_only_flat_dockwidgets_dict = {k:a_widget for k, (a_dock, a_widget) in flat_dock_item_tuple_dict.items() if ('GROUP' == a_dock.config.additional_metadata.get('type', 'LEAF')) }
+        group_only_flat_dockwidgets_dict = {k:a_widget for k, (a_dock, a_widget) in flat_dock_item_tuple_dict.items() if ('GROUP' == (getattr(getattr(a_dock, 'config', None), 'additional_metadata', None) or {}).get('type', 'LEAF')) }
         return list(group_only_flat_dockwidgets_dict.keys())
 
 
@@ -290,8 +285,11 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
             else:
                 kwargs['autoOrientation'] = False
             
-        # Build the new dock item:
-        dDisplayItem = Dock(unique_identifier, size=dockSize, widget=widget, display_config=display_config, **kwargs) # add the new display item
+        # Build the new dock item (upstream pyqtgraph Dock: name, size, widget, hideTitle, autoOrientation):
+        kwargs.pop('display_config', None)
+        hide_title = getattr(display_config, 'hideTitleBar', False)
+        auto_orient = kwargs.get('autoOrientation', (getattr(display_config, 'orientation', None) == 'auto'))
+        dDisplayItem = Dock(unique_identifier, size=dockSize, widget=widget, hideTitle=hide_title, autoOrientation=auto_orient, **kwargs)
         if isinstance(dockAddLocationOpts, str):
             print(f'WARN: dockAddLocationOpts should be a tuple containing a string (like `("left", )`), not a string itself! Interpretting dockAddLocationOpts: "{dockAddLocationOpts}" as `dockAddLocationOpts = ("{dockAddLocationOpts}", )`')
             dockAddLocationOpts = (dockAddLocationOpts, )
@@ -701,7 +699,7 @@ class DynamicDockDisplayAreaOwningMixin(BaseDynamicInstanceConformingMixin):
         - Must implement property `dock_manager_widget` that returns the child widget implementing DynamicDockDisplayAreaContentMixin
         
         
-    from pyphoplacecellanalysis.External.pyqtgraph.dockarea.Dock import Dock
+    from pyqtgraph.dockarea import Dock
     from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayAreaOwningMixin, DynamicDockDisplayAreaContentMixin
     
     
@@ -718,7 +716,7 @@ class DynamicDockDisplayAreaOwningMixin(BaseDynamicInstanceConformingMixin):
         """Delegates to child widget's find_display_dock
 
         Usage:        
-            from pyphoplacecellanalysis.Pho2D.PyQtPlots.TimeSynchronizedPlotters.PyqtgraphTimeSynchronizedWidget import PyqtgraphTimeSynchronizedWidget
+            from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
 
             active_2d_plot: Spike2DRaster = active_2d_plot
             a_dock = active_2d_plot.find_display_dock(identifier='new_curves_separate_plot')
@@ -754,13 +752,13 @@ class DynamicDockDisplayAreaOwningMixin(BaseDynamicInstanceConformingMixin):
     def get_leaf_only_flat_dock_identifiers_list(self) -> List[str]:
         """Delegates to child widget's get_flat_widgets_list"""
         flat_dock_item_tuple_dict: Dict[str, Tuple] = self.get_flat_dock_item_tuple_dict()
-        leaf_only_flat_dockwidgets_dict = {k:a_widget for k, (a_dock, a_widget) in flat_dock_item_tuple_dict.items() if ('LEAF' == a_dock.config.additional_metadata.get('type', 'LEAF')) }
+        leaf_only_flat_dockwidgets_dict = {k:a_widget for k, (a_dock, a_widget) in flat_dock_item_tuple_dict.items() if ('LEAF' == (getattr(getattr(a_dock, 'config', None), 'additional_metadata', None) or {}).get('type', 'LEAF')) }
         return list(leaf_only_flat_dockwidgets_dict.keys())
     
     def get_group_only_flat_dock_identifiers_list(self) -> List[str]:
         """Delegates to child widget's get_flat_widgets_list"""
         flat_dock_item_tuple_dict: Dict[str, Tuple] = self.get_flat_dock_item_tuple_dict()
-        group_only_flat_dockwidgets_dict = {k:a_widget for k, (a_dock, a_widget) in flat_dock_item_tuple_dict.items() if ('GROUP' == a_dock.config.additional_metadata.get('type', 'LEAF')) }
+        group_only_flat_dockwidgets_dict = {k:a_widget for k, (a_dock, a_widget) in flat_dock_item_tuple_dict.items() if ('GROUP' == (getattr(getattr(a_dock, 'config', None), 'additional_metadata', None) or {}).get('type', 'LEAF')) }
         return list(group_only_flat_dockwidgets_dict.keys())
 
 
@@ -786,7 +784,7 @@ class DynamicDockDisplayAreaOwningMixin(BaseDynamicInstanceConformingMixin):
         """ returns a tuple containing the dockItem and its main widget
         
         Usage:        
-            from pyphoplacecellanalysis.Pho2D.PyQtPlots.TimeSynchronizedPlotters.PyqtgraphTimeSynchronizedWidget import PyqtgraphTimeSynchronizedWidget
+            from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
 
             active_2d_plot: Spike2DRaster = active_2d_plot
             a_dock, widget = active_2d_plot.find_dock_item_tuple(identifier='new_curves_separate_plot')

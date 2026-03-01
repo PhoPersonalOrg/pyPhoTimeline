@@ -8,9 +8,8 @@ from qtpy import QtCore, QtWidgets
 import nptyping as ND
 from nptyping import NDArray
 import numpy as np
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, create_am_pm_date_axis
-# from pyphoplacecellanalysis.External.pyqtgraph.Qt import QtCore, QtGui
 from pyphocorehelpers.DataStructure.general_parameter_containers import VisualizationParameters, RenderPlotsData, RenderPlots
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
 from pyphocorehelpers.DataStructure.dynamic_parameters import DynamicParameters
@@ -18,7 +17,6 @@ from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.gui.Qt.connections_container import ConnectionsContainer
 
 from pypho_timeline.core.time_synchronized_plotter_base import TimeSynchronizedPlotterBase
-from pyphoplacecellanalysis.Pho2D.PyQtPlots.Extensions.pyqtgraph_helpers import pyqtplot_build_image_bounds_extent
 from pyphocorehelpers.programming_helpers import metadata_attributes
 from pyphocorehelpers.function_helpers import function_attributes
 from pyphocorehelpers.plotting.mixins.plotting_backend_mixin import PlottingBackendSpecifyingMixin, PlottingBackendType, PlotImageExportableMixin
@@ -764,7 +762,7 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         """ 
         
         """
-        from pyphoplacecellanalysis.External.pyqtgraph.exporters.ImageExporter import ImageExporter
+        from pyqtgraph.exporters import ImageExporter
         from PyQt5.QtGui import QImage
 
         debug_print = kwargs.pop('debug_print', False)

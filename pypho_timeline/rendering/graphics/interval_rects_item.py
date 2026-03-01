@@ -9,10 +9,9 @@ import pandas as pd
 import numpy as np
 from pypho_timeline.utils.mixins import UnpackableMixin
 from attrs import define, field
-from qtpy import QtGui, QtWidgets
-import pyphoplacecellanalysis.External.pyqtgraph as pg
-from pyphoplacecellanalysis.External.pyqtgraph import QtCore, QtGui, QtWidgets
-from pyphoplacecellanalysis.External.pyqtgraph.graphicsItems.LegendItem import ItemSample, LegendItem
+from qtpy import QtCore, QtGui, QtWidgets
+import pyqtgraph as pg
+from pyqtgraph.graphicsItems.LegendItem import ItemSample, LegendItem
 
 from pypho_timeline.rendering.graphics.rectangle_helpers import RectangleRenderTupleHelpers
 from pypho_timeline.utils.datetime_helpers import format_seconds_as_hhmmss, unix_timestamp_to_datetime
