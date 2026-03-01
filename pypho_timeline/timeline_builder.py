@@ -16,10 +16,20 @@ import pyxdf
 from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams, perform_process_all_streams_multi_xdf
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
-from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler
+from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler, get_rendering_logger
 from pypho_timeline.widgets import LogWidget
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, get_earliest_reference_datetime, datetime_to_float, float_to_datetime
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
+
+
+logger = None # get_rendering_logger(__name__)
+logger = configure_logging( ## updates the global logger variable
+    log_level=logging.DEBUG,
+    log_file=None,
+    log_to_console=True,
+    log_to_file=False,
+)
+
 
 # Import MNE (optional - may not be available)
 try:
@@ -83,7 +93,7 @@ class TimelineBuilder:
         self.log_widget = LogWidget()
 
         # Configure logging
-        logger = configure_logging(
+        logger = configure_logging( ## updates the global logger variable
             log_level=self.log_level,
             log_file=self.log_file,
             log_to_console=self.log_to_console,
@@ -97,7 +107,7 @@ class TimelineBuilder:
         self.log_widget.show()
 
         if self.log_to_console or self.log_to_file:
-            print(f"Logging configured for TimelineBuilder - console: {self.log_to_console}, file: {self.log_to_file} ({self.log_file})")
+            logger.info(f"Logging configured for TimelineBuilder - console: {self.log_to_console}, file: {self.log_to_file} ({self.log_file})")
 
 
     
@@ -164,23 +174,24 @@ class TimelineBuilder:
         if not xdf_file_paths:
             raise ValueError("xdf_file_paths list cannot be empty")
         
-        print("=" * 60)
+        
+        logger.info("=" * 60)
         if len(xdf_file_paths) == 1:
-            print(f"pyPhoTimeline - Load all modalities from XDF: {xdf_file_paths[0]}")
+            logger.info(f"pyPhoTimeline - Load all modalities from XDF: {xdf_file_paths[0]}")
         else:
-            print(f"pyPhoTimeline - Load all modalities from {len(xdf_file_paths)} XDF files:")
+            logger.info(f"pyPhoTimeline - Load all modalities from {len(xdf_file_paths)} XDF files:")
             for path in xdf_file_paths:
-                print(f"  - {path}")
-        print("=" * 60)
+                logger.info(f"  - {path}")
+        logger.info("=" * 60)
         
         # Load all XDF files
         all_streams_by_file = []
         all_file_headers = []
         
         for xdf_file_path in xdf_file_paths:
-            print(f"Loading XDF file: {xdf_file_path} ...")
+            logger.info(f"Loading XDF file: {xdf_file_path} ...")
             streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
-            print(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
+            logger.info(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
             
             # Filter streams if allowlist/blocklist is provided
             if (stream_allowlist is not None) or (stream_blocklist is not None):
@@ -193,26 +204,26 @@ class TimelineBuilder:
         all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths, file_headers=all_file_headers)
         
         if not all_streams:
-            print("No streams found.")
+            logger.warning("No streams found.")
             return None
         
-        print(f"Found {len(all_streams)} unique stream names after merging: {[a_name for a_name in list(all_streams_datasources.keys())]}")
+        logger.info(f"Found {len(all_streams)} unique stream names after merging: {[a_name for a_name in list(all_streams_datasources.keys())]}")
         
         # Get active datasources
         active_datasources_dict = {k: v for k, v in all_streams_datasources.items() if v is not None}
         active_datasource_list = list(active_datasources_dict.values())
-        print(f"\tbuild active_datasources: {len(active_datasource_list)} datasources.")
+        logger.info(f"\tbuild active_datasources: {len(active_datasource_list)} datasources.")
         
         if not active_datasource_list:
-            print("No valid datasources found.")
+            logger.warning("No valid datasources found.")
             return None
         
         # Extract reference datetime from XDF headers (for datetime axis alignment)
         reference_datetime = get_earliest_reference_datetime(all_file_headers, active_datasource_list)
         if reference_datetime is not None:
-            print(f"Using reference datetime: {reference_datetime}")
+            logger.info(f"Using reference datetime: {reference_datetime}")
         else:
-            print("Warning: No reference datetime found, using Unix epoch")
+            logger.warning("Warning: No reference datetime found, using Unix epoch")
         
         # Generate window title if not provided
         if window_title is None:
@@ -324,18 +335,18 @@ class TimelineBuilder:
         all_streams, all_streams_datasources = self._process_xdf_streams(streams)
         
         if not all_streams:
-            print("No streams found.")
+            logger.warning("No streams found.")
             return None
         
-        print(f"Found {len(all_streams)} streams: {[a_name for a_name in list(all_streams_datasources.keys())]}")
+        logger.info(f"Found {len(all_streams)} streams: {[a_name for a_name in list(all_streams_datasources.keys())]}")
         
         # Get active datasources
         active_datasources_dict = {k: v for k, v in all_streams_datasources.items() if v is not None}
         active_datasource_list = list(active_datasources_dict.values())
-        print(f"\tbuild active_datasources: {len(active_datasource_list)} datasources.")
+        logger.info(f"\tbuild active_datasources: {len(active_datasource_list)} datasources.")
         
         if not active_datasource_list:
-            print("No valid datasources found.")
+            logger.warning("No valid datasources found.")
             return None
         
         # Get reference datetime (fallback to earliest timestamp since no XDF headers available)
@@ -382,11 +393,11 @@ class TimelineBuilder:
             raise ImportError("MNE is not available. Please install mne-python to use this method.")
         
         if not eeg_raws:
-            print("No EEG Raw objects provided.")
+            logger.warning("No EEG Raw objects provided.")
             return None
         
         if stream_infos_df.empty:
-            print("Stream info DataFrame is empty.")
+            logger.warning("Stream info DataFrame is empty.")
             return None
         
         if 'xdf_dataset_idx' not in stream_infos_df.columns:
@@ -398,7 +409,7 @@ class TimelineBuilder:
                 raise ValueError("Cannot specify both stream_allowlist and stream_blocklist. Only one can be provided.")
             
             if 'name' not in stream_infos_df.columns:
-                print("Warning: 'name' column not found in stream_infos_df, cannot filter by stream name")
+                logger.warning("Warning: 'name' column not found in stream_infos_df, cannot filter by stream name")
             else:
                 original_count = len(stream_infos_df)
                 mask = pd.Series([True] * len(stream_infos_df), index=stream_infos_df.index)
@@ -422,16 +433,16 @@ class TimelineBuilder:
                 if filtered_count > 0:
                     filter_type = "allowlist" if stream_allowlist is not None else "blocklist"
                     patterns = stream_allowlist if stream_allowlist is not None else stream_blocklist
-                    print(f"Filtered out {filtered_count} stream info row(s) using {filter_type} {patterns}")
-                    print(f"Kept {len(stream_infos_df)} out of {original_count} stream info row(s) after filtering")
+                    logger.debug(f"Filtered out {filtered_count} stream info row(s) using {filter_type} {patterns}")
+                    logger.debug(f"Kept {len(stream_infos_df)} out of {original_count} stream info row(s) after filtering")
                 
                 if stream_infos_df.empty:
-                    print("No stream info rows remaining after filtering.")
+                    logger.warning("No stream info rows remaining after filtering.")
                     return None
         
-        print("=" * 60)
-        print(f"pyPhoTimeline - Load from {len(eeg_raws)} MNE Raw objects and {len(stream_infos_df)} stream info rows")
-        print("=" * 60)
+        logger.info("=" * 60)
+        logger.info(f"pyPhoTimeline - Load from {len(eeg_raws)} MNE Raw objects and {len(stream_infos_df)} stream info rows")
+        logger.info("=" * 60)
         
         # Extract reference datetime from stream_infos_df
         reference_datetime = None
@@ -447,7 +458,7 @@ class TimelineBuilder:
                 reference_datetime = valid_dts.min()
         
         if reference_datetime is None:
-            print("Warning: No reference datetime found in stream_infos_df, will use earliest datetime from datasources")
+            logger.warning("Warning: No reference datetime found in stream_infos_df, will use earliest datetime from datasources")
             # Don't set a default here - let build_from_datasources determine it from the actual data
             reference_datetime = None
         else:
@@ -457,7 +468,7 @@ class TimelineBuilder:
             # Ensure timezone-aware
             if reference_datetime.tzinfo is None:
                 reference_datetime = reference_datetime.replace(tzinfo=timezone.utc)
-            print(f"Using reference datetime: {reference_datetime}")
+            logger.info(f"Using reference datetime: {reference_datetime}")
         
         # Extract datasources from Raw objects
         all_datasources = []
@@ -467,32 +478,32 @@ class TimelineBuilder:
         for idx, row in stream_infos_df.iterrows():
             xdf_dataset_idx = row.get('xdf_dataset_idx', None)
             if xdf_dataset_idx is None or pd.isna(xdf_dataset_idx):
-                print(f"Warning: Skipping row {idx} - missing xdf_dataset_idx")
+                logger.warning(f"Warning: Skipping row {idx} - missing xdf_dataset_idx")
                 skipped_count += 1
                 continue
             
             try:
                 xdf_dataset_idx = int(xdf_dataset_idx)
             except (ValueError, TypeError):
-                print(f"Warning: Skipping row {idx} - invalid xdf_dataset_idx: {xdf_dataset_idx}")
+                logger.warning(f"Warning: Skipping row {idx} - invalid xdf_dataset_idx: {xdf_dataset_idx}")
                 skipped_count += 1
                 continue
             
             # Find corresponding Raw object
             if xdf_dataset_idx < 0 or xdf_dataset_idx >= len(eeg_raws):
-                print(f"Warning: Skipping row {idx} - xdf_dataset_idx {xdf_dataset_idx} out of range (0-{len(eeg_raws)-1})")
+                logger.warning(f"Warning: Skipping row {idx} - xdf_dataset_idx {xdf_dataset_idx} out of range (0-{len(eeg_raws)-1})")
                 skipped_count += 1
                 continue
             
             raw = eeg_raws[xdf_dataset_idx]
             if raw is None:
-                print(f"Warning: Skipping row {idx} - Raw object at index {xdf_dataset_idx} is None")
+                logger.warning(f"Warning: Skipping row {idx} - Raw object at index {xdf_dataset_idx} is None")
                 skipped_count += 1
                 continue
             
             # Check if Raw object is valid
             if not hasattr(raw, 'times') or len(raw.times) == 0:
-                print(f"Warning: Skipping row {idx} - Raw object at index {xdf_dataset_idx} has no time data")
+                logger.warning(f"Warning: Skipping row {idx} - Raw object at index {xdf_dataset_idx} has no time data")
                 skipped_count += 1
                 continue
             
@@ -509,21 +520,21 @@ class TimelineBuilder:
                     all_datasources.extend(datasources)
                     processed_count += 1
                 else:
-                    print(f"Warning: No datasources extracted from '{stream_name}'")
+                    logger.warning(f"Warning: No datasources extracted from '{stream_name}'")
                     skipped_count += 1
             except Exception as e:
-                print(f"Error: Failed to extract datasources from '{stream_name}': {e}")
+                logger.error(f"Error: Failed to extract datasources from '{stream_name}': {e}")
                 skipped_count += 1
                 import traceback
                 traceback.print_exc()
         
-        print(f"Processed {processed_count} streams, skipped {skipped_count} streams")
+        logger.info(f"Processed {processed_count} streams, skipped {skipped_count} streams")
         
         if not all_datasources:
-            print("No valid datasources found.")
+            logger.warning("No valid datasources found.")
             return None
         
-        print(f"Found {len(all_datasources)} datasources from {len(stream_infos_df)} stream info rows")
+        logger.info(f"Found {len(all_datasources)} datasources from {len(stream_infos_df)} stream info rows")
         
         # Merge datasources that share the same track name.
         #
@@ -593,7 +604,7 @@ class TimelineBuilder:
                 )
                 merged_datasources.append(merged)
             except Exception as e:
-                print(f"Warning: failed to merge datasources for '{name}': {e}. Falling back to first datasource.")
+                logger.warning(f"Warning: failed to merge datasources for '{name}': {e}. Falling back to first datasource.")
                 merged_datasources.append(first)
 
         # Generate window title if not provided
@@ -731,12 +742,12 @@ class TimelineBuilder:
             # Explicitly show the widget to ensure it's visible in the dock
             self.log_widget.show()
         
-        print("\nTimeline widget created with tracks:")
+        logger.info("\nTimeline widget created with tracks:")
         for ds in datasources:
-            print(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
+            logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
         
-        print("\nScroll on the timeline to see loaded intervals for each stream.")
-        print("Close the window to exit.\n")
+        logger.info("\nScroll on the timeline to see loaded intervals for each stream.")
+        logger.info("Close the window to exit.\n")
         
         return timeline
     
@@ -755,7 +766,7 @@ class TimelineBuilder:
             The updated SimpleTimelineWidget instance
         """
         if not datasources:
-            print("No datasources provided for update.")
+            logger.warning("No datasources provided for update.")
             return timeline
         
         # Update time range if requested
@@ -808,9 +819,9 @@ class TimelineBuilder:
         # Add tracks to the timeline
         self._add_tracks_to_timeline(timeline, datasources)
         
-        print(f"\nUpdated timeline with {len(datasources)} new tracks:")
+        logger.info(f"\nUpdated timeline with {len(datasources)} new tracks:")
         for ds in datasources:
-            print(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
+            logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
         
         return timeline
     
@@ -831,7 +842,7 @@ class TimelineBuilder:
         
         # Check if Raw object has data
         if len(raw.times) == 0:
-            print(f"Warning: Raw object for '{stream_name}' has no time data")
+            logger.warning(f"Warning: Raw object for '{stream_name}' has no time data")
             return datasources
         
         # Get meas_date from Raw object
@@ -854,7 +865,7 @@ class TimelineBuilder:
                 meas_date = None
         
         if meas_date is None:
-            print(f"Warning: No meas_date found for '{stream_name}', using reference_datetime")
+            logger.warning(f"Warning: No meas_date found for '{stream_name}', using reference_datetime")
             meas_date = reference_datetime
         
         # Ensure meas_date is timezone-aware
@@ -926,9 +937,9 @@ class TimelineBuilder:
                         fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL
                     )
                     datasources.append(eeg_datasource)
-                    print(f"  Created EEG datasource for '{stream_name}' with {len(eeg_channels)} channels")
+                    logger.info(f"  Created EEG datasource for '{stream_name}' with {len(eeg_channels)} channels")
             except Exception as e:
-                print(f"Warning: Failed to extract EEG data from '{stream_name}': {e}")
+                logger.warning(f"Warning: Failed to extract EEG data from '{stream_name}': {e}")
         
         # Extract Motion data (check for motion channels)
         motion_channel_names = ['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ']
@@ -956,9 +967,9 @@ class TimelineBuilder:
                         fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE
                     )
                     datasources.append(motion_datasource)
-                    print(f"  Created Motion datasource for '{stream_name}' with {len(motion_channels)} channels")
+                    logger.info(f"  Created Motion datasource for '{stream_name}' with {len(motion_channels)} channels")
             except Exception as e:
-                print(f"Warning: Failed to extract Motion data from '{stream_name}': {e}")
+                logger.warning(f"Warning: Failed to extract Motion data from '{stream_name}': {e}")
         
         # Extract Annotations
         if hasattr(raw, 'annotations') and raw.annotations is not None and len(raw.annotations) > 0:
@@ -1036,9 +1047,9 @@ class TimelineBuilder:
                             enable_downsampling=False
                         )
                         datasources.append(ann_datasource)
-                        print(f"  Created Annotations datasource for '{stream_name}' with {len(annotations_df)} annotations")
+                        logger.info(f"  Created Annotations datasource for '{stream_name}' with {len(annotations_df)} annotations")
             except Exception as e:
-                print(f"Warning: Failed to extract Annotations from '{stream_name}': {e}")
+                logger.warning(f"Warning: Failed to extract Annotations from '{stream_name}': {e}")
         
         return datasources
     
@@ -1095,9 +1106,9 @@ class TimelineBuilder:
         if filtered_out_names:
             filter_type = "allowlist" if stream_allowlist is not None else "blocklist"
             patterns = stream_allowlist if stream_allowlist is not None else stream_blocklist
-            print(f"Filtered out {len(filtered_out_names)} stream(s) using {filter_type} {patterns}: {filtered_out_names}")
+            logger.info(f"Filtered out {len(filtered_out_names)} stream(s) using {filter_type} {patterns}: {filtered_out_names}")
         
-        print(f"Kept {len(filtered_streams)} out of {len(streams)} stream(s) after filtering")
+        logger.info(f"Kept {len(filtered_streams)} out of {len(streams)} stream(s) after filtering")
         
         return filtered_streams
 
