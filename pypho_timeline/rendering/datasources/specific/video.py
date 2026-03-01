@@ -21,9 +21,20 @@ from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
 
 
-from deffcode import Sourcer ## for metadata extraction
-from deffcode import FFdecoder
-import imageio
+try:
+    from deffcode import Sourcer
+    from deffcode import FFdecoder
+    DEFFCODE_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    Sourcer = None
+    FFdecoder = None
+    DEFFCODE_AVAILABLE = False
+try:
+    import imageio
+    IMAGEIO_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    imageio = None
+    IMAGEIO_AVAILABLE = False
 
 
 class VideoDeffcodeHelpers:
@@ -41,6 +52,8 @@ class VideoDeffcodeHelpers:
             vid_metadata, sourcer = VideoDeffcodeHelpers.fetch_video_metadata_for_cache(a_video_file=a_video_file, debug_log_metadata=False)
 
         """
+        if not DEFFCODE_AVAILABLE or Sourcer is None:
+            raise RuntimeError("Video metadata requires deffcode; install with: pip install deffcode")
         if isinstance(a_video_file, str):
             a_video_file = Path(a_video_file)
 
@@ -67,6 +80,8 @@ class VideoDeffcodeHelpers:
             frames_list = VideoDeffcodeHelpers.fetch_video_thumbnails_for_cache(a_video_file=a_video_file, frame_offsets=frame_offsets, save_output_thumbnail=False)
 
         """
+        if not DEFFCODE_AVAILABLE or FFdecoder is None or imageio is None:
+            raise RuntimeError("Video thumbnails require deffcode and imageio; install with: pip install deffcode imageio")
         if isinstance(a_video_file, str):
             a_video_file = Path(a_video_file)
 
@@ -110,6 +125,8 @@ class VideoDeffcodeHelpers:
             frame = VideoDeffcodeHelpers.fetch_video_metadata_and_thumbnail_for_cache(a_video_file=a_video_file, save_output_thumbnail=False)
 
         """
+        if not DEFFCODE_AVAILABLE or Sourcer is None or FFdecoder is None or imageio is None:
+            raise RuntimeError("Video metadata/thumbnails require deffcode and imageio; install with: pip install deffcode imageio")
         if isinstance(a_video_file, str):
             a_video_file = Path(a_video_file)
 
