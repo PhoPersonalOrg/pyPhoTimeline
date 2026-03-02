@@ -13,7 +13,7 @@ import re
 import numpy as np
 import pandas as pd
 import pyxdf
-from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams, perform_process_all_streams_multi_xdf
+from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler, get_rendering_logger
@@ -200,7 +200,7 @@ class TimelineBuilder:
             all_streams_by_file.append(streams)
             all_file_headers.append(file_header)
         
-        # Process streams from all files and merge by stream name
+        ## Calls `perform_process_all_streams_multi_xdf(...)` to process streams from all files and merge by stream name
         all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths, file_headers=all_file_headers)
         
         if not all_streams:
@@ -1062,7 +1062,7 @@ class TimelineBuilder:
         Returns:
             Tuple of (all_streams dict, all_streams_datasources dict)
         """
-        return perform_process_all_streams(streams=streams)
+        return perform_process_single_xdf_file_all_streams(streams=streams)
     
     def _filter_streams_by_name(self, streams: List, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> List:
         """Filter streams by name using regex patterns.
