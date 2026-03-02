@@ -2,12 +2,11 @@
 from typing import Dict, Optional, List, Tuple, Any
 import pandas as pd
 from qtpy import QtCore
-import pyphoplacecellanalysis.External.pyqtgraph as pg
-from pyphoplacecellanalysis.External.pyqtgraph import SignalProxy
+import pyqtgraph as pg
+from pyqtgraph import SignalProxy
 
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData
-from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource
 from pypho_timeline.rendering.graphics.track_renderer import TrackRenderer

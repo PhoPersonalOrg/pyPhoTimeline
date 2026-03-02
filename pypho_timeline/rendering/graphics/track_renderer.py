@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 import pandas as pd
 from qtpy import QtCore
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, DetailRenderer
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData

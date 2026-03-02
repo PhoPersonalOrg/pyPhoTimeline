@@ -4,8 +4,9 @@ import numpy as np
 import pandas as pd
 from qtpy import QtCore
 
-from pyphoplacecellanalysis.External.pyqtgraph.dockarea.Dock import Dock
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
+from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
+
 from pyphocorehelpers.function_helpers import function_attributes
 
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
@@ -105,8 +106,8 @@ class SpecificDockWidgetManipulatingMixin:
                 try:
                     from pyphoplacecellanalysis.GUI.Qt.Menus.LocalMenus_AddRenderable.LocalMenus_AddRenderable import LocalMenus_AddRenderable
                     LocalMenus_AddRenderable._helper_append_custom_menu_to_widget_context_menu_universal(parent_widget=plot_item, additional_menu=self._menuContextAddRenderable)
-                except ImportError:
-                    pass  # Optional feature
+                except (ImportError, ModuleNotFoundError):
+                    pass  # Optional feature when pyphoplacecellanalysis not installed
 
             ## emit the signal
             if hasattr(self, 'sigEmbeddedMatplotlibDockWidgetAdded'):
@@ -253,7 +254,7 @@ class SpecificDockWidgetManipulatingMixin:
                     
                 
         """
-        import pyphoplacecellanalysis.External.pyqtgraph as pg
+        import pyqtgraph as pg
 
         if sync_mode is None:
             sync_mode = SynchronizedPlotMode.TO_WINDOW

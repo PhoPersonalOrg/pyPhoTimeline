@@ -10,13 +10,7 @@ from qtpy import QtCore
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 from pypho_timeline.utils.indexing_helpers import PandasHelpers
 
-# Optional mixin - handle with try/except
-try:
-    from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.Mixins.ReprPrintableWidgetMixin import ReprPrintableItemMixin
-except ImportError:
-    # Fallback: create minimal stub if mixin not available
-    class ReprPrintableItemMixin:
-        pass
+from pypho_timeline._embed.repr_printable_mixin import ReprPrintableItemMixin
 
 
 class LiveWindowEventIntervalMonitoringMixin(ReprPrintableItemMixin):

@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from qtpy import QtCore, QtWidgets
 
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 from pyphocorehelpers.DataStructure.general_parameter_containers import VisualizationParameters
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot

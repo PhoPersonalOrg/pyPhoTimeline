@@ -1,13 +1,14 @@
 from typing import Callable
-import pyphoplacecellanalysis.External.pyqtgraph as pg
-from pyphoplacecellanalysis.External.pyqtgraph import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
+import pyqtgraph as pg
 from pyphocorehelpers.programming_helpers import metadata_attributes
 from pyphocorehelpers.function_helpers import function_attributes
 
 # Simplified mixins - can be made optional if needed
 try:
-    from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.Mixins.ReprPrintableWidgetMixin import ReprPrintableItemMixin
-    from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.Mixins.DraggableGraphicsWidgetMixin import MouseInteractionCriteria, DraggableGraphicsWidgetMixin
+    from pypho_timeline._embed.repr_printable_mixin import ReprPrintableItemMixin
+    from pypho_timeline._embed.DraggableGraphicsWidgetMixin import DraggableGraphicsWidgetMixin
+
 except ImportError:
     # Fallback: create minimal stubs if mixins not available
     class ReprPrintableItemMixin:

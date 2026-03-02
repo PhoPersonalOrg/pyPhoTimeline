@@ -26,26 +26,7 @@ import pyqtgraph as pg
 from datetime import datetime
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
-# Import IntervalsDatasource from external package (or use interface)
-try:
-    from pyphoplacecellanalysis.General.Model.Datasources.IntervalDatasource import IntervalsDatasource
-except ImportError:
-    # Fallback: define minimal interface if not available
-    IntervalsDatasource = None
-
-# Optional import for General2DRenderTimeEpochs (used for visualization updates)
-try:
-    from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.Mixins.RenderTimeEpochs.Specific2DRenderTimeEpochs import General2DRenderTimeEpochs
-except ImportError:
-    General2DRenderTimeEpochs = None
-
-# Optional mixin - handle with try/except
-try:
-    from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.Mixins.ReprPrintableWidgetMixin import ReprPrintableItemMixin
-except ImportError:
-    # Fallback: create minimal stub if mixin not available
-    class ReprPrintableItemMixin:
-        pass
+from pypho_timeline._embed import IntervalsDatasource, General2DRenderTimeEpochs
 
 
 class RenderedEpochsItemsContainer(iPythonKeyCompletingMixin, DynamicParameters):
@@ -333,27 +314,12 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
             
         Uses: 'RectangleRenderTupleHelpers', 'RenderedEpochsItemsContainer', 'IntervalRectsItem', 'self._perform_add_render_item(...)'
         """
-        # Handle DataFrame input by converting to datasource
+        # Handle DataFrame input by converting to datasource (embedded General2DRenderTimeEpochs does column synonym renaming)
         if isinstance(interval_datasource, pd.DataFrame):
-            ## it's a dataframe, build a datasource
-            # Optional import - TimeColumnAliasesProtocol from neuropy (only used if available)
-            try:
-                from neuropy.utils.mixins.time_slicing import TimeColumnAliasesProtocol
-            except ImportError:
-                TimeColumnAliasesProtocol = None
-            
             interval_df: pd.DataFrame = deepcopy(interval_datasource)
-            if IntervalsDatasource is not None and TimeColumnAliasesProtocol is not None:
-                interval_df = TimeColumnAliasesProtocol.renaming_synonym_columns_if_needed(df=interval_df, required_columns_synonym_dict=IntervalsDatasource._time_column_name_synonyms)
-                if General2DRenderTimeEpochs is not None:
-                    interval_datasource = General2DRenderTimeEpochs.build_render_time_epochs_datasource(interval_df)
-                else:
-                    raise NotImplementedError("General2DRenderTimeEpochs not available - cannot convert DataFrame to datasource")
-            else:
-                raise NotImplementedError("IntervalsDatasource not available - cannot convert DataFrame to datasource")
+            interval_datasource = General2DRenderTimeEpochs.build_render_time_epochs_datasource(interval_df)
 
-        if IntervalsDatasource is not None:
-            assert isinstance(interval_datasource, IntervalsDatasource), f"interval_datasource: must be an IntervalsDatasource object but instead is of type: {type(interval_datasource)}"
+        assert isinstance(interval_datasource, IntervalsDatasource), f"interval_datasource: must be an IntervalsDatasource object but instead is of type: {type(interval_datasource)}"
         
         if name is None:
             if hasattr(interval_datasource, 'custom_datasource_name'):
@@ -400,9 +366,8 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
                     self.interval_datasources[name].source_data_changed_signal.connect(self.EpochRenderingMixin_on_interval_datasource_changed)
                         
         ## Update the visual properties if provided
-        if len(vis_kwargs) > 0 and hasattr(interval_datasource, 'update_visualization_properties'):
-            if General2DRenderTimeEpochs is not None:
-                self.interval_datasources[name].update_visualization_properties(lambda active_df, **kwargs: General2DRenderTimeEpochs._update_df_visualization_columns(active_df, **(vis_kwargs | kwargs)))
+        if len(vis_kwargs) > 0 and hasattr(interval_datasource, "update_visualization_properties"):
+            self.interval_datasources[name].update_visualization_properties(lambda active_df, **kwargs: General2DRenderTimeEpochs._update_df_visualization_columns(active_df, **(vis_kwargs | kwargs)))
         
         returned_rect_items = {}
 
@@ -604,7 +569,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
                         # Extract visibility from each item (can be None if not specified)
                         visibility_settings.append(a_sub_interval_update_kwargs.get('isVisible', None))
                     ## Update with list
-                    if General2DRenderTimeEpochs is not None and hasattr(self.interval_datasources[interval_key], 'update_visualization_properties'):
+                    if hasattr(self.interval_datasources[interval_key], "update_visualization_properties"):
                         for a_sub_interval_update_kwargs in a_list_interval_update_kwargs:
                             self.interval_datasources[interval_key].update_visualization_properties(lambda active_df, **kwargs: General2DRenderTimeEpochs._update_df_visualization_columns(active_df, **(a_sub_interval_update_kwargs | kwargs)))
 
@@ -613,7 +578,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
                     if not isinstance(interval_update_kwargs, dict):
                         interval_update_kwargs = interval_update_kwargs.to_dict()  # deal with EpochDisplayConfig 
                     visibility_settings = interval_update_kwargs.get('isVisible', None)
-                    if General2DRenderTimeEpochs is not None and hasattr(self.interval_datasources[interval_key], 'update_visualization_properties'):
+                    if hasattr(self.interval_datasources[interval_key], "update_visualization_properties"):
                         self.interval_datasources[interval_key].update_visualization_properties(lambda active_df, **kwargs: General2DRenderTimeEpochs._update_df_visualization_columns(active_df, **(interval_update_kwargs | kwargs)))
                 
                 # Apply visibility setting to rendered items if provided

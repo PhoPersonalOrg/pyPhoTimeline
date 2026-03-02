@@ -11,7 +11,7 @@ from typing import Tuple, List, Dict, Optional, Union
 from datetime import datetime, timedelta
 from pathlib import Path
 from qtpy import QtWidgets, QtCore
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, datetime_to_float, get_reference_datetime_from_xdf_header, unix_timestamp_to_datetime
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
@@ -531,7 +531,6 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         - all_streams_datasources: Dictionary mapping stream names to merged TrackDatasource instances
     """
     from phoofflineeeganalysis.analysis.historical_data import HistoricalData
-
 
     if len(streams_list) != len(xdf_file_paths):
         raise ValueError(f"streams_list length ({len(streams_list)}) must match xdf_file_paths length ({len(xdf_file_paths)})")

@@ -4,7 +4,7 @@ import pandas as pd
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any, Sequence, Mapping
 from datetime import datetime
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-# import pyphoplacecellanalysis.External.pyqtgraph as pg
+# import pyqtgraph as pg
 # from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 # from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
 # from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin

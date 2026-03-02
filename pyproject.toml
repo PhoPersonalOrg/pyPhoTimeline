@@ -12,7 +12,6 @@ dependencies = [
     "nptyping>=2.5.0",
     # External dependencies from other repos (should be installed separately)
     "pyphocorehelpers",
-    "pyphoplacecellanalysis", # For pyqtgraph extensions and utilities
     "pyqt5singleton>=0.1",
     "pyqtgraph>=0.13.7",
     "plotly>=6.5.0",
@@ -23,12 +22,13 @@ dependencies = [
     "imageio[ffmpeg]>=2.37.2",
     "vispy>=0.14.0",
     "phopylslhelper>=1.0.0",
+    "phopymnehelper",
 ]
 
 [tool.uv.sources]
-pyphoplacecellanalysis = { path = "../pyPhoPlaceCellAnalysis", editable = true }
 pyphocorehelpers = { path = "../pyPhoCoreHelpers", editable = true }
 phopylslhelper = { path = "../PhoPyLSLhelper", editable = true }
+phopymnehelper = { path = "../PhoPyMNEHelper", editable = true }
 
 [build-system]
 requires = ["setuptools>=80.9.0", "wheel>=0.45.1"]
@@ -40,7 +40,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["pypho_timeline"]
+packages = ["pypho_timeline", "pypho_timeline._embed"]
 
 [tool.setuptools.package-data]
 pypho_timeline = ["py.typed"]

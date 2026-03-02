@@ -5,13 +5,14 @@ from attrs import define, field, Factory
 import numpy as np
 
 from pypho_timeline.utils.colors_util import ColorsUtil
-from pyphoplacecellanalysis.External.pyqtgraph.Qt import QtCore, QtGui, QtWidgets
-from pyphoplacecellanalysis.External.pyqtgraph.dockarea.Dock import Dock, DockDisplayConfig
+from qtpy import QtCore, QtGui, QtWidgets
+# from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
+from pypho_timeline._embed.dock_display_config import DockDisplayConfig
 
 # Optional imports - can be simplified if not available
 try:
     from pyphoplacecellanalysis.General.Model.Configs.LongShortDisplayConfig import DisplayColorsEnum
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     # Fallback stub
     class DisplayColorsEnum:
         @staticmethod
@@ -49,7 +50,7 @@ class DockDisplayColors:
         """Generate consistent random colors for a dock based on its key."""
         try:
             from pyphoplacecellanalysis.General.Model.Configs.LongShortDisplayConfig import DisplayColorsEnum
-        except ImportError:
+        except (ImportError, ModuleNotFoundError):
             DisplayColorsEnum = globals()['DisplayColorsEnum']
 
         # Generate a unique background color based on the key

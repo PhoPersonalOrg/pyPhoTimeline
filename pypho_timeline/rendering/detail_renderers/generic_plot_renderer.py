@@ -3,7 +3,7 @@ from typing import List, Mapping, Tuple, Any, Callable, Optional, Dict, Sequence
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 
 from pypho_timeline.rendering.datasources.track_datasource import DetailRenderer
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin, normalize_channels

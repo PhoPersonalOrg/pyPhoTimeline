@@ -1,0 +1,6 @@
+ruleDirs:
+- C:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\rules
+testConfigs:
+- testDir: C:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\rule-tests
+utilDirs:
+- C:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\utils

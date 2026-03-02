@@ -9,10 +9,9 @@ import pandas as pd
 import numpy as np
 from pypho_timeline.utils.mixins import UnpackableMixin
 from attrs import define, field
-from qtpy import QtGui, QtWidgets
-import pyphoplacecellanalysis.External.pyqtgraph as pg
-from pyphoplacecellanalysis.External.pyqtgraph import QtCore, QtGui, QtWidgets
-from pyphoplacecellanalysis.External.pyqtgraph.graphicsItems.LegendItem import ItemSample, LegendItem
+from qtpy import QtCore, QtGui, QtWidgets
+import pyqtgraph as pg
+from pyqtgraph.graphicsItems.LegendItem import ItemSample, LegendItem
 
 from pypho_timeline.rendering.graphics.rectangle_helpers import RectangleRenderTupleHelpers
 from pypho_timeline.utils.datetime_helpers import format_seconds_as_hhmmss, unix_timestamp_to_datetime
@@ -24,7 +23,7 @@ logger = get_rendering_logger(__name__)
 
 # Optional mixins - handle with try/except
 try:
-    from pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.Mixins.ReprPrintableWidgetMixin import ReprPrintableItemMixin
+    from pypho_timeline._embed.repr_printable_mixin import ReprPrintableItemMixin
 except ImportError:
     # Fallback: create minimal stub if mixin not available
     class ReprPrintableItemMixin:
@@ -32,7 +31,8 @@ except ImportError:
 
 # Optional text item - handle with try/except
 try:
-    from pyphoplacecellanalysis.External.pyqtgraph_extensions.graphicsItems.TextItem.AlignableTextItem import CustomRectBoundedTextItem
+    from pypho_timeline._embed.AlignableTextItem import CustomRectBoundedTextItem
+
 except ImportError:
     # Fallback: create minimal stub if not available
     class CustomRectBoundedTextItem:
@@ -117,9 +117,9 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
     """
     pressed = False
     clickable = True
-    hoverEnter = QtCore.pyqtSignal()
-    hoverExit = QtCore.pyqtSignal()
-    clicked = QtCore.pyqtSignal()
+    hoverEnter = QtCore.Signal()
+    hoverExit = QtCore.Signal()
+    clicked = QtCore.Signal()
     ## data must have fields: start_t, series_vertical_offset, duration_t, series_height, pen, brush
 
     def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False, detail_render_callback=None):

@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple, Any
 from datetime import datetime
 import numpy as np
 import pandas as pd
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pyqtgraph as pg
 
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
 
