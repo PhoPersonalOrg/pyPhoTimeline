@@ -29,7 +29,7 @@ from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData, RenderPlots
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
 
-from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams, modality_channels_dict, modality_sfreq_dict
+from pypho_timeline.widgets import SimpleTimelineWidget # perform_process_single_xdf_file_all_streams, modality_channels_dict, modality_sfreq_dict
 from pypho_timeline.timeline_builder import TimelineBuilder
 
 

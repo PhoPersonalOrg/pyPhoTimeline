@@ -16,14 +16,11 @@ from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, datetime_to_float, get_reference_datetime_from_xdf_header, unix_timestamp_to_datetime
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
 from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
-from pypho_timeline.rendering.detail_renderers import DataframePlotDetailRenderer
-from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, VideoTrackDatasource
 from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
-
 
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData, RenderPlots
@@ -325,9 +322,11 @@ modality_channels_normalization_mode_dict = {
 }
 
 
+@function_attributes(short_name=None, tags=['OLDER', 'single_xdf_file', 'multi-streams'], input_requires=[], output_provides=[], uses=[], used_by=[], creation_date='2026-03-02 03:06', related_items=['perform_process_all_streams_multi_xdf'])
+def perform_process_single_xdf_file_all_streams(streams):
+    """ previous main function, and still used for a *single* XDF file with multiple streams - processes streams to build datasources, and thus tracks.
 
-def perform_process_all_streams(streams):
-    """ main function! Processes streams to build datasources, and thus tracks.
+    NOTE: for *multiple* XDF files with multiple streams each, use `perform_process_all_streams_multi_xdf`
 
     """
     all_streams = {}
@@ -512,6 +511,7 @@ def merge_streams_by_name(streams_by_file: List[Tuple[List, Path]]) -> Dict[str,
     return streams_by_name
 
 
+@function_attributes(short_name=None, tags=['MAIN', 'multi_xdf_files, 'multi-streams'], input_requires=[], output_provides=[], uses=[], used_by=['TimelineBuilder'], creation_date='2026-03-02 03:00', related_items=['perform_process_single_xdf_file_all_streams'])
 def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[dict]] = None) -> Tuple[Dict, Dict]:
     """Process streams from multiple XDF files and merge streams with the same name.
     
@@ -608,11 +608,6 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                 # timestamps_absolute = [float_to_datetime(float(ts), file_ref_dt) for ts in timestamps]
                 timestamps_absolute = float_to_datetime(timestamps, file_ref_dt) ## use fectorized version
 
-                #TODO 2026-02-04 05:15: - [ ] Changing from using relative to earliest reference to unix timestamps (absolute)
-                # # Convert absolute datetimes back to relative timestamps using earliest reference
-                # if (earliest_reference_datetime is not None):
-                #     timestamps = np.array([datetime_to_float(dt, earliest_reference_datetime) for dt in timestamps_absolute])
-
                 # Convert to unix timestamps (absolute) instead ______________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
                 # timestamps = np.array([datetime_to_unix_timestamp(dt) for dt in timestamps_absolute]) ## this does actually make e09 instead of e06
                 timestamps = datetime_to_unix_timestamp(timestamps_absolute) ## use fectorized version
@@ -656,11 +651,6 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                                                 #    '2026-02-04T21:20:47.785120000', ...,
                                                 #    '2026-02-04T22:44:58.643416000', '2026-02-04T22:44:58.674648000',
                                                 #    '2026-02-04T22:44:58.705881000'], dtype='datetime64[ns]')
-
-            ## ALTERNATIVE post-hoc conversion if I didn't use datetime_to_unix_timestep(...) above:
-            # # store that as a datetime column (e.g. pd.Timestamp(...) or a datetime64 column) in the DataFrame.
-            # t_start_absolute = float_to_datetime(stream_start, earliest_reference_datetime)
-            # t_end_absolute = float_to_datetime(stream_end, earliest_reference_datetime)
                         
             # Create interval DataFrame
             intervals_df = pd.DataFrame({
@@ -705,7 +695,8 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                     time_series_df = pd.DataFrame(time_series, columns=channel_names)
                     time_series_df['t'] = timestamps
                     all_detailed_dfs.append(time_series_df)
-        
+        ## END for stream, file_path in stream_file_pairs
+
         # Check if we have valid intervals
         if not all_intervals_dfs:
             print(f"  No valid intervals for stream '{stream_name}'")
@@ -795,6 +786,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             print(f'WARN: unspecific stream type -- cannot build datasource for stream: stream_name: "{stream_name}", stream_type: "{stream_type}"')
         
         all_streams_datasources[stream_name] = datasource
-    
+    ## END for stream_name, stream_file_pairs in streams_by_name.items()...
+
     return all_streams, all_streams_datasources
 
