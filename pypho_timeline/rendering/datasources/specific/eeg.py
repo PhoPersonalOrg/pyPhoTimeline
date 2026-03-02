@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-# from qtpy import QtWidgets, QtCore
+from qtpy import QtCore
 from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence
 from datetime import datetime
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
@@ -424,5 +424,175 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
         )
 
 
-__all__ = ['EEGPlotDetailRenderer', 'EEGTrackDatasource']
+# ==================================================================================================================================================================================================================================================================================== #
+# EEGSpectrogramDetailRenderer - Renders spectrogram (t x freq) as ImageItem.
+# ==================================================================================================================================================================================================================================================================================== #
+class EEGSpectrogramDetailRenderer(DetailRenderer):
+    """Detail renderer for EEG spectrogram tracks. Displays spectrogram as a 2D image (time x frequency, log power).
+
+    Expects detail_data to be a dict compatible with EEGComputations.raw_spectogram_working output:
+    at least 't' (1D), 'freqs' (1D), and 'Sxx' (xarray or ndarray: channels × freqs × times, or freqs × times).
+    """
+
+    def __init__(self, freq_min: float = 1.0, freq_max: float = 40.0, **kwargs):
+        """Initialize the spectrogram renderer.
+
+        Args:
+            freq_min: Lower frequency bound (Hz) for display. Default: 1.0
+            freq_max: Upper frequency bound (Hz) for display. Default: 40.0
+        """
+        DetailRenderer.__init__(self, **kwargs)
+        self.freq_min = freq_min
+        self.freq_max = freq_max
+
+
+    def _get_sxx_2d(self, detail_data: Dict) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        """Extract (freqs, t, Sxx_2d) from spectrogram dict. Sxx_2d is (n_freqs, n_times)."""
+        if not detail_data or not isinstance(detail_data, dict):
+            return None
+        freqs = detail_data.get('freqs')
+        t = detail_data.get('t')
+        Sxx = detail_data.get('Sxx')
+        if freqs is None or t is None or Sxx is None:
+            return None
+        freqs = np.asarray(freqs)
+        t = np.asarray(t)
+        if hasattr(Sxx, 'values'):
+            Sxx = Sxx.values
+        Sxx = np.asarray(Sxx)
+        if Sxx.ndim == 3:
+            Sxx = np.nanmean(Sxx, axis=0)
+        if Sxx.ndim != 2 or Sxx.shape[0] != len(freqs) or Sxx.shape[1] != len(t):
+            return None
+        return (freqs, t, Sxx)
+
+
+    def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
+        """Render spectrogram as a single ImageItem (time x frequency, log power)."""
+        logger.debug(f"EEGSpectrogramDetailRenderer.render_detail(plot_item, interval, detail_data)")
+        if detail_data is None:
+            return []
+        out = self._get_sxx_2d(detail_data)
+        if out is None:
+            return []
+        freqs, t, Sxx = out
+        img = 10.0 * np.log10(Sxx + 1e-12)
+        freq_mask = (freqs >= self.freq_min) & (freqs <= self.freq_max)
+        if not np.any(freq_mask):
+            return []
+        freqs_sel = freqs[freq_mask]
+        img_sel = img[freq_mask, :]
+        t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
+        t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
+        if isinstance(t_start, (datetime, pd.Timestamp)):
+            t_start = datetime_to_unix_timestamp(t_start)
+        t_start = float(t_start)
+        t_duration = float(t_duration)
+        freq_min, freq_max = float(freqs_sel.min()), float(freqs_sel.max())
+        img_item = pg.ImageItem(img_sel)
+        # Use y=0..1 so the image is visible with the timeline's default setYRange(0, 1) for all tracks
+        img_item.setRect(QtCore.QRectF(t_start, 0.0, t_duration, 1.0))
+        plot_item.addItem(img_item)
+        return [img_item]
+
+
+    def clear_detail(self, plot_item: pg.PlotItem, graphics_objects: List[pg.GraphicsObject]) -> None:
+        """Remove spectrogram graphics objects."""
+        if graphics_objects is None:
+            return
+        for obj in graphics_objects:
+            if obj is None:
+                continue
+            try:
+                plot_item.removeItem(obj)
+                if hasattr(obj, 'setParentItem'):
+                    obj.setParentItem(None)
+            except (AttributeError, RuntimeError):
+                pass
+
+
+    def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
+        """Return (x_min, x_max, y_min, y_max) for the detail view (time x frequency)."""
+        t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
+        t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
+        t_end = t_start + t_duration
+        if isinstance(t_start, (datetime, pd.Timestamp)):
+            t_start = datetime_to_unix_timestamp(t_start)
+        if isinstance(t_end, (datetime, pd.Timestamp)):
+            t_end = datetime_to_unix_timestamp(t_end)
+        x_min = float(t_start)
+        x_max = float(t_end)
+        if detail_data is None or not isinstance(detail_data, dict):
+            return (x_min, x_max, self.freq_min, self.freq_max)
+        freqs = detail_data.get('freqs')
+        if freqs is None:
+            return (x_min, x_max, self.freq_min, self.freq_max)
+        freqs = np.asarray(freqs)
+        freq_mask = (freqs >= self.freq_min) & (freqs <= self.freq_max)
+        if not np.any(freq_mask):
+            return (x_min, x_max, self.freq_min, self.freq_max)
+        f_min = float(freqs[freq_mask].min())
+        f_max = float(freqs[freq_mask].max())
+        return (x_min, x_max, f_min, f_max)
+
+
+# ==================================================================================================================================================================================================================================================================================== #
+# EEGSpectrogramTrackDatasource
+# ==================================================================================================================================================================================================================================================================================== #
+class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
+    """TrackDatasource that shares intervals with an EEG track and displays spectrogram detail (from EEGComputations.raw_spectogram_working)."""
+
+    def __init__(self, intervals_df: pd.DataFrame, spectrogram_result: Dict, custom_datasource_name: Optional[str] = None, spectrogram_results: Optional[List[Dict]] = None,
+                 freq_min: float = 1.0, freq_max: float = 40.0, **kwargs):
+        """Initialize with intervals and precomputed spectrogram result(s).
+
+        Args:
+            intervals_df: DataFrame with columns ['t_start', 't_duration'] (same as EEG track).
+            spectrogram_result: Single spectrogram dict from EEGComputations.raw_spectogram_working (used when one interval).
+            custom_datasource_name: Name for this datasource (e.g. EEG_Spectrogram_StreamName).
+            spectrogram_results: Optional list of spectrogram dicts, one per row in intervals_df (for merged multi-interval case).
+            freq_min, freq_max: Passed to EEGSpectrogramDetailRenderer.
+        """
+        super().__init__(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name or "EEG_Spectrogram", max_points_per_second=None, enable_downsampling=False)
+        self._spectrogram_result = spectrogram_result
+        self._spectrogram_results = spectrogram_results
+        self._freq_min = freq_min
+        self._freq_max = freq_max
+
+
+    def fetch_detailed_data(self, interval: pd.Series) -> Any:
+        """Return the spectrogram dict for this interval."""
+        if self._spectrogram_results is not None:
+            t_start = interval.get('t_start')
+            t_duration = interval.get('t_duration')
+            match = (self.intervals_df['t_start'] == t_start) & (self.intervals_df['t_duration'] == t_duration)
+            pos = np.flatnonzero(match)
+            if len(pos) > 0 and pos[0] < len(self._spectrogram_results):
+                return self._spectrogram_results[int(pos[0])]
+            return self._spectrogram_results[0] if self._spectrogram_results else None
+        return self._spectrogram_result
+
+
+    def get_detail_renderer(self) -> EEGSpectrogramDetailRenderer:
+        """Return the spectrogram detail renderer."""
+        return EEGSpectrogramDetailRenderer(freq_min=self._freq_min, freq_max=self._freq_max)
+
+
+    def get_detail_cache_key(self, interval: pd.Series) -> str:
+        return super().get_detail_cache_key(interval)
+
+
+    @classmethod
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], spectrogram_results: List[Dict], custom_datasource_name: Optional[str] = None, freq_min: float = 1.0, freq_max: float = 40.0) -> 'EEGSpectrogramTrackDatasource':
+        """Create one EEGSpectrogramTrackDatasource from multiple (intervals_df, spectrogram_result) pairs."""
+        if not intervals_dfs or not spectrogram_results:
+            raise ValueError("intervals_dfs and spectrogram_results must be non-empty")
+        if len(intervals_dfs) != len(spectrogram_results):
+            raise ValueError("intervals_dfs and spectrogram_results must have the same length")
+        merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start')
+        first_result = spectrogram_results[0]
+        return cls(intervals_df=merged_intervals_df, spectrogram_result=first_result, custom_datasource_name=custom_datasource_name, spectrogram_results=spectrogram_results, freq_min=freq_min, freq_max=freq_max)
+
+
+__all__ = ['EEGPlotDetailRenderer', 'EEGTrackDatasource', 'EEGSpectrogramDetailRenderer', 'EEGSpectrogramTrackDatasource']
 
