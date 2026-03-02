@@ -14,8 +14,11 @@ import pyqtgraph as pg
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, unix_timestamp_to_datetime, get_reference_datetime_from_xdf_header
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource
-from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
+from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
+from pypho_timeline.utils.logging_util import get_rendering_logger
+
+logger = get_rendering_logger(__name__)
 
 try:
     from pyphocorehelpers.function_helpers import function_attributes
@@ -197,7 +200,7 @@ def merge_streams_by_name(streams_by_file: List[Tuple[List, Path]]) -> Dict[str,
 
 
 @function_attributes(short_name=None, tags=['MAIN', 'multi_xdf_files', 'multi-streams'], input_requires=[], output_provides=[], uses=[], used_by=['TimelineBuilder'], creation_date='2026-03-02 03:00', related_items=['perform_process_single_xdf_file_all_streams'])
-def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[dict]] = None) -> Tuple[Dict, Dict]:
+def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[dict]] = None, enable_raw_xdf_processing: bool=True) -> Tuple[Dict, Dict]:
     """Process streams from multiple XDF files and merge streams with the same name.
 
     Streams with the same name across different files will be merged into a single datasource.
@@ -265,7 +268,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
 
         # Collect intervals and detailed data from all files for this stream name
         all_intervals_dfs = []
-        all_detailed_dfs = []
+        all_detailed_dfs = [] ## #TODO 2026-03-02 08:56: - [ ] these detailed_dfs are being built synchronously in the following loop too, PERFORMANCE: defer this to an async call
         stream_type = None
         stream_info = None
 
@@ -317,7 +320,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             ts_index = ts_index.tz_localize('UTC') if ts_index.tz is None else ts_index.tz_convert('UTC')
             timestamps = ts_index.values
 
-            # Create interval DataFrame
+            # Create interval DataFrame __________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
             intervals_df = pd.DataFrame({
                 't_start': [stream_start],
                 't_duration': [stream_duration],
@@ -338,7 +341,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
 
             all_intervals_dfs.append(intervals_df)
 
-            # Create detailed DataFrame if time_series exists
+            # Create *detailed* DataFrame if time_series exists
             if time_series is not None and len(time_series) > 0:
                 n_channels = int(stream['info']['channel_count'][0])
                 n_t_stamps, n_columns = np.shape(time_series)
@@ -360,6 +363,8 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                     all_detailed_dfs.append(time_series_df)
         ## END for stream, file_path in stream_file_pairs
 
+
+        # Build the simple intervals _________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
         # Check if we have valid intervals
         if not all_intervals_dfs:
             print(f"  No valid intervals for stream '{stream_name}'")
@@ -372,6 +377,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         has_valid_intervals = len(merged_intervals_df) > 0
         has_detailed_data = len(all_detailed_dfs) > 0
 
+        # Merge streams into a modality-type specific datasource _____________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
         # Create merged datasource based on stream type
         datasource = None
 
@@ -391,7 +397,42 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         elif (stream_type.upper() == 'EEG'):
             if has_valid_intervals and has_detailed_data:
                 eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
-                datasource = EEGTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict)
+                datasource = EEGTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"EEG_{stream_name}",
+                                                                        max_points_per_second=10.0, enable_downsampling=True,
+                                                                        fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict,
+                )
+                if enable_raw_xdf_processing:
+                    logger.info(f'enable_raw_xdf_processing is True so this stream will be processed as MNE raw...')
+                    xdf_path_for_raw = stream_file_pairs[0][1]
+                    from phopymnehelper.xdf_files import LabRecorderXDF
+                    from phopymnehelper.SavedSessionsProcessor import DataModalityType
+                    lab_obj: Optional[LabRecorderXDF] = None
+                    try:
+                        lab_obj = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_path_for_raw, should_load_full_file_data=True)
+                    except ValueError as e:
+                        if 'datetime' in str(e).lower() or 'UTC' in str(e):
+                            logger.warning(f'Skipping spectrogram for "{stream_name}": LabRecorderXDF load failed (UTC/datetime issue): {e}')
+                        else:
+                            raise
+                    if lab_obj is not None:
+                        raws_dict = lab_obj.datasets_dict or {}
+                        eeg_raws = raws_dict.get(DataModalityType.EEG.value, [])  # type: ignore[arg-type]  # xdf_files keys datasets_dict by enum .value at runtime
+                        raw = eeg_raws[0] if eeg_raws else None
+                        if raw is not None:
+                            try:
+                                from phopymnehelper.EEG_data import EEGComputations
+                                spec_result = EEGComputations.raw_spectogram_working(raw, nperseg=1024, noverlap=512)
+                                spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}")
+                                all_streams_datasources[f"EEG_Spectrogram_{stream_name}"] = spec_datasource
+                                all_streams[f"EEG_Spectrogram_{stream_name}"] = merged_intervals_df
+                                logger.info(f'Created EEG Spectrogram datasource for "{stream_name}"')
+                            except ImportError:
+                                logger.warning(f'EEGComputations not available; skipping spectrogram for "{stream_name}"')
+                            except Exception as spec_e:
+                                logger.warning(f'Failed to create spectrogram for "{stream_name}": {spec_e}')
+                        else:
+                            logger.warning(f'No EEG raw found in XDF for stream "{stream_name}"; skipping spectrogram')
+
 
         elif (stream_type.upper() in ['MARKERS']) and (stream_name in ['EventBoard', 'TextLogger']):
             if has_valid_intervals and has_detailed_data:

@@ -42,13 +42,21 @@ except ImportError:
 
 # Import datasources
 try:
-    from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
+    from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource
     from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource
     from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
 except ImportError:
     EEGTrackDatasource = None
+    EEGSpectrogramTrackDatasource = None
     MotionTrackDatasource = None
     LogTextDataFramePlotDetailRenderer = None
+
+try:
+    from phopymnehelper.EEG_data import EEGComputations
+    EEG_COMPUTATIONS_AVAILABLE = True
+except ImportError:
+    EEGComputations = None
+    EEG_COMPUTATIONS_AVAILABLE = False
 
 # Import VideoTrackDatasource for video-only timeline building
 try:
@@ -621,6 +629,16 @@ class TimelineBuilder:
                     merged_datasources.append(merged)
                     continue
 
+                if EEGSpectrogramTrackDatasource is not None and isinstance(first, EEGSpectrogramTrackDatasource):
+                    spec_results = [getattr(d, "_spectrogram_result") for d in ds_group if getattr(d, "_spectrogram_result", None) is not None]
+                    if len(spec_results) == len(intervals_dfs):
+                        merged = EEGSpectrogramTrackDatasource.from_multiple_sources(intervals_dfs=intervals_dfs, spectrogram_results=spec_results, custom_datasource_name=name,
+                            freq_min=getattr(first, "_freq_min", 1.0), freq_max=getattr(first, "_freq_max", 40.0))
+                        merged_datasources.append(merged)
+                    else:
+                        merged_datasources.append(first)
+                    continue
+
                 # Generic interval + optional detail (e.g. annotations)
                 merged = IntervalProvidingTrackDatasource.from_multiple_sources(
                     intervals_dfs=intervals_dfs,
@@ -966,6 +984,16 @@ class TimelineBuilder:
                     )
                     datasources.append(eeg_datasource)
                     logger.info(f"  Created EEG datasource for '{stream_name}' with {len(eeg_channels)} channels")
+
+                # Create EEGSpectrogramTrackDatasource (same intervals, detail = spectrogram image)
+                if EEGSpectrogramTrackDatasource is not None and EEG_COMPUTATIONS_AVAILABLE and EEGComputations is not None:
+                    try:
+                        spec_result = EEGComputations.raw_spectogram_working(raw, nperseg=1024, noverlap=512)
+                        spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=base_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}")
+                        datasources.append(spec_datasource)
+                        logger.info(f"  Created EEG Spectrogram datasource for '{stream_name}'")
+                    except Exception as spec_e:
+                        logger.warning(f"Warning: Failed to create spectrogram for '{stream_name}': {spec_e}")
             except Exception as e:
                 logger.warning(f"Warning: Failed to extract EEG data from '{stream_name}': {e}")
         
