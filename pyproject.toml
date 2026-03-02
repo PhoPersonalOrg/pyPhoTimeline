@@ -22,11 +22,13 @@ dependencies = [
     "imageio[ffmpeg]>=2.37.2",
     "vispy>=0.14.0",
     "phopylslhelper>=1.0.0",
+    "phopymnehelper",
 ]
 
 [tool.uv.sources]
 pyphocorehelpers = { path = "../pyPhoCoreHelpers", editable = true }
 phopylslhelper = { path = "../PhoPyLSLhelper", editable = true }
+phopymnehelper = { path = "../PhoPyMNEHelper", editable = true }
 
 [build-system]
 requires = ["setuptools>=80.9.0", "wheel>=0.45.1"]
