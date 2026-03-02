@@ -6,7 +6,6 @@ time-synchronized data.
 """
 
 from pathlib import Path
-from re import S
 import sys
 import numpy as np
 import pandas as pd
@@ -14,20 +13,11 @@ from qtpy import QtWidgets, QtCore
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 import pyqtgraph as pg
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
-from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
-from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
-from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, NamedColorScheme
-from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
-from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, VideoTrackDatasource
 from pypho_timeline.rendering.detail_renderers import MotionPlotDetailRenderer, VideoThumbnailDetailRenderer, GenericPlotDetailRenderer
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
 from pypho_timeline.utils.logging_util import configure_logging
-
-from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
-from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData, RenderPlots
-from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
 
 from pypho_timeline.widgets import SimpleTimelineWidget # perform_process_single_xdf_file_all_streams, modality_channels_dict, modality_sfreq_dict
 from pypho_timeline.timeline_builder import TimelineBuilder

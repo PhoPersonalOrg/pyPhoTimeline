@@ -13,7 +13,8 @@ import re
 import numpy as np
 import pandas as pd
 import pyxdf
-from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf
+from pypho_timeline.widgets import SimpleTimelineWidget
+from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler, get_rendering_logger
@@ -71,6 +72,17 @@ class TimelineBuilder:
         timeline = builder.build_from_xdf_file(Path("data.xdf"))
         # Or build from video only:
         timeline = builder.build_from_video(video_folder_path=Path("path/to/videos"))
+
+
+    Main Call Hierarchy
+        cls.build_from_xdf_files(...)
+
+            for ...
+                streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+            ## Calls `perform_process_all_streams_multi_xdf(...)` to process streams from all files and merge by stream name
+            all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths, file_headers=all_file_headers)
+
+            self.build_from_datasources
     """
     
     def __init__(self, log_level: int = logging.DEBUG, log_file: Optional[Path] = None, log_to_console: bool = False, log_to_file: bool = True):
@@ -188,9 +200,25 @@ class TimelineBuilder:
         all_streams_by_file = []
         all_file_headers = []
         
+        
+
+        
+
         for xdf_file_path in xdf_file_paths:
             logger.info(f"Loading XDF file: {xdf_file_path} ...")
             streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+
+            # # #TODO 2026-03-02 05:30: - [ ] Could instead do 
+            # from phopymnehelper.xdf_files import XDFDataStreamAccessor, LabRecorderXDF
+
+            # obj: LabRecorderXDF = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_file_path, should_load_full_file_data=True) ## #TODO 2026-03-02 07:47: - [ ] introduces `ValueError: Date must be datetime object in UTC: datetime.datetime(2026, 3, 1, 2, 9, 18, tzinfo=<UTC>)` error
+            # # stream_infos = _obj.stream_infos
+            # # raws = _obj.datasets
+            # # raws_dict = _obj.datasets_dict
+            # ## Convert back to the simple outputs:
+            # streams = obj.xdf_streams
+            # file_header = obj.xdf_header
+
             logger.info(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
             
             # Filter streams if allowlist/blocklist is provided

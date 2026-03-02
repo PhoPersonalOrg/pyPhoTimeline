@@ -15,13 +15,13 @@ from pypho_timeline.widgets.log_widget import (
 # that import from widgets.custom_graphics_layout_widget, creating a circular dependency
 # when widgets.__init__.py tries to import simple_timeline_widget during module initialization
 def _lazy_import_simple_timeline():
-    """Lazy import of simple_timeline_widget to avoid circular dependencies."""
-    from pypho_timeline.widgets.simple_timeline_widget import (
-        SimpleTimelineWidget,
+    """Lazy import of simple_timeline_widget and stream_to_datasources to avoid circular dependencies."""
+    from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget
+    from pypho_timeline.rendering.datasources.stream_to_datasources import (
         modality_channels_dict,
         modality_sfreq_dict,
         perform_process_single_xdf_file_all_streams,
-        perform_process_single_xdf_file_all_streams_multi_xdf,
+        perform_process_all_streams_multi_xdf,
     )
     return SimpleTimelineWidget, modality_channels_dict, modality_sfreq_dict, perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf
 
