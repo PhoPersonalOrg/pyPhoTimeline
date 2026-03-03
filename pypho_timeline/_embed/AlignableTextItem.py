@@ -377,11 +377,10 @@ class CustomRectBoundedTextItem(pg.TextItem):
         #     self.setAnchor(self.anchors[0 if vr.center().y() < 0 else 1])
         
         a_rect = self._parent_rect
-        a_center_point = a_rect.center()
-        self.setAnchor(pg.Point(0.5, 0.5))
-        # self.setText(f'TEST_ITEM[{i}]')
-        # a_label.setPos(a_label._parent_rect.x(), a_label._parent_rect.y())
-        self.setPos(a_center_point.x(), a_center_point.y())
+        pos_x = a_rect.center().x()
+        pos_y = a_rect.top()
+        self.setAnchor(pg.Point(0.5, 0))
+        self.setPos(pos_x, pos_y)
         
 
 
