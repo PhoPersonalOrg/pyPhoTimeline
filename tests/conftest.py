@@ -80,9 +80,12 @@ class _StubAttr:
 
     # Allow direct decoration: @stub_attr
     def __call__(self, *args, **kwargs):
+        # Direct decoration pattern: @stub_attr (no parentheses).
+        # Detected when a single non-type callable is passed — that is the
+        # function being decorated.  Return it unchanged.
         if len(args) == 1 and callable(args[0]) and not isinstance(args[0], type):
             return args[0]
-        # Called as factory: @stub_attr(...)
+        # Factory pattern: @stub_attr(...).  Return a no-op decorator.
         def _deco(fn):
             return fn
         return _deco

@@ -305,8 +305,10 @@ class TestLiveEEGTrackDatasourceBuffer(unittest.TestCase):
 
         w = threading.Thread(target=_writer)
         r = threading.Thread(target=_reader)
-        r.start(); w.start()
-        w.join(timeout=5); r.join(timeout=5)
+        r.start()
+        w.start()
+        w.join(timeout=5)
+        r.join(timeout=5)
         self.assertEqual(errors, [], f"Concurrency errors: {errors}")
 
 
