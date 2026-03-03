@@ -33,3 +33,34 @@ Window scrolled to: 50.00 - 65.00
 Window scrolled to: 60.00 - 75.00
 
 ```
+
+# GitHub Codespaces setup
+
+## Automated Setup (Recommended)
+
+The project includes a **development container configuration** (`.devcontainer/devcontainer.json`) that automates the entire setup process for GitHub Codespaces.
+
+1. Click the green **Code** button on GitHub
+2. Select **Codespaces** → **Create codespace on master**
+3. Wait for the container to initialize (automatic setup runs)
+4. Start developing!
+
+The dev container automatically:
+- Installs UV package manager
+- Sets up dependencies in dev or release mode (with fallback)
+- Configures Python interpreter and VS Code extensions
+- Enables debugging and testing out-of-the-box
+
+For details, see [.devcontainer/README.md](.devcontainer/README.md).
+
+## Manual Setup (Local Development)
+
+If setting up locally without dev containers:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install git+https://github.com/PhoPersonalOrg/uv-deps-switcher.git
+uv-deps-switcher dev
+uv sync --all-extras
+source .venv/bin/activate
+```

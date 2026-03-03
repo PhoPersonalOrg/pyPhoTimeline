@@ -1,3 +1,5 @@
 [tool.uv.sources]
-pyphoplacecellanalysis = { git = "https://github.com/CommanderPho/pyPhoPlaceCellAnalysis.git" }
-pyphocorehelpers = { git = "https://github.com/CommanderPho/pyPhoCoreHelpers.git" }
+pyphocorehelpers = { git = "https://github.com/CommanderPho/pyPhoCoreHelpers.git"}
+phopylslhelper = { git = "https://github.com/PhoPersonalOrg/phopylslhelper.git"}
+phopymnehelper = { git = "https://github.com/PhoPersonalOrg/PhoPyMNEHelper.git"}
+

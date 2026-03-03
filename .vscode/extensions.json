@@ -6,6 +6,8 @@
 	"recommendations": [
 		"specstory.specstory-vscode",
 		"astral-sh.ty"
+		"ms-python.python",
+		"ms-azuretools.vscode-containers"
 		
 	],
 	// List of extensions recommended by VS Code that should not be recommended for users of this workspace.

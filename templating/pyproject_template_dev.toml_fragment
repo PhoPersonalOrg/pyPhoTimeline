@@ -1,3 +1,4 @@
 [tool.uv.sources]
-pyphoplacecellanalysis = { path = "../pyPhoPlaceCellAnalysis", editable = true }
 pyphocorehelpers = { path = "../pyPhoCoreHelpers", editable = true }
+phopylslhelper = { path = "../PhoPyLSLhelper", editable = true }
+phopymnehelper = { path = "../PhoPyMNEHelper", editable = true }

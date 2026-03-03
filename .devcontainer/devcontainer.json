@@ -1,0 +1,58 @@
+{
+  "name": "pyPhoTimeline",
+  "image": "mcr.microsoft.com/devcontainers/python:3.10-jammy",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "postCreateCommand": "bash .devcontainer/devcontainer-setup.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-python.debugpy",
+        "ms-azuretools.vscode-containers"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": false,
+        "python.linting.ruffEnabled": true,
+        "python.formatting.provider": "black",
+        "[python]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "ms-python.python"
+        },
+        "python.testing.unittestArgs": [
+          "-s",
+          "tests",
+          "-p",
+          "test_*.py"
+        ],
+        "python.testing.pytestEnabled": false,
+        "python.testing.unittestEnabled": true
+      }
+    }
+  },
+  "remoteEnv": {
+    "PYTHONPATH": "${containerWorkspaceFolder}"
+  },
+  "forwardPorts": [
+    5900,
+    6000
+  ],
+  "portsAttributes": {
+    "5900": {
+      "label": "VNC (if needed for Qt display)",
+      "onAutoForward": "ignore"
+    },
+    "6000": {
+      "label": "X11 (if needed for Qt display)",
+      "onAutoForward": "ignore"
+    }
+  },
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh,target=/root/.ssh,readonly"
+  ]
+}
