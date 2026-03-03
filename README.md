@@ -33,3 +33,12 @@ Window scrolled to: 50.00 - 65.00
 Window scrolled to: 60.00 - 75.00
 
 ```
+
+# GitHub Codespaces setup
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install git+https://github.com/PhoPersonalOrg/uv-deps-switcher.git
+uv-deps-switcher dev
+uv sync --all-extras
+source .venv/bin/activate
+```
