@@ -15,30 +15,30 @@ from pypho_timeline.widgets.log_widget import (
 # that import from widgets.custom_graphics_layout_widget, creating a circular dependency
 # when widgets.__init__.py tries to import simple_timeline_widget during module initialization
 def _lazy_import_simple_timeline():
-    """Lazy import of simple_timeline_widget to avoid circular dependencies."""
-    from pypho_timeline.widgets.simple_timeline_widget import (
-        SimpleTimelineWidget,
+    """Lazy import of simple_timeline_widget and stream_to_datasources to avoid circular dependencies."""
+    from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget
+    from pypho_timeline.rendering.datasources.stream_to_datasources import (
         modality_channels_dict,
         modality_sfreq_dict,
-        perform_process_all_streams,
+        perform_process_single_xdf_file_all_streams,
         perform_process_all_streams_multi_xdf,
     )
-    return SimpleTimelineWidget, modality_channels_dict, modality_sfreq_dict, perform_process_all_streams, perform_process_all_streams_multi_xdf
+    return SimpleTimelineWidget, modality_channels_dict, modality_sfreq_dict, perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf
 
 # Import lazily on first access
 _SimpleTimelineWidget = None
 _modality_channels_dict = None
 _modality_sfreq_dict = None
-_perform_process_all_streams = None
+_perform_process_single_xdf_file_all_streams = None
 _perform_process_all_streams_multi_xdf = None
 
 def __getattr__(name):
     """Lazy loading of simple_timeline_widget exports."""
-    global _SimpleTimelineWidget, _modality_channels_dict, _modality_sfreq_dict, _perform_process_all_streams, _perform_process_all_streams_multi_xdf
+    global _SimpleTimelineWidget, _modality_channels_dict, _modality_sfreq_dict, _perform_process_single_xdf_file_all_streams, _perform_process_all_streams_multi_xdf
     
-    if name in ('SimpleTimelineWidget', 'modality_channels_dict', 'modality_sfreq_dict', 'perform_process_all_streams', 'perform_process_all_streams_multi_xdf'):
+    if name in ('SimpleTimelineWidget', 'modality_channels_dict', 'modality_sfreq_dict', 'perform_process_single_xdf_file_all_streams', 'perform_process_all_streams_multi_xdf'):
         if _SimpleTimelineWidget is None:
-            _SimpleTimelineWidget, _modality_channels_dict, _modality_sfreq_dict, _perform_process_all_streams, _perform_process_all_streams_multi_xdf = _lazy_import_simple_timeline()
+            _SimpleTimelineWidget, _modality_channels_dict, _modality_sfreq_dict, _perform_process_single_xdf_file_all_streams, _perform_process_all_streams_multi_xdf = _lazy_import_simple_timeline()
         
         if name == 'SimpleTimelineWidget':
             return _SimpleTimelineWidget
@@ -46,8 +46,8 @@ def __getattr__(name):
             return _modality_channels_dict
         elif name == 'modality_sfreq_dict':
             return _modality_sfreq_dict
-        elif name == 'perform_process_all_streams':
-            return _perform_process_all_streams
+        elif name == 'perform_process_single_xdf_file_all_streams':
+            return _perform_process_single_xdf_file_all_streams
         elif name == 'perform_process_all_streams_multi_xdf':
             return _perform_process_all_streams_multi_xdf
     
@@ -59,7 +59,7 @@ __all__ = [
     'SimpleTimelineWidget',
     'modality_channels_dict',
     'modality_sfreq_dict',
-    'perform_process_all_streams',
+    'perform_process_single_xdf_file_all_streams',
     'perform_process_all_streams_multi_xdf',
     'LogWidget',
     'QtLogHandler',

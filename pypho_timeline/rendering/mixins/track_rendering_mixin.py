@@ -163,8 +163,12 @@ class TrackRenderingMixin(EpochRenderingMixin):
             if viewbox is not None:
                 # Enable panning/zooming only on the x-axis
                 viewbox.setMouseEnabled(x=True, y=False)
+                viewbox.enableAutoRange(x=False, y=False) ## disable auto-ranging
+                # viewbox.setXRange(300, 450)
+                # viewbox.setYRange(0.0, 1.0)
+                # viewbox.setAutoVisible(x=False, y=True)
+
                 # Use SignalProxy to rate-limit viewport updates
-                
                 proxy_key = f'track_viewport_{name}'
                 if proxy_key not in self.ui.connections:
                     proxy = SignalProxy(viewbox.sigRangeChanged, rateLimit=30, slot=lambda evt: self._on_plot_viewport_changed(name, evt)) # Limit to 30 updates per second

@@ -13,7 +13,8 @@ import re
 import numpy as np
 import pandas as pd
 import pyxdf
-from pypho_timeline.widgets import SimpleTimelineWidget, perform_process_all_streams, perform_process_all_streams_multi_xdf
+from pypho_timeline.widgets import SimpleTimelineWidget
+from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler, get_rendering_logger
@@ -41,13 +42,21 @@ except ImportError:
 
 # Import datasources
 try:
-    from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
+    from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource
     from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource
     from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
 except ImportError:
     EEGTrackDatasource = None
+    EEGSpectrogramTrackDatasource = None
     MotionTrackDatasource = None
     LogTextDataFramePlotDetailRenderer = None
+
+try:
+    from phopymnehelper.EEG_data import EEGComputations
+    EEG_COMPUTATIONS_AVAILABLE = True
+except ImportError:
+    EEGComputations = None
+    EEG_COMPUTATIONS_AVAILABLE = False
 
 # Import VideoTrackDatasource for video-only timeline building
 try:
@@ -71,6 +80,17 @@ class TimelineBuilder:
         timeline = builder.build_from_xdf_file(Path("data.xdf"))
         # Or build from video only:
         timeline = builder.build_from_video(video_folder_path=Path("path/to/videos"))
+
+
+    Main Call Hierarchy
+        cls.build_from_xdf_files(...)
+
+            for ...
+                streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+            ## Calls `perform_process_all_streams_multi_xdf(...)` to process streams from all files and merge by stream name
+            all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths, file_headers=all_file_headers)
+
+            self.build_from_datasources
     """
     
     def __init__(self, log_level: int = logging.DEBUG, log_file: Optional[Path] = None, log_to_console: bool = False, log_to_file: bool = True):
@@ -188,9 +208,25 @@ class TimelineBuilder:
         all_streams_by_file = []
         all_file_headers = []
         
+        
+
+        
+
         for xdf_file_path in xdf_file_paths:
             logger.info(f"Loading XDF file: {xdf_file_path} ...")
             streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+
+            # # #TODO 2026-03-02 05:30: - [ ] Could instead do 
+            # from phopymnehelper.xdf_files import XDFDataStreamAccessor, LabRecorderXDF
+
+            # obj: LabRecorderXDF = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_file_path, should_load_full_file_data=True) ## #TODO 2026-03-02 07:47: - [ ] introduces `ValueError: Date must be datetime object in UTC: datetime.datetime(2026, 3, 1, 2, 9, 18, tzinfo=<UTC>)` error
+            # # stream_infos = _obj.stream_infos
+            # # raws = _obj.datasets
+            # # raws_dict = _obj.datasets_dict
+            # ## Convert back to the simple outputs:
+            # streams = obj.xdf_streams
+            # file_header = obj.xdf_header
+
             logger.info(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
             
             # Filter streams if allowlist/blocklist is provided
@@ -200,7 +236,7 @@ class TimelineBuilder:
             all_streams_by_file.append(streams)
             all_file_headers.append(file_header)
         
-        # Process streams from all files and merge by stream name
+        ## Calls `perform_process_all_streams_multi_xdf(...)` to process streams from all files and merge by stream name
         all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths, file_headers=all_file_headers)
         
         if not all_streams:
@@ -593,6 +629,16 @@ class TimelineBuilder:
                     merged_datasources.append(merged)
                     continue
 
+                if EEGSpectrogramTrackDatasource is not None and isinstance(first, EEGSpectrogramTrackDatasource):
+                    spec_results = [getattr(d, "_spectrogram_result") for d in ds_group if getattr(d, "_spectrogram_result", None) is not None]
+                    if len(spec_results) == len(intervals_dfs):
+                        merged = EEGSpectrogramTrackDatasource.from_multiple_sources(intervals_dfs=intervals_dfs, spectrogram_results=spec_results, custom_datasource_name=name,
+                            freq_min=getattr(first, "_freq_min", 1.0), freq_max=getattr(first, "_freq_max", 40.0))
+                        merged_datasources.append(merged)
+                    else:
+                        merged_datasources.append(first)
+                    continue
+
                 # Generic interval + optional detail (e.g. annotations)
                 merged = IntervalProvidingTrackDatasource.from_multiple_sources(
                     intervals_dfs=intervals_dfs,
@@ -938,6 +984,16 @@ class TimelineBuilder:
                     )
                     datasources.append(eeg_datasource)
                     logger.info(f"  Created EEG datasource for '{stream_name}' with {len(eeg_channels)} channels")
+
+                # Create EEGSpectrogramTrackDatasource (same intervals, detail = spectrogram image)
+                if EEGSpectrogramTrackDatasource is not None and EEG_COMPUTATIONS_AVAILABLE and EEGComputations is not None:
+                    try:
+                        spec_result = EEGComputations.raw_spectogram_working(raw, nperseg=1024, noverlap=512)
+                        spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=base_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}")
+                        datasources.append(spec_datasource)
+                        logger.info(f"  Created EEG Spectrogram datasource for '{stream_name}'")
+                    except Exception as spec_e:
+                        logger.warning(f"Warning: Failed to create spectrogram for '{stream_name}': {spec_e}")
             except Exception as e:
                 logger.warning(f"Warning: Failed to extract EEG data from '{stream_name}': {e}")
         
@@ -1062,7 +1118,7 @@ class TimelineBuilder:
         Returns:
             Tuple of (all_streams dict, all_streams_datasources dict)
         """
-        return perform_process_all_streams(streams=streams)
+        return perform_process_single_xdf_file_all_streams(streams=streams)
     
     def _filter_streams_by_name(self, streams: List, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> List:
         """Filter streams by name using regex patterns.
