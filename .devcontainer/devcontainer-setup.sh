@@ -56,11 +56,11 @@ fi
 log_info "Configuring dependencies (dev mode preferred, falls back to release)..."
 
 # Try dev mode first (assumes sibling repos exist: ../pyPhoCoreHelpers, ../PhoPyLSLhelper, ../PhoPyMNEHelper)
-if uv-deps-switcher dev 2>/dev/null; then
+if uv-deps-switcher dev --yes 2>/dev/null; then
     log_success "Dev mode activated (using local sibling repos)"
 else
     log_warning "Dev mode failed - sibling repos not found, switching to release mode"
-    if uv-deps-switcher release 2>/dev/null; then
+    if uv-deps-switcher release --yes 2>/dev/null; then
         log_success "Release mode activated (using GitHub dependencies)"
     else
         log_error "Both dev and release modes failed. Check configuration."
