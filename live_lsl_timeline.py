@@ -233,13 +233,11 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
         t_start = t_live - self._window_seconds
         t_end = t_live
 
-        # Update both plots without triggering sigRangeChangedManually
+        # Update both plots without triggering sigRangeChangedManually.
+        # Note: setXRange() is a programmatic change and does NOT emit
+        # sigRangeChangedManually, so no signal blocking is needed here.
         for plot in (self._eeg_plot, self._motion_plot):
-            vb = plot.getViewBox()
-            if vb is not None:
-                vb.blockSignals(True)
-                plot.setXRange(t_start, t_end, padding=0)
-                vb.blockSignals(False)
+            plot.setXRange(t_start, t_end, padding=0)
 
     @QtCore.Slot()
     def _on_user_panned(self) -> None:
@@ -471,7 +469,7 @@ def main(use_synthetic: bool = False) -> int:
     eeg_receiver.start()
     motion_receiver.start()
 
-    return app.exec()
+    return app.exec_()
 
 
 if __name__ == "__main__":

@@ -118,10 +118,6 @@ class LSLStreamReceiver(QtCore.QObject):
         self._channel_names: List[str] = []
         self._n_channels: int = 0
 
-        # Pre-allocate pull_chunk buffers (avoids allocation inside timer slot)
-        self._chunk_buf: Optional[np.ndarray] = None
-        self._ts_buf: Optional[np.ndarray] = None
-
         self._resolver: Optional[object] = None  # pylsl.ContinuousResolver
 
         self._timer = QtCore.QTimer(self)
@@ -204,9 +200,6 @@ class LSLStreamReceiver(QtCore.QObject):
             self._inlet = pylsl.StreamInlet(info, max_buflen=360, recover=True)
             self._n_channels = info.channel_count()
             self._channel_names = self._read_channel_names(info)
-            # Pre-allocate buffers
-            self._chunk_buf = np.zeros((self.max_chunk_samples, self._n_channels), dtype=np.float64)
-            self._ts_buf = np.zeros(self.max_chunk_samples, dtype=np.float64)
             self._timer.start(self.poll_interval_ms)
             self.stream_found.emit(info)
         except Exception:
@@ -231,13 +224,12 @@ class LSLStreamReceiver(QtCore.QObject):
     @QtCore.Slot()
     def _poll(self) -> None:
         """Drain the LSL inlet and emit data_received."""
-        if self._inlet is None or self._chunk_buf is None:
+        if self._inlet is None:
             return
         try:
             samples, timestamps = self._inlet.pull_chunk(
                 timeout=0.0,
                 max_samples=self.max_chunk_samples,
-                dest_obj=self._chunk_buf,
             )
         except Exception:
             # Inlet may have become invalid (stream lost)
@@ -250,8 +242,10 @@ class LSLStreamReceiver(QtCore.QObject):
         if n == 0:
             return
 
-        ts_arr = np.asarray(timestamps[:n], dtype=np.float64)
-        samp_arr = np.asarray(samples[:n], dtype=np.float64)
+        ts_arr = np.asarray(timestamps, dtype=np.float64)
+        samp_arr = np.asarray(samples, dtype=np.float64)
+        if samp_arr.ndim == 1 and self._n_channels > 0:
+            samp_arr = samp_arr.reshape(-1, self._n_channels)
         self.data_received.emit(self._channel_names, ts_arr, samp_arr)
 
 
