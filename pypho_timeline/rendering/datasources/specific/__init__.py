@@ -2,6 +2,7 @@ from pypho_timeline.rendering.datasources.specific.video import VideoTrackDataso
 from phopylslhelper.file_metadata_caching.video_metadata import VideoMetadataParser
 from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource, MotionPlotDetailRenderer
 from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGPlotDetailRenderer
+from pypho_timeline.rendering.datasources.specific.lsl import LSLStreamReceiver, LiveEEGTrackDatasource
 
 __all__ = [
     'MotionTrackDatasource',
@@ -12,4 +13,6 @@ __all__ = [
     'VideoMetadataParser',
     'EEGTrackDatasource',
     'EEGPlotDetailRenderer',
+    'LSLStreamReceiver',
+    'LiveEEGTrackDatasource',
 ]
