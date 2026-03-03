@@ -7,3 +7,4 @@ debug.log
 EXTERNAL/LOGGING
 .idea
 .cursorindexingignore*
+templating/uv_deps_switcher/backups/*pyproject.toml.bak
