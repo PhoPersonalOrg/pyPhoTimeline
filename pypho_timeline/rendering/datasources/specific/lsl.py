@@ -465,7 +465,7 @@ class LiveEEGTrackDatasource(IntervalProvidingTrackDatasource):
 # LiveMotionTrackDatasource
 # ─────────────────────────────────────────────────────────────────────────────
 
-class LiveMotionTrackDatasource(QtCore.QObject, IntervalProvidingTrackDatasource):
+class LiveMotionTrackDatasource(IntervalProvidingTrackDatasource):
     """Live Motion/IMU track datasource backed by an :class:`LSLStreamReceiver`.
 
     Identical in structure to :class:`LiveEEGTrackDatasource` but uses the
@@ -487,7 +487,7 @@ class LiveMotionTrackDatasource(QtCore.QObject, IntervalProvidingTrackDatasource
 
     def __init__(self, receiver: LSLStreamReceiver, buffer_seconds: float = 300.0, channel_names: Optional[List[str]] = None, custom_datasource_name: Optional[str] = None, parent: Optional[QtCore.QObject] = None) -> None:
         stub_intervals = _make_stub_intervals_df(time.time())
-        super().__init__(self, intervals_df=stub_intervals, detailed_df=None, custom_datasource_name=custom_datasource_name or "LiveMotion", parent=parent)
+        super().__init__(intervals_df=stub_intervals, detailed_df=None, custom_datasource_name=custom_datasource_name or "LiveMotion", parent=parent)
 
         self._buffer_seconds = buffer_seconds
         self._channel_names: List[str] = list(channel_names) if channel_names else []
