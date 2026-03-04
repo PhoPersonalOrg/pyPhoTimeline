@@ -169,7 +169,7 @@ class TrackDatasource(Protocol):
         ...
 
 
-class BaseTrackDatasource(ABC):
+class BaseTrackDatasource(QtCore.QObject):
     """Abstract base class implementing the TrackDatasource protocol.
     
     This class provides a concrete implementation that datasources can inherit from,
@@ -223,38 +223,36 @@ class BaseTrackDatasource(ABC):
                 ...
         ```
     """
-    
-    def __init__(self):
+    source_data_changed_signal = QtCore.Signal()
+
+    def __init__(self, parent: Optional[QtCore.QObject] = None):
         """Initialize the base datasource with common attributes."""
+        super().__init__(parent=parent)
         self.custom_datasource_name = "BaseTrackDatasource"
-        self.source_data_changed_signal = QtCore.Signal()
+        # self.source_data_changed_signal = QtCore.Signal()
     
+
     # Required abstract properties
     @property
-    @abstractmethod
     def df(self) -> pd.DataFrame:
         """The dataframe containing interval data with columns ['t_start', 't_duration', ...]"""
-        ...
+        raise NotImplementedError(f'Needs override in inheriting class!')
     
     @property
-    @abstractmethod
     def time_column_names(self) -> list:
         """The names of time-related columns (e.g., ['t_start', 't_duration', 't_end'])"""
-        ...
+        raise NotImplementedError(f'Needs override in inheriting class!')
     
     @property
-    @abstractmethod
     def total_df_start_end_times(self) -> Union[Tuple[float, float], Tuple[datetime, datetime], Tuple[pd.Timestamp, pd.Timestamp]]:
         """Returns (earliest_time, latest_time) for the entire dataset"""
-        ...
+        raise NotImplementedError(f'Needs override in inheriting class!')
     
     # Required abstract methods
-    @abstractmethod
     def get_updated_data_window(self, new_start: Union[float, datetime, pd.Timestamp], new_end: Union[float, datetime, pd.Timestamp]) -> pd.DataFrame:
         """Returns the subset of intervals that overlap with the given time window"""
-        ...
+        raise NotImplementedError(f'Needs override in inheriting class!')
     
-    @abstractmethod
     def fetch_detailed_data(self, interval: pd.Series) -> Any:
         """Fetch detailed data for a specific interval (synchronous, called from worker thread).
         
@@ -268,16 +266,15 @@ class BaseTrackDatasource(ABC):
             Detailed data for this interval (type depends on track type, e.g., DataFrame for position,
             image array for video, etc.)
         """
-        ...
-    
-    @abstractmethod
+        raise NotImplementedError(f'Needs override in inheriting class!')
+
     def get_detail_renderer(self) -> DetailRenderer:
         """Get the renderer for detailed views of this track type.
         
         Returns:
             A DetailRenderer instance that knows how to render the detailed data
         """
-        ...
+        raise NotImplementedError(f'Needs override in inheriting class!')
     
     # Default implementations for optional methods
     def get_overview_intervals(self) -> pd.DataFrame:
@@ -376,9 +373,10 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
     Inherits from BaseTrackDatasource and implements all required methods for
     displaying position data with async detail loading.
     """
+    source_data_changed_signal = QtCore.Signal()
     
     def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None, detail_renderer: Optional[IntervalPlotDetailRenderer]=None,
-        max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
+            max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True, parent: Optional[QtCore.QObject] = None,
         ):
         """Initialize with position data and intervals.
         
@@ -390,7 +388,7 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
             max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
             enable_downsampling: Whether to enable downsampling. Default: True
         """
-        super().__init__()
+        super().__init__(parent=parent)
         self._detail_renderer = detail_renderer
         
         self.detailed_df = detailed_df
