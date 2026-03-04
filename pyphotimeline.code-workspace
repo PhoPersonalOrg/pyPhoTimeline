@@ -2,6 +2,9 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../stream_viewer"
 		}
 	],
 	"settings": {

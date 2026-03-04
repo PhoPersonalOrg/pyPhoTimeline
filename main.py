@@ -5,6 +5,9 @@ This script shows how to create a timeline with video tracks using the
 high-performance vispy renderer for efficient real-time rendering.
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from pathlib import Path
 from datetime import datetime, timezone
 from qtpy import QtWidgets

@@ -4,6 +4,10 @@ This library provides functionality for creating scrollable docked widgets (time
 display various data tracks (spikes, intervals, etc.) synchronized with a main time window.
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
+
 # Compatibility shim for scipy.integrate.simps -> simpson
 # simps was deprecated and removed in SciPy 1.12+, replaced with simpson
 # This must be imported before any other modules that might use simps

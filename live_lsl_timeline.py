@@ -31,6 +31,9 @@ at the bottom of this file.
 
 from __future__ import annotations
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import sys
 import time
