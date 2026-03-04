@@ -98,15 +98,7 @@ class LSLStreamReceiver(QtCore.QObject):
     stream_found = QtCore.Signal(object)   # pylsl.StreamInfo
     stream_lost = QtCore.Signal()
 
-    def __init__(
-        self,
-        stream_type: Optional[str] = None,
-        stream_name: Optional[str] = None,
-        poll_interval_ms: int = 100,
-        max_chunk_samples: int = 1024,
-        resolve_timeout: float = 0.0,
-        parent: Optional[QtCore.QObject] = None,
-    ) -> None:
+    def __init__(self, stream_type: Optional[str] = None, stream_name: Optional[str] = None, poll_interval_ms: int = 100, max_chunk_samples: int = 1024, resolve_timeout: float = 0.0, parent: Optional[QtCore.QObject] = None) -> None:
         super().__init__(parent)
         self.stream_type = stream_type
         self.stream_name = stream_name
@@ -380,25 +372,14 @@ class LiveEEGTrackDatasource(IntervalProvidingTrackDatasource):
     custom_datasource_name:
         Human-readable name shown in the UI.
     """
-
+    source_data_changed_signal = QtCore.Signal()
     # Signal emitted whenever new LSL samples have been appended to the buffer
     new_data_available = QtCore.Signal()
 
-    def __init__(
-        self,
-        receiver: LSLStreamReceiver,
-        buffer_seconds: float = 300.0,
-        channel_names: Optional[List[str]] = None,
-        custom_datasource_name: Optional[str] = None,
-    ) -> None:
-        # Build a stub intervals_df so the parent is happy at construction time
+    def __init__(self, receiver: LSLStreamReceiver, buffer_seconds: float = 300.0, channel_names: Optional[List[str]] = None, custom_datasource_name: Optional[str] = None, parent: Optional[QtCore.QObject] = None) -> None:
         stub_intervals = _make_stub_intervals_df(time.time())
-        super().__init__(
-            intervals_df=stub_intervals,
-            detailed_df=None,
-            custom_datasource_name=custom_datasource_name or "LiveEEG",
-        )
-
+        super().__init__(intervals_df=stub_intervals, detailed_df=None, custom_datasource_name=custom_datasource_name or "LiveEEG", parent=parent)
+        
         self._buffer_seconds = buffer_seconds
         self._channel_names: List[str] = list(channel_names) if channel_names else []
         self._ring: _LiveRingBuffer = _LiveRingBuffer(self._channel_names, buffer_seconds)
@@ -484,7 +465,7 @@ class LiveEEGTrackDatasource(IntervalProvidingTrackDatasource):
 # LiveMotionTrackDatasource
 # ─────────────────────────────────────────────────────────────────────────────
 
-class LiveMotionTrackDatasource(IntervalProvidingTrackDatasource):
+class LiveMotionTrackDatasource(QtCore.QObject, IntervalProvidingTrackDatasource):
     """Live Motion/IMU track datasource backed by an :class:`LSLStreamReceiver`.
 
     Identical in structure to :class:`LiveEEGTrackDatasource` but uses the
@@ -504,19 +485,9 @@ class LiveMotionTrackDatasource(IntervalProvidingTrackDatasource):
 
     new_data_available = QtCore.Signal()
 
-    def __init__(
-        self,
-        receiver: LSLStreamReceiver,
-        buffer_seconds: float = 300.0,
-        channel_names: Optional[List[str]] = None,
-        custom_datasource_name: Optional[str] = None,
-    ) -> None:
+    def __init__(self, receiver: LSLStreamReceiver, buffer_seconds: float = 300.0, channel_names: Optional[List[str]] = None, custom_datasource_name: Optional[str] = None, parent: Optional[QtCore.QObject] = None) -> None:
         stub_intervals = _make_stub_intervals_df(time.time())
-        super().__init__(
-            intervals_df=stub_intervals,
-            detailed_df=None,
-            custom_datasource_name=custom_datasource_name or "LiveMotion",
-        )
+        super().__init__(self, intervals_df=stub_intervals, detailed_df=None, custom_datasource_name=custom_datasource_name or "LiveMotion", parent=parent)
 
         self._buffer_seconds = buffer_seconds
         self._channel_names: List[str] = list(channel_names) if channel_names else []
@@ -533,13 +504,8 @@ class LiveMotionTrackDatasource(IntervalProvidingTrackDatasource):
             self._channel_names = ch_names
             self._ring = _LiveRingBuffer(ch_names, self._buffer_seconds)
 
-    @QtCore.Slot(list, object, object)
-    def _on_data_received(
-        self,
-        channel_names: List[str],
-        timestamps: np.ndarray,
-        samples: np.ndarray,
-    ) -> None:
+    @QtCore.Slot(object, object, object)
+    def _on_data_received(self, channel_names: List[str], timestamps: np.ndarray, samples: np.ndarray) -> None:
         self._ring.append(timestamps, samples, channel_names)
         self._update_intervals()
         self.new_data_available.emit()

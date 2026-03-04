@@ -303,7 +303,7 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
     def __init__(self, intervals_df: pd.DataFrame, motion_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
-                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None):
+                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None, parent: Optional[QtCore.QObject] = None):
         """Initialize with motion data and intervals.
         
         Args:
@@ -315,7 +315,7 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         """
         if custom_datasource_name is None:
             custom_datasource_name = "MotionTrack"
-        super().__init__(intervals_df, detailed_df=motion_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling)
+        super().__init__(intervals_df, detailed_df=motion_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, parent=parent)
 
         self.fallback_normalization_mode = fallback_normalization_mode
         self.normalization_mode_dict = normalization_mode_dict

@@ -469,7 +469,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
     #     self._video_metadata_df = value
     
     def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, video_paths: Optional[List[Union[Path, str]]] = None, 
-            custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False):
+            custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False, parent: Optional[QtCore.QObject] = None):
         """Initialize with video intervals.
         
         Args:
@@ -552,7 +552,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         
         if custom_datasource_name is None:
             custom_datasource_name = "VideoTrack"
-        super().__init__(intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name)
+        super().__init__(intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name, parent=parent)
 
         self.video_folder_path = video_folder_path
         
