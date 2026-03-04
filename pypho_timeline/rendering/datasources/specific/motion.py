@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-# from qtpy import QtWidgets, QtCore
+from qtpy import QtCore
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any, Sequence, Mapping
 from datetime import datetime
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp

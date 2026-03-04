@@ -543,7 +543,7 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
     """TrackDatasource that shares intervals with an EEG track and displays spectrogram detail (from EEGComputations.raw_spectogram_working)."""
 
     def __init__(self, intervals_df: pd.DataFrame, spectrogram_result: Dict, custom_datasource_name: Optional[str] = None, spectrogram_results: Optional[List[Dict]] = None,
-                 freq_min: float = 1.0, freq_max: float = 40.0, **kwargs, parent: Optional[QtCore.QObject] = None):
+                 freq_min: float = 1.0, freq_max: float = 40.0, parent: Optional[QtCore.QObject] = None):
         """Initialize with intervals and precomputed spectrogram result(s).
 
         Args:
