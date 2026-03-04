@@ -94,7 +94,7 @@ class LSLStreamReceiver(QtCore.QObject):
         Emitted when the stream becomes unavailable.
     """
 
-    data_received = QtCore.Signal(list, object, object)  # channel_names, timestamps, samples
+    data_received = QtCore.Signal(object, object, object)  # channel_names, timestamps, samples
     stream_found = QtCore.Signal(object)   # pylsl.StreamInfo
     stream_lost = QtCore.Signal()
 
@@ -418,13 +418,8 @@ class LiveEEGTrackDatasource(IntervalProvidingTrackDatasource):
             self._channel_names = ch_names
             self._ring = _LiveRingBuffer(ch_names, self._buffer_seconds)
 
-    @QtCore.Slot(list, object, object)
-    def _on_data_received(
-        self,
-        channel_names: List[str],
-        timestamps: np.ndarray,
-        samples: np.ndarray,
-    ) -> None:
+    @QtCore.Slot(object, object, object)
+    def _on_data_received(self, channel_names: List[str], timestamps: np.ndarray, samples: np.ndarray) -> None:
         self._ring.append(timestamps, samples, channel_names)
         self._update_intervals()
         self.new_data_available.emit()
