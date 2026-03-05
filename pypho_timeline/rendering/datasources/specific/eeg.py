@@ -300,7 +300,7 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
                  arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
                  normalize: bool = True, normalize_over_full_data: bool = True,
-                 normalization_reference_df: Optional[pd.DataFrame] = None,
+                 normalization_reference_df: Optional[pd.DataFrame] = None, parent: Optional[QtCore.QObject] = None,
                  ):
         """Initialize with eeg data and intervals.
         
@@ -313,7 +313,7 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
         """
         if custom_datasource_name is None:
             custom_datasource_name = "EEGTrack"
-        super().__init__(intervals_df, detailed_df=eeg_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling)
+        super().__init__(intervals_df, detailed_df=eeg_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, parent=parent)
 
         if (normalization_reference_df is None) and (self.detailed_df is not None):
             normalization_reference_df = self.detailed_df
@@ -361,10 +361,8 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
         )
 
 
-    def get_detail_cache_key(self, interval: pd.Series) -> str:
-        """Get cache key for interval."""
-        # Delegate to base implementation which handles datetime/timedelta correctly
-        # and includes the datasource name to avoid collisions across tracks.
+    def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
+        """Get cache key for interval (single-row DataFrame or Series)."""
         return super().get_detail_cache_key(interval)
 
 
@@ -543,7 +541,7 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
     """TrackDatasource that shares intervals with an EEG track and displays spectrogram detail (from EEGComputations.raw_spectogram_working)."""
 
     def __init__(self, intervals_df: pd.DataFrame, spectrogram_result: Dict, custom_datasource_name: Optional[str] = None, spectrogram_results: Optional[List[Dict]] = None,
-                 freq_min: float = 1.0, freq_max: float = 40.0, **kwargs):
+                 freq_min: float = 1.0, freq_max: float = 40.0, parent: Optional[QtCore.QObject] = None):
         """Initialize with intervals and precomputed spectrogram result(s).
 
         Args:
@@ -553,7 +551,7 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
             spectrogram_results: Optional list of spectrogram dicts, one per row in intervals_df (for merged multi-interval case).
             freq_min, freq_max: Passed to EEGSpectrogramDetailRenderer.
         """
-        super().__init__(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name or "EEG_Spectrogram", max_points_per_second=None, enable_downsampling=False)
+        super().__init__(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name or "EEG_Spectrogram", max_points_per_second=None, enable_downsampling=False, parent=parent)
         self._spectrogram_result = spectrogram_result
         self._spectrogram_results = spectrogram_results
         self._freq_min = freq_min
@@ -578,7 +576,7 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
         return EEGSpectrogramDetailRenderer(freq_min=self._freq_min, freq_max=self._freq_max)
 
 
-    def get_detail_cache_key(self, interval: pd.Series) -> str:
+    def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
         return super().get_detail_cache_key(interval)
 
 

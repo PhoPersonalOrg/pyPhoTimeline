@@ -153,7 +153,8 @@ class CustomViewBox(ReprPrintableItemMixin, pg.ViewBox):
     def __init__(self, *args, **kwds):
         kwds['enableMenu'] = False
         pg.ViewBox.__init__(self, *args, **kwds)
-        self.setMouseMode(self.RectMode)
+        # self.setMouseMode(self.RectMode) # #TODO 2026-03-05 10:23: - [ ] CONFIRMED this is where the rect functionality was coming in
+        self.setMouseMode(self.PanMode)
         self._debug_print = False
         self._last_drag_start_point = None
         self._last_drag_step_point = None
@@ -192,75 +193,82 @@ class CustomViewBox(ReprPrintableItemMixin, pg.ViewBox):
     def mouseDragEvent(self, ev, axis=None):
         if self._debug_print:      
             print(f'CustomViewBox.mouseDragEvent(ev: {ev}, axis={axis})')
+
+        ## Just do default mouse drag event stuff:
+        super().mouseDragEvent(ev, axis=axis)
+        ev.accept()
+
         # ev.accept()
+        # if (ev.button() == QtCore.Qt.MouseButton.RightButton): # (axis is not None) and
+        #     # Allow default zoom behavior for right-click drag (rectangular zoom)
+        #     super().mouseDragEvent(ev, axis=axis)
+        #     ev.accept()
 
-        if (ev.button() == QtCore.Qt.MouseButton.RightButton): # (axis is not None) and
-            # Allow default zoom behavior for right-click drag (rectangular zoom)
-            super().mouseDragEvent(ev, axis=axis)
-            ev.accept()
-        elif (ev.button() == QtCore.Qt.MouseButton.LeftButton):
-            # axis is not None and 
-            # Emit a signal or directly update the slider here
-            new_start_point = self.mapSceneToView(ev.pos()) # PyQt5.QtCore.QPointF
-            new_start_t = new_start_point.x()
-            # print(f'new_start_t: {new_start_t}')
+        # elif (ev.button() == QtCore.Qt.MouseButton.LeftButton):
+        #     # axis is not None and 
+        #     # Emit a signal or directly update the slider here
+        #     new_start_point = self.mapSceneToView(ev.pos()) # PyQt5.QtCore.QPointF
+        #     new_start_t = new_start_point.x()
+        #     # print(f'new_start_t: {new_start_t}')
             
-            if self._debug_print:      
-                print(f'\tCustomViewBox._last_drag_start_point: {self._last_drag_start_point}')
-            if ev.isStart():
-                if self._debug_print:      
-                    print(f'ev.isStart(): new_start_t: {new_start_t}')
-                # bdp = ev.buttonDownPos()
-                self._last_drag_start_point = new_start_t
-                self._last_drag_step_point = new_start_t
-            # if not (self._last_drag_start_point is not None):
-            #     return
+        #     if self._debug_print:      
+        #         print(f'\tCustomViewBox._last_drag_start_point: {self._last_drag_start_point}')
+        #     if ev.isStart():
+        #         if self._debug_print:      
+        #             print(f'ev.isStart(): new_start_t: {new_start_t}')
+        #         # bdp = ev.buttonDownPos()
+        #         self._last_drag_start_point = new_start_t
+        #         self._last_drag_step_point = new_start_t
+        #     # if not (self._last_drag_start_point is not None):
+        #     #     return
             
-            if ev.isFinish():
-                if self._debug_print:      
-                    print(f'ev.isFinish(): new_start_t: {new_start_t}, self._last_drag_start_point: {self._last_drag_start_point}')
-                # self.sigRegionChangeFinished.emit(self)
-                self._last_drag_start_point = None
-                self._last_drag_step_point = None
-            else:
-                # assert self._last_drag_start_point is not None
-                # curr_step_change: float = new_start_t - self._last_drag_start_point
-                assert self._last_drag_step_point is not None
-                curr_step_change: float = new_start_t - self._last_drag_step_point
-                if self._debug_print:      
-                    print(f'curr_step_change: {curr_step_change}')
-                if abs(curr_step_change) > 0.0:
-                    # self.sigRegionChanged.emit(self)
-                    self.sigLeftDrag.emit(curr_step_change)
+        #     if ev.isFinish():
+        #         if self._debug_print:      
+        #             print(f'ev.isFinish(): new_start_t: {new_start_t}, self._last_drag_start_point: {self._last_drag_start_point}')
+        #         # self.sigRegionChangeFinished.emit(self)
+        #         self._last_drag_start_point = None
+        #         self._last_drag_step_point = None
+        #     else:
+        #         # assert self._last_drag_start_point is not None
+        #         # curr_step_change: float = new_start_t - self._last_drag_start_point
+        #         assert self._last_drag_step_point is not None
+        #         curr_step_change: float = new_start_t - self._last_drag_step_point
+        #         if self._debug_print:      
+        #             print(f'curr_step_change: {curr_step_change}')
+        #         if abs(curr_step_change) > 0.0:
+        #             # self.sigRegionChanged.emit(self)
+        #             self.sigLeftDrag.emit(curr_step_change)
                 
-                self._last_drag_step_point = new_start_t
-                # self._last_drag_start_point = new_start_t
+        #         self._last_drag_step_point = new_start_t
+        #         # self._last_drag_start_point = new_start_t
                 
-            # self.sigLeftDrag.emit(new_start_t)
-            ev.accept()
+        #     # self.sigLeftDrag.emit(new_start_t)
+
+        #     super().mouseDragEvent(ev, axis=axis) ## #TODO 2026-03-05 09:00: - [ ] Add this to hopefully enable the normal LMB + Drag to pan
+        #     ev.accept()
             
-        elif (ev.button() == QtCore.Qt.MouseButton.MiddleButton): # (axis is not None) and
-            if ev.isStart():
-                self.setCursor(QtCore.Qt.ClosedHandCursor)  # Change cursor to indicate panning
-                self._drag_start_pos = self.mapSceneToView(ev.buttonDownPos())
-            elif ev.isFinish():
-                self.setCursor(QtCore.Qt.ArrowCursor)  # Restore cursor after panning
-            else:
-                # Calculate the panning delta for the x-axis only
-                current_pos = self.mapSceneToView(ev.pos())
-                delta_x = current_pos.x() - self._drag_start_pos.x()  # Only use x-delta
-                self._drag_start_pos.setX(current_pos.x())  # Update x start position
+        # elif (ev.button() == QtCore.Qt.MouseButton.MiddleButton): # (axis is not None) and
+        #     if ev.isStart():
+        #         self.setCursor(QtCore.Qt.ClosedHandCursor)  # Change cursor to indicate panning
+        #         self._drag_start_pos = self.mapSceneToView(ev.buttonDownPos())
+        #     elif ev.isFinish():
+        #         self.setCursor(QtCore.Qt.ArrowCursor)  # Restore cursor after panning
+        #     else:
+        #         # Calculate the panning delta for the x-axis only
+        #         current_pos = self.mapSceneToView(ev.pos())
+        #         delta_x = current_pos.x() - self._drag_start_pos.x()  # Only use x-delta
+        #         self._drag_start_pos.setX(current_pos.x())  # Update x start position
 
-                # Adjust the view range for the x-axis only
-                self.translateBy(x=-delta_x, y=0)  # Lock y-axis by setting y delta to 0
+        #         # Adjust the view range for the x-axis only
+        #         self.translateBy(x=-delta_x, y=0)  # Lock y-axis by setting y delta to 0
 
-            ev.accept()
+        #     ev.accept()
 
-        else:
-            # pg.ViewBox.mouseDragEvent(self, ev, axis=axis)            
-            # Custom dragging logic
-            ev.accept()
-            # super().mouseDragEvent(ev, axis=axis)  # only if you want default drag/pan
+        # else:
+        #     # pg.ViewBox.mouseDragEvent(self, ev, axis=axis)            
+        #     # Custom dragging logic
+        #     ev.accept()
+        #     # super().mouseDragEvent(ev, axis=axis)  # only if you want default drag/pan
         
         
     def wheelEvent(self, ev, axis=None):

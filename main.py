@@ -5,10 +5,13 @@ This script shows how to create a timeline with video tracks using the
 high-performance vispy renderer for efficient real-time rendering.
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from pathlib import Path
 from datetime import datetime, timezone
 from qtpy import QtWidgets
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 
 from pypho_timeline.widgets import SimpleTimelineWidget
 from pypho_timeline.rendering.datasources.specific import VideoTrackDatasource
@@ -129,7 +132,7 @@ def example_with_multiple_video_tracks():
     
     from pathlib import Path
     from datetime import datetime, timezone
-    import pyphoplacecellanalysis.External.pyqtgraph as pg
+    import pypho_timeline.EXTERNAL.pyqtgraph as pg
     
     from pypho_timeline.widgets import SimpleTimelineWidget
     from pypho_timeline.rendering.datasources.specific import VideoTrackDatasource
@@ -202,7 +205,7 @@ def example_with_video_paths():
     
     from pathlib import Path
     from datetime import datetime, timezone
-    import pyphoplacecellanalysis.External.pyqtgraph as pg
+    import pypho_timeline.EXTERNAL.pyqtgraph as pg
     
     from pypho_timeline.widgets import SimpleTimelineWidget
     from pypho_timeline.rendering.datasources.specific import VideoTrackDatasource

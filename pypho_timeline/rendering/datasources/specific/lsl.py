@@ -1,540 +1,570 @@
-"""Minimal LSL connector for receiving live EEG data.
+"""LSL (Lab Streaming Layer) live-stream datasources for EEG and Motion data.
 
-Design based on analysis of stream_viewer's LSLDataSource
-(github.com/PhoPersonalOrg/stream_viewer/blob/main/stream_viewer/data/stream_lsl.py).
-
-Key patterns borrowed from stream_viewer:
-- ``pylsl.ContinuousResolver`` (managed by a QTimer) to discover streams.
-- ``QTimer`` for non-blocking periodic polling rather than a blocking thread.
-- Pre-allocated numpy destination buffer passed to ``pull_chunk(dest_obj=…)``
-  to avoid repeated allocations; buffer is doubled when full (same strategy).
-- ``proc_ALL`` processing flags on the inlet for clock correction, dejitter, etc.
+This module provides:
+  - ``LSLStreamReceiver`` -- a QObject that polls one or more LSL inlets using a
+    QTimer, accumulates samples into a pre-allocated ring buffer, and emits
+    ``data_received(channel_names, timestamps, samples)`` whenever new data arrive.
+  - ``LiveEEGTrackDatasource`` -- wraps an ``LSLStreamReceiver`` and implements the
+    :class:`~pypho_timeline.rendering.datasources.track_datasource.TrackDatasource`
+    protocol so the live EEG stream can be added directly to a
+    :class:`~pypho_timeline.widgets.simple_timeline_widget.SimpleTimelineWidget`.
+  - ``LiveMotionTrackDatasource`` -- the same but for motion (IMU) streams.
 
 Usage::
 
     from pypho_timeline.rendering.datasources.specific.lsl import (
         LSLStreamReceiver,
         LiveEEGTrackDatasource,
+        LiveMotionTrackDatasource,
     )
 
-    # --- receive raw data via Qt signals ---
-    receiver = LSLStreamReceiver(stream_type='EEG')
-    receiver.data_received.connect(my_slot)   # slot(timestamps, data)
-    receiver.start()
+    # Receive EEG from any stream whose type == 'EEG'
+    eeg_receiver = LSLStreamReceiver(stream_type='EEG')
+    eeg_ds = LiveEEGTrackDatasource(receiver=eeg_receiver, buffer_seconds=300.0)
 
-    # --- or use the higher-level rolling-buffer datasource ---
-    ds = LiveEEGTrackDatasource(stream_type='EEG', window_duration_s=30.0)
-    ds.start()
-    # ds.detailed_df is a pandas DataFrame with columns ['t', ch0, ch1, …]
-    # ds.source_data_changed_signal is emitted on every new chunk
+    # Receive motion from a stream named 'EmotivMotion'
+    motion_receiver = LSLStreamReceiver(stream_name='EmotivMotion')
+    motion_ds = LiveMotionTrackDatasource(receiver=motion_receiver, buffer_seconds=300.0)
+
+    eeg_receiver.start()
+    motion_receiver.start()
 """
 
 from __future__ import annotations
 
-import threading
-import warnings
-from typing import List, Optional, Tuple, Union
+import time
+from collections import deque
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 from qtpy import QtCore
+from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 
 try:
     import pylsl  # type: ignore
-
     _PYLSL_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:
+    pylsl = None  # type: ignore
     _PYLSL_AVAILABLE = False
 
+from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
+from pypho_timeline.rendering.datasources.specific.eeg import EEGPlotDetailRenderer
+from pypho_timeline.rendering.datasources.specific.motion import MotionPlotDetailRenderer
+from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 
-# ============================================================================ #
-# LSLStreamReceiver                                                             #
-# ============================================================================ #
 
+# ─────────────────────────────────────────────────────────────────────────────
+# LSLStreamReceiver
+# ─────────────────────────────────────────────────────────────────────────────
 
 class LSLStreamReceiver(QtCore.QObject):
-    """Minimal, performant LSL receiver for live EEG (or any numerical) data.
+    """Poll an LSL stream with a QTimer and emit buffered samples.
 
-    Uses the same QTimer-based polling strategy as stream_viewer's
-    ``LSLDataSource``:
+    The receiver uses a :class:`pylsl.ContinuousResolver` to locate matching
+    streams and opens a :class:`pylsl.StreamInlet` when one is found.  A
+    ``QTimer`` fires at ``poll_interval_ms`` (default 100 ms) to drain the
+    inlet's internal buffer via :meth:`pylsl.StreamInlet.pull_chunk`.
 
-    1. A ``ContinuousResolver`` is checked every *resolver_interval_ms* ms.
-    2. Once a matching stream is found a ``StreamInlet`` is created and
-       a second timer starts pulling data every *poll_interval_ms* ms.
-    3. ``pull_chunk(dest_obj=…)`` is used with a pre-allocated numpy buffer
-       to avoid Python heap allocations on each frame.
+    Parameters
+    ----------
+    stream_type:
+        LSL stream type to match (e.g. ``'EEG'``, ``'Accelerometer'``).
+        Pass ``None`` to skip the type filter.
+    stream_name:
+        LSL stream name to match (e.g. ``'EmotivEPOC+'``).
+        Pass ``None`` to skip the name filter.
+    poll_interval_ms:
+        How often (in milliseconds) to poll the LSL inlet for new data.
+    max_chunk_samples:
+        Pre-allocated row count for the ``pull_chunk`` buffer.
+    resolve_timeout:
+        Seconds to wait each time the resolver is queried.
+    parent:
+        Optional Qt parent.
 
     Signals
     -------
-    data_received(timestamps, data)
-        Emitted when new samples arrive.
-        *timestamps*: shape ``(n_samples,)`` – LSL clock values.
-        *data*: shape ``(n_channels, n_samples)``.
-    stream_connected(stream_name)
-        Emitted once the ``StreamInlet`` is successfully created.
-    stream_disconnected()
-        Emitted when the inlet is closed/lost.
+    data_received(channel_names, timestamps, samples)
+        Emitted when new samples are available.  ``timestamps`` is a 1-D
+        ``numpy.ndarray`` of LSL timestamps (float64) and ``samples`` is a 2-D
+        ``numpy.ndarray`` of shape ``(n_samples, n_channels)``.
+    stream_found(stream_info)
+        Emitted when the target stream has been connected.
+    stream_lost()
+        Emitted when the stream becomes unavailable.
     """
 
-    data_received = QtCore.Signal(np.ndarray, np.ndarray)
-    stream_connected = QtCore.Signal(str)
-    stream_disconnected = QtCore.Signal()
+    data_received = QtCore.Signal(object, object, object)  # channel_names, timestamps, samples
+    stream_found = QtCore.Signal(object)   # pylsl.StreamInfo
+    stream_lost = QtCore.Signal()
 
-    # pylsl channel-format → numpy dtype (populated on first use)
-    _CF_MAP: dict = {}
-
-    def __init__(
-        self,
-        stream_type: str = "EEG",
-        stream_name: Optional[str] = None,
-        poll_interval_ms: int = 50,
-        resolver_interval_ms: int = 500,
-        buffer_duration_s: float = 2.0,
-        parent: Optional[QtCore.QObject] = None,
-    ) -> None:
-        """
-        Parameters
-        ----------
-        stream_type:
-            LSL stream type filter (e.g. ``'EEG'``).  Pass ``''`` to
-            match any type.
-        stream_name:
-            Optional LSL stream name prefix filter.
-        poll_interval_ms:
-            How often (ms) to pull data from the inlet.  Default 50 ms
-            gives ~20 Hz update rate (actual EEG sample rate is higher;
-            we just batch-collect buffered samples).
-        resolver_interval_ms:
-            How often (ms) to re-check the resolver.
-        buffer_duration_s:
-            Size of the LSL inlet's internal ring buffer in seconds.
-        parent:
-            Optional Qt parent object.
-        """
-        if not _PYLSL_AVAILABLE:
-            raise ImportError(
-                "pylsl is required for LSLStreamReceiver. "
-                "Install with: pip install pylsl"
-            )
+    def __init__(self, stream_type: Optional[str] = None, stream_name: Optional[str] = None, poll_interval_ms: int = 100, max_chunk_samples: int = 1024, resolve_timeout: float = 0.0, parent: Optional[QtCore.QObject] = None) -> None:
         super().__init__(parent)
+        self.stream_type = stream_type
+        self.stream_name = stream_name
+        self.poll_interval_ms = poll_interval_ms
+        self.max_chunk_samples = max_chunk_samples
+        self.resolve_timeout = resolve_timeout
 
-        self._stream_type = stream_type
-        self._stream_name = stream_name
-        self._buffer_duration = buffer_duration_s
-
-        self._inlet: Optional["pylsl.StreamInlet"] = None
-        self._pull_buffer: Optional[np.ndarray] = None
-        self._stream_info: Optional["pylsl.StreamInfo"] = None
+        self._inlet: Optional[object] = None  # pylsl.StreamInlet or None
         self._channel_names: List[str] = []
+        self._n_channels: int = 0
 
-        # Build ContinuousResolver predicate (same logic as stream_viewer)
-        parts: List[str] = []
-        if stream_type:
-            parts.append(f"type='{stream_type}'")
-        if stream_name:
-            parts.append(f"starts-with(name,'{stream_name}')")
-        pred = " and ".join(parts)
-        self._resolver: Optional["pylsl.ContinuousResolver"] = (
-            pylsl.ContinuousResolver(pred=pred)
-        )
+        self._resolver: Optional[object] = None  # pylsl.ContinuousResolver
 
-        # Timer: resolve stream
-        self._resolver_timer = QtCore.QTimer(self)
-        self._resolver_timer.setInterval(resolver_interval_ms)
-        self._resolver_timer.timeout.connect(self._try_resolve)
+        self._timer = QtCore.QTimer(self)
+        self._timer.timeout.connect(self._poll)
 
-        # Timer: pull data
-        self._poll_timer = QtCore.QTimer(self)
-        self._poll_timer.setInterval(poll_interval_ms)
-        self._poll_timer.timeout.connect(self._pull_data)
+        # Resolve timer – re-checks for the stream every second when disconnected
+        self._resolve_timer = QtCore.QTimer(self)
+        self._resolve_timer.setInterval(1000)
+        self._resolve_timer.timeout.connect(self._try_connect)
 
-    # ---------------------------------------------------------------------- #
-    # Public API                                                               #
-    # ---------------------------------------------------------------------- #
+    # ------------------------------------------------------------------ #
+    # Public API
+    # ------------------------------------------------------------------ #
+
+    @property
+    def channel_names(self) -> List[str]:
+        """Channel names once the stream is connected (empty before that)."""
+        return list(self._channel_names)
+
+    @property
+    def is_connected(self) -> bool:
+        """True if the LSL inlet is open."""
+        return self._inlet is not None
 
     def start(self) -> None:
-        """Begin stream discovery (and data pulling once connected)."""
-        self._resolver_timer.start()
+        """Start background polling.  Triggers stream resolution immediately."""
+        if not _PYLSL_AVAILABLE:
+            import warnings
+            warnings.warn(
+                "pylsl is not installed – LSLStreamReceiver will not receive data. "
+                "Install it with: pip install pylsl",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return
+        self._try_connect()
+        self._resolve_timer.start()
 
     def stop(self) -> None:
-        """Stop all timers and close the inlet."""
-        self._resolver_timer.stop()
-        self._poll_timer.stop()
+        """Stop polling and release the LSL inlet."""
+        self._timer.stop()
+        self._resolve_timer.stop()
         if self._inlet is not None:
             try:
                 self._inlet.close_stream()
             except Exception:
                 pass
             self._inlet = None
-            self.stream_disconnected.emit()
+            self.stream_lost.emit()
 
-    @property
-    def is_connected(self) -> bool:
-        """``True`` when a ``StreamInlet`` has been established."""
-        return self._inlet is not None
+    # ------------------------------------------------------------------ #
+    # Internal helpers
+    # ------------------------------------------------------------------ #
 
-    @property
-    def channel_names(self) -> List[str]:
-        """Channel labels from stream metadata (empty list until connected)."""
-        return list(self._channel_names)
+    def _build_predicate(self) -> str:
+        """Build an XPATH predicate string for the resolver."""
+        parts: List[str] = []
+        if self.stream_type:
+            parts.append(f"type='{self.stream_type}'")
+        if self.stream_name:
+            parts.append(f"name='{self.stream_name}'")
+        return " and ".join(parts) if parts else "type!=''"  # match anything if no filters
 
-    @property
-    def stream_info(self) -> Optional["pylsl.StreamInfo"]:
-        """The connected stream's ``pylsl.StreamInfo``, or ``None``."""
-        return self._stream_info
-
-    # ---------------------------------------------------------------------- #
-    # Private helpers                                                          #
-    # ---------------------------------------------------------------------- #
-
-    @QtCore.Slot()
-    def _try_resolve(self) -> None:
-        """Check resolver results; create inlet when a stream is found."""
-        if self._inlet is not None or self._resolver is None:
+    @pyqtExceptionPrintingSlot()
+    def _try_connect(self) -> None:
+        """Attempt to resolve and open an LSL inlet."""
+        if not _PYLSL_AVAILABLE or self._inlet is not None:
             return
-        results = self._resolver.results()
+        try:
+            predicate = self._build_predicate()
+            results = pylsl.resolve_bypred(predicate, 1, timeout=self.resolve_timeout)
+        except Exception:
+            return
+
         if not results:
             return
-        if len(results) > 1:
-            warnings.warn(
-                f"LSLStreamReceiver: multiple streams matched, using first "
-                f"('{results[0].name()}').",
-                stacklevel=2,
-            )
-        self._create_inlet(results[0])
-        self._resolver_timer.stop()
-        self._resolver = None
-        self.stream_connected.emit(self._stream_info.name())
-        self._poll_timer.start()
 
-    def _create_inlet(self, stream_info: "pylsl.StreamInfo") -> None:
-        """Create ``StreamInlet`` and pre-allocate pull buffer."""
-        self._stream_info = stream_info
-        n_chans = stream_info.channel_count()
-        srate = stream_info.nominal_srate()
-        cf = stream_info.channel_format()
-
-        # Build dtype map lazily
-        if not self._CF_MAP:
-            self._CF_MAP.update(
-                {
-                    pylsl.cf_string: "str",
-                    pylsl.cf_int8: "int8",
-                    pylsl.cf_int16: "int16",
-                    pylsl.cf_int32: "int32",
-                    pylsl.cf_int64: "int64",
-                    pylsl.cf_float32: "float32",
-                    pylsl.cf_double64: "float64",
-                    pylsl.cf_undefined: "float32",
-                }
-            )
-        dtype = self._CF_MAP.get(cf, "float32")
-
-        if cf == pylsl.cf_string or srate == 0:
-            # Irregular / string stream — no pre-allocated buffer
-            self._pull_buffer = None
-            max_chunklen = 0
-            max_buflen = max(int(self._buffer_duration), 1)
-        else:
-            # Pre-allocate buffer: enough for ~0.1 s, rounded to next power of 2
-            buf_samps = max(1, int(np.ceil(0.1 * srate)))
-            buf_samps = 1 << (buf_samps - 1).bit_length()
-            self._pull_buffer = np.zeros((buf_samps, n_chans), dtype=dtype)
-            max_chunklen = 1  # see stream_viewer comment on liblsl issue #96
-            max_buflen = max(int(self._buffer_duration), 1)
-
-        self._inlet = pylsl.StreamInlet(
-            stream_info,
-            max_buflen=max_buflen,
-            max_chunklen=max_chunklen,
-            processing_flags=pylsl.proc_ALL,
-        )
-
-        self._channel_names = self._read_channel_names(stream_info, n_chans)
-
-        # Flush any stale samples (stream_viewer's pattern)
-        self._inlet.pull_chunk()
-        self._inlet.flush()
+        info = results[0]
+        try:
+            self._inlet = pylsl.StreamInlet(info, max_buflen=360, recover=True)
+            self._n_channels = info.channel_count()
+            self._channel_names = self._read_channel_names(info)
+            self._timer.start(self.poll_interval_ms)
+            self.stream_found.emit(info)
+        except Exception:
+            self._inlet = None
 
     @staticmethod
-    def _read_channel_names(
-        stream_info: "pylsl.StreamInfo", n_chans: int
-    ) -> List[str]:
-        """Extract channel labels from the stream's XML description."""
+    def _read_channel_names(info: object) -> List[str]:
+        """Extract channel labels from pylsl StreamInfo XML."""
         names: List[str] = []
-        ch = stream_info.desc().child("channels").child("channel")
-        for k in range(n_chans):
-            label = ch.child_value("label")
-            names.append(label if label else str(k))
-            ch = ch.next_sibling()
-        return names
+        try:
+            chans = info.desc().child("channels").child("channel")
+            while chans.empty() is False:
+                names.append(chans.child_value("label") or chans.child_value("name") or f"ch{len(names)}")
+                chans = chans.next_sibling("channel")
+        except Exception:
+            pass
+        n = info.channel_count()
+        while len(names) < n:
+            names.append(f"ch{len(names)}")
+        return names[:n]
 
-    @QtCore.Slot()
-    def _pull_data(self) -> None:
-        """Pull buffered samples from the inlet and emit ``data_received``."""
+    @pyqtExceptionPrintingSlot()
+    def _poll(self) -> None:
+        """Drain the LSL inlet and emit data_received."""
         if self._inlet is None:
             return
-
-        if self._pull_buffer is None:
-            # String / irregular stream path
-            data_list, timestamps = self._inlet.pull_chunk()
-            if not timestamps:
-                return
-            data = np.array(data_list, order="F").T
-        else:
-            _, timestamps = self._inlet.pull_chunk(
-                dest_obj=self._pull_buffer.data,
-                max_samples=self._pull_buffer.shape[0],
+        try:
+            samples, timestamps = self._inlet.pull_chunk(
+                timeout=0.0,
+                max_samples=self.max_chunk_samples,
             )
-            n = len(timestamps)
-            if n == 0:
-                return
-            # Copy before buffer may be overwritten on next poll
-            data = self._pull_buffer[:n].T.copy()  # (n_chans, n_samples)
+        except Exception:
+            # Inlet may have become invalid (stream lost)
+            self._inlet = None
+            self._timer.stop()
+            self.stream_lost.emit()
+            return
 
-            # Double buffer size if it was completely full (stream_viewer pattern)
-            if n == self._pull_buffer.shape[0]:
-                self._pull_buffer = np.zeros(
-                    (self._pull_buffer.shape[0] * 2, self._pull_buffer.shape[1]),
-                    dtype=self._pull_buffer.dtype,
-                )
+        n = len(timestamps)
+        if n == 0:
+            return
 
-        self.data_received.emit(np.array(timestamps, dtype=float), data)
-
-
-# ============================================================================ #
-# LiveEEGTrackDatasource                                                        #
-# ============================================================================ #
+        ts_arr = np.asarray(timestamps, dtype=np.float64)
+        samp_arr = np.asarray(samples, dtype=np.float64)
+        if samp_arr.ndim == 1 and self._n_channels > 0:
+            samp_arr = samp_arr.reshape(-1, self._n_channels)
+        self.data_received.emit(self._channel_names, ts_arr, samp_arr)
 
 
-class LiveEEGTrackDatasource(QtCore.QObject):
-    """TrackDatasource that buffers live LSL EEG data for timeline display.
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared ring-buffer helper
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Wraps :class:`LSLStreamReceiver` and maintains a rolling window of
-    recent samples.  As new data arrives, ``source_data_changed_signal`` is
-    emitted so that a connected timeline widget can refresh.
+class _LiveRingBuffer:
+    """Thread-safe ring buffer that keeps the most recent ``buffer_seconds`` of data.
 
-    Implements the ``TrackDatasource`` protocol so it can be used directly
-    with pyPhoTimeline's track-rendering system (e.g. ``add_eeg_track``).
-
-    The :py:attr:`detailed_df` attribute is rebuilt on every new chunk; it has
-    columns ``['t', <ch0>, <ch1>, …]`` with float timestamps.
-
-    Usage::
-
-        ds = LiveEEGTrackDatasource(stream_type='EEG', window_duration_s=30.0)
-        ds.start()
-        timeline.add_eeg_track("Live EEG", eeg_datasource=ds)
+    Parameters
+    ----------
+    channel_names:
+        Names of the data channels (excluding the time column).
+    buffer_seconds:
+        Maximum duration of data to retain, in seconds.
     """
 
-    # Qt signals (requires QObject as base class)
-    source_data_changed_signal = QtCore.Signal()
+    def __init__(self, channel_names: List[str], buffer_seconds: float = 300.0) -> None:
+        self._channel_names = list(channel_names)
+        self._buffer_seconds = buffer_seconds
+        # deque of (timestamps_1d, samples_2d) pairs
+        self._chunks: deque = deque()
+        self._total_samples: int = 0
+        self._lock = QtCore.QMutex()
 
-    def __init__(
-        self,
-        stream_type: str = "EEG",
-        stream_name: Optional[str] = None,
-        window_duration_s: float = 30.0,
-        poll_interval_ms: int = 50,
-        custom_datasource_name: Optional[str] = None,
-        parent: Optional[QtCore.QObject] = None,
-    ) -> None:
-        """
-        Parameters
-        ----------
-        stream_type:
-            LSL stream type to search for (e.g. ``'EEG'``).
-        stream_name:
-            Optional LSL stream name prefix filter.
-        window_duration_s:
-            Size of the rolling data buffer in seconds.
-        poll_interval_ms:
-            How often (ms) the underlying receiver polls the inlet.
-        custom_datasource_name:
-            Human-readable identifier for this datasource.
-        parent:
-            Optional Qt parent object.
-        """
-        super().__init__(parent)
+    # ------------------------------------------------------------------ #
+    # Write path
+    # ------------------------------------------------------------------ #
 
-        self.custom_datasource_name: str = (
-            custom_datasource_name or f"LiveEEG_{stream_type}"
-        )
-        self._window_duration_s = window_duration_s
+    def append(self, timestamps: np.ndarray, samples: np.ndarray, channel_names: List[str]) -> None:
+        """Append new samples.  Trims old data automatically."""
+        if len(timestamps) == 0:
+            return
 
-        # Lock protecting detailed_df / intervals_df from worker-thread reads
-        self._data_lock = threading.Lock()
-        # Rolling buffer
-        self._ts_buf: np.ndarray = np.empty(0, dtype=float)
-        self._data_buf: Optional[np.ndarray] = None  # shape (n_chans, n_total)
-        self._channel_names: List[str] = []
+        # If the channel list has changed, update and reset.
+        if channel_names != self._channel_names:
+            self._channel_names = list(channel_names)
+            self._chunks.clear()
+            self._total_samples = 0
 
-        # Public DataFrame attributes (TrackDatasource protocol)
-        self.detailed_df: pd.DataFrame = pd.DataFrame({"t": pd.Series(dtype=float)})
-        import time as _time
+        locker = QtCore.QMutexLocker(self._lock)  # noqa: F841
+        self._chunks.append((timestamps.copy(), samples.copy()))
+        self._total_samples += len(timestamps)
+        self._trim()
 
-        t_now = _time.time()
-        self.intervals_df: pd.DataFrame = pd.DataFrame(
-            {
-                "t_start": [t_now],
-                "t_duration": [window_duration_s],
-                "t_end": [t_now + window_duration_s],
-                "series_vertical_offset": [0.0],
-                "series_height": [1.0],
-            }
-        )
+    def _trim(self) -> None:
+        """Remove chunks older than buffer_seconds from the front."""
+        if not self._chunks:
+            return
+        # Use the latest timestamp as reference
+        latest_ts = self._chunks[-1][0][-1]
+        cutoff = latest_ts - self._buffer_seconds
+        while self._chunks:
+            oldest_ts = self._chunks[0][0]
+            if oldest_ts[-1] < cutoff:
+                removed = len(oldest_ts)
+                self._chunks.popleft()
+                self._total_samples -= removed
+            else:
+                break
 
-        self._receiver = LSLStreamReceiver(
-            stream_type=stream_type,
-            stream_name=stream_name,
-            poll_interval_ms=poll_interval_ms,
-        )
-        self._receiver.data_received.connect(self._on_data_received)
-        self._receiver.stream_connected.connect(self._on_stream_connected)
+    # ------------------------------------------------------------------ #
+    # Read path
+    # ------------------------------------------------------------------ #
 
-    # ---------------------------------------------------------------------- #
-    # Public API                                                               #
-    # ---------------------------------------------------------------------- #
+    def to_dataframe(self) -> pd.DataFrame:
+        """Return all buffered data as a DataFrame with columns ``['t'] + channel_names``."""
+        locker = QtCore.QMutexLocker(self._lock)  # noqa: F841
+        if not self._chunks:
+            return pd.DataFrame(columns=["t"] + self._channel_names)
+        ts_parts: List[np.ndarray] = []
+        samp_parts: List[np.ndarray] = []
+        for ts, samp in self._chunks:
+            ts_parts.append(ts)
+            samp_parts.append(samp)
+        all_ts = np.concatenate(ts_parts)
+        all_samp = np.concatenate(samp_parts, axis=0)
+        df = pd.DataFrame(all_samp, columns=self._channel_names)
+        df.insert(0, "t", all_ts)
+        return df
 
-    def start(self) -> None:
-        """Start the LSL receiver (stream discovery + data polling)."""
-        self._receiver.start()
-
-    def stop(self) -> None:
-        """Stop the LSL receiver."""
-        self._receiver.stop()
+    def get_window(self, t_start: float, t_end: float) -> pd.DataFrame:
+        """Return a DataFrame slice covering ``[t_start, t_end]``."""
+        df = self.to_dataframe()
+        if df.empty:
+            return df
+        mask = (df["t"] >= t_start) & (df["t"] <= t_end)
+        return df.loc[mask].reset_index(drop=True)
 
     @property
-    def is_connected(self) -> bool:
-        """``True`` once the LSL inlet has been created."""
-        return self._receiver.is_connected
+    def latest_timestamp(self) -> Optional[float]:
+        """The most recent LSL timestamp in the buffer, or ``None`` if empty."""
+        locker = QtCore.QMutexLocker(self._lock)  # noqa: F841
+        if not self._chunks:
+            return None
+        return float(self._chunks[-1][0][-1])
+
+    @property
+    def earliest_timestamp(self) -> Optional[float]:
+        """The oldest LSL timestamp in the buffer, or ``None`` if empty."""
+        locker = QtCore.QMutexLocker(self._lock)  # noqa: F841
+        if not self._chunks:
+            return None
+        return float(self._chunks[0][0][0])
 
     @property
     def channel_names(self) -> List[str]:
-        """Current channel names (empty until connected)."""
         return list(self._channel_names)
 
-    # ---------------------------------------------------------------------- #
-    # TrackDatasource protocol implementation                                  #
-    # ---------------------------------------------------------------------- #
 
-    @property
-    def df(self) -> pd.DataFrame:
-        """The intervals DataFrame (TrackDatasource protocol)."""
-        with self._data_lock:
-            return self.intervals_df.copy()
+# ─────────────────────────────────────────────────────────────────────────────
+# LiveEEGTrackDatasource
+# ─────────────────────────────────────────────────────────────────────────────
 
-    @property
-    def time_column_names(self) -> List[str]:
-        """Time-related column names (TrackDatasource protocol)."""
-        return ["t_start", "t_duration", "t_end"]
+class LiveEEGTrackDatasource(IntervalProvidingTrackDatasource):
+    """Live EEG track datasource backed by an :class:`LSLStreamReceiver`.
+
+    Keeps a rolling buffer of the last ``buffer_seconds`` of EEG data.  The
+    single interval it exposes spans the entire buffer, growing in real time as
+    more data arrive.
+
+    Parameters
+    ----------
+    receiver:
+        An :class:`LSLStreamReceiver` (already constructed, not yet started).
+    buffer_seconds:
+        How many seconds of history to retain.  Default 300 (5 minutes).
+    channel_names:
+        Override channel names.  If ``None`` the names are taken from the LSL
+        stream info once connected.
+    custom_datasource_name:
+        Human-readable name shown in the UI.
+    """
+    source_data_changed_signal = QtCore.Signal()
+    # Signal emitted whenever new LSL samples have been appended to the buffer
+    new_data_available = QtCore.Signal()
+
+    def __init__(self, receiver: LSLStreamReceiver, buffer_seconds: float = 300.0, channel_names: Optional[List[str]] = None, custom_datasource_name: Optional[str] = None, parent: Optional[QtCore.QObject] = None) -> None:
+        stub_intervals = _make_stub_intervals_df(time.time())
+        super().__init__(intervals_df=stub_intervals, detailed_df=None, custom_datasource_name=custom_datasource_name or "LiveEEG", parent=parent)
+        
+        self._buffer_seconds = buffer_seconds
+        self._channel_names: List[str] = list(channel_names) if channel_names else []
+        self._ring: _LiveRingBuffer = _LiveRingBuffer(self._channel_names, buffer_seconds)
+
+        self._receiver = receiver
+        receiver.data_received.connect(self._on_data_received)
+        receiver.stream_found.connect(self._on_stream_found)
+
+    # ------------------------------------------------------------------ #
+    # Slots
+    # ------------------------------------------------------------------ #
+
+    @pyqtExceptionPrintingSlot(object)
+    def _on_stream_found(self, info: object) -> None:
+        ch_names = self._receiver.channel_names
+        if ch_names:
+            self._channel_names = ch_names
+            self._ring = _LiveRingBuffer(ch_names, self._buffer_seconds)
+
+    @pyqtExceptionPrintingSlot(object, object, object)
+    def _on_data_received(self, channel_names: List[str], timestamps: np.ndarray, samples: np.ndarray) -> None:
+        self._ring.append(timestamps, samples, channel_names)
+        self._update_intervals()
+        self.new_data_available.emit()
+
+    # ------------------------------------------------------------------ #
+    # Internal helpers
+    # ------------------------------------------------------------------ #
+
+    def _update_intervals(self) -> None:
+        """Rebuild the single intervals_df row from the current buffer extent."""
+        t0 = self._ring.earliest_timestamp
+        t1 = self._ring.latest_timestamp
+        if t0 is None or t1 is None:
+            return
+        self.intervals_df = _make_stub_intervals_df(t0, t1)
+
+    # ------------------------------------------------------------------ #
+    # TrackDatasource protocol
+    # ------------------------------------------------------------------ #
 
     @property
     def total_df_start_end_times(self) -> Tuple[float, float]:
-        with self._data_lock:
-            if self._ts_buf.size == 0:
-                import time as _t
-
-                now = _t.time()
-                return (now, now + self._window_duration_s)
-            return (float(self._ts_buf[0]), float(self._ts_buf[-1]))
-
-    def get_overview_intervals(self) -> pd.DataFrame:
-        with self._data_lock:
-            return self.intervals_df.copy()
-
-    def get_updated_data_window(self, new_start, new_end) -> pd.DataFrame:
-        with self._data_lock:
-            return self.intervals_df.copy()
+        t0 = self._ring.earliest_timestamp
+        t1 = self._ring.latest_timestamp
+        if t0 is None or t1 is None:
+            now = time.time()
+            return (now, now)
+        return (float(t0), float(t1))
 
     def fetch_detailed_data(self, interval: pd.Series) -> pd.DataFrame:
-        """Return the EEG DataFrame slice for *interval* (thread-safe)."""
-        with self._data_lock:
-            if self.detailed_df is None or len(self.detailed_df) == 0:
-                return pd.DataFrame({"t": pd.Series(dtype=float)})
-            df = self.detailed_df.copy()
+        """Return buffered data slice for the requested interval."""
+        t_start = float(interval.get("t_start", 0.0))
+        t_duration = float(interval.get("t_duration", 0.0))
+        t_end = t_start + t_duration
+        return self._ring.get_window(t_start, t_end)
 
-        # Filter to the requested interval
-        if hasattr(interval, "get"):
-            t_start_val = interval.get("t_start", self._ts_buf[0] if self._ts_buf.size else 0.0)
-            t_dur = interval.get("t_duration", self._window_duration_s)
-        else:
-            t_start_val = getattr(interval, "t_start", self._ts_buf[0] if self._ts_buf.size else 0.0)
-            t_dur = getattr(interval, "t_duration", self._window_duration_s)
-        t_end_val = t_start_val + t_dur
-        mask = (df["t"] >= t_start_val) & (df["t"] <= t_end_val)
-        return df[mask]
-
-    def get_detail_renderer(self):
-        """Return an :class:`~pypho_timeline.rendering.datasources.specific.eeg.EEGPlotDetailRenderer`."""
-        from pypho_timeline.rendering.datasources.specific.eeg import (
-            EEGPlotDetailRenderer,
+    def get_detail_renderer(self) -> EEGPlotDetailRenderer:
+        ch_names = self._channel_names or ["ch0"]
+        return EEGPlotDetailRenderer(
+            pen_width=1,
+            channel_names=ch_names,
+            fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE,
+            normalize=True,
+            normalize_over_full_data=False,
         )
 
-        ch = self._channel_names if self._channel_names else None
-        return EEGPlotDetailRenderer(pen_width=1, channel_names=ch)
+    # ------------------------------------------------------------------ #
+    # Live-data helpers used by the live timeline
+    # ------------------------------------------------------------------ #
 
-    # ---------------------------------------------------------------------- #
-    # Qt slots                                                                 #
-    # ---------------------------------------------------------------------- #
+    @property
+    def live_timestamp(self) -> Optional[float]:
+        """Most recent LSL timestamp in the buffer."""
+        return self._ring.latest_timestamp
 
-    @QtCore.Slot(str)
-    def _on_stream_connected(self, stream_name: str) -> None:
-        """Record channel names when the inlet is first established."""
-        self._channel_names = list(self._receiver.channel_names)
-        print(
-            f"[LiveEEGTrackDatasource] Connected to LSL stream "
-            f"'{stream_name}' ({len(self._channel_names)} channels)"
-        )
+    def get_full_buffer_df(self) -> pd.DataFrame:
+        """Return the entire ring-buffer as a DataFrame."""
+        return self._ring.to_dataframe()
 
-    @QtCore.Slot(np.ndarray, np.ndarray)
-    def _on_data_received(
-        self, timestamps: np.ndarray, data: np.ndarray
-    ) -> None:
-        """Append new samples to the rolling buffer; rebuild DataFrame."""
-        if timestamps.size == 0:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LiveMotionTrackDatasource
+# ─────────────────────────────────────────────────────────────────────────────
+
+class LiveMotionTrackDatasource(IntervalProvidingTrackDatasource):
+    """Live Motion/IMU track datasource backed by an :class:`LSLStreamReceiver`.
+
+    Identical in structure to :class:`LiveEEGTrackDatasource` but uses the
+    :class:`~pypho_timeline.rendering.datasources.specific.motion.MotionPlotDetailRenderer`.
+
+    Parameters
+    ----------
+    receiver:
+        An :class:`LSLStreamReceiver` configured for a motion/IMU stream.
+    buffer_seconds:
+        How many seconds of history to retain.  Default 300.
+    channel_names:
+        Override channel names (e.g. ``['AccX','AccY','AccZ','GyroX','GyroY','GyroZ']``).
+    custom_datasource_name:
+        Human-readable name shown in the UI.
+    """
+
+    new_data_available = QtCore.Signal()
+
+    def __init__(self, receiver: LSLStreamReceiver, buffer_seconds: float = 300.0, channel_names: Optional[List[str]] = None, custom_datasource_name: Optional[str] = None, parent: Optional[QtCore.QObject] = None) -> None:
+        stub_intervals = _make_stub_intervals_df(time.time())
+        super().__init__(intervals_df=stub_intervals, detailed_df=None, custom_datasource_name=custom_datasource_name or "LiveMotion", parent=parent)
+
+        self._buffer_seconds = buffer_seconds
+        self._channel_names: List[str] = list(channel_names) if channel_names else []
+        self._ring: _LiveRingBuffer = _LiveRingBuffer(self._channel_names, buffer_seconds)
+
+        self._receiver = receiver
+        receiver.data_received.connect(self._on_data_received)
+        receiver.stream_found.connect(self._on_stream_found)
+
+    @pyqtExceptionPrintingSlot(object)
+    def _on_stream_found(self, info: object) -> None:
+        ch_names = self._receiver.channel_names
+        if ch_names:
+            self._channel_names = ch_names
+            self._ring = _LiveRingBuffer(ch_names, self._buffer_seconds)
+
+    @pyqtExceptionPrintingSlot(object, object, object)
+    def _on_data_received(self, channel_names: List[str], timestamps: np.ndarray, samples: np.ndarray) -> None:
+        self._ring.append(timestamps, samples, channel_names)
+        self._update_intervals()
+        self.new_data_available.emit()
+
+    def _update_intervals(self) -> None:
+        t0 = self._ring.earliest_timestamp
+        t1 = self._ring.latest_timestamp
+        if t0 is None or t1 is None:
             return
+        self.intervals_df = _make_stub_intervals_df(t0, t1)
 
-        with self._data_lock:
-            # Concatenate new timestamps / data onto the rolling buffer
-            self._ts_buf = np.concatenate([self._ts_buf, timestamps])
-            if self._data_buf is None:
-                self._data_buf = data
-            else:
-                self._data_buf = np.concatenate([self._data_buf, data], axis=1)
+    @property
+    def total_df_start_end_times(self) -> Tuple[float, float]:
+        t0 = self._ring.earliest_timestamp
+        t1 = self._ring.latest_timestamp
+        if t0 is None or t1 is None:
+            now = time.time()
+            return (now, now)
+        return (float(t0), float(t1))
 
-            # Trim samples that fall outside the rolling window
-            t_cutoff = timestamps[-1] - self._window_duration_s
-            if t_cutoff > self._ts_buf[0]:
-                keep = self._ts_buf >= t_cutoff
-                self._ts_buf = self._ts_buf[keep]
-                self._data_buf = self._data_buf[:, keep]
+    def fetch_detailed_data(self, interval: pd.Series) -> pd.DataFrame:
+        t_start = float(interval.get("t_start", 0.0))
+        t_duration = float(interval.get("t_duration", 0.0))
+        t_end = t_start + t_duration
+        return self._ring.get_window(t_start, t_end)
 
-            # Rebuild detailed_df
-            ch_names = (
-                self._channel_names
-                if self._channel_names
-                else [str(i) for i in range(self._data_buf.shape[0])]
-            )
-            df_dict = {"t": self._ts_buf}
-            for i, ch in enumerate(ch_names):
-                df_dict[ch] = self._data_buf[i]
-            self.detailed_df = pd.DataFrame(df_dict)
+    def get_detail_renderer(self) -> MotionPlotDetailRenderer:
+        ch_names = self._channel_names or ["ch0"]
+        return MotionPlotDetailRenderer(pen_width=1, channel_names=ch_names)
 
-            # Keep intervals_df in sync with the current window
-            t_start = float(self._ts_buf[0])
-            t_end = float(self._ts_buf[-1])
-            self.intervals_df = pd.DataFrame(
-                {
-                    "t_start": [t_start],
-                    "t_duration": [t_end - t_start],
-                    "t_end": [t_end],
-                    "series_vertical_offset": [0.0],
-                    "series_height": [1.0],
-                }
-            )
+    @property
+    def live_timestamp(self) -> Optional[float]:
+        return self._ring.latest_timestamp
 
-        self.source_data_changed_signal.emit()
+    def get_full_buffer_df(self) -> pd.DataFrame:
+        return self._ring.to_dataframe()
 
 
-__all__ = ["LSLStreamReceiver", "LiveEEGTrackDatasource"]
+# ─────────────────────────────────────────────────────────────────────────────
+# Private helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_stub_intervals_df(t_start: float, t_end: Optional[float] = None) -> pd.DataFrame:
+    """Create a minimal single-row intervals DataFrame."""
+    if t_end is None:
+        t_end = t_start + 1.0
+    duration = max(float(t_end) - float(t_start), 1.0)
+    return pd.DataFrame(
+        {
+            "t_start": [float(t_start)],
+            "t_duration": [duration],
+            "t_end": [float(t_end)],
+        }
+    )
+
+
+__all__ = [
+    "LSLStreamReceiver",
+    "LiveEEGTrackDatasource",
+    "LiveMotionTrackDatasource",
+]
