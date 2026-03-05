@@ -45,6 +45,8 @@ import pandas as pd
 from qtpy import QtCore, QtWidgets
 import pyqtgraph as pg
 
+from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
+
 from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget
 from pypho_timeline.rendering.datasources.specific.lsl import (
     LSLStreamReceiver,
@@ -87,14 +89,7 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
         Optional Qt parent.
     """
 
-    def __init__(
-        self,
-        eeg_datasource: LiveEEGTrackDatasource,
-        motion_datasource: LiveMotionTrackDatasource,
-        window_seconds: float = WINDOW_SECONDS,
-        buffer_seconds: float = BUFFER_SECONDS,
-        parent: Optional[QtWidgets.QWidget] = None,
-    ) -> None:
+    def __init__(self, eeg_datasource: LiveEEGTrackDatasource, motion_datasource: LiveMotionTrackDatasource, window_seconds: float = WINDOW_SECONDS, buffer_seconds: float = BUFFER_SECONDS, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Live LSL Timeline – EEG & Motion (backscroll enabled)")
         self.resize(1200, 600)
@@ -222,7 +217,7 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
     # Live-follow logic
     # ------------------------------------------------------------------ #
 
-    @QtCore.Slot()
+    @pyqtExceptionPrintingSlot()
     def _advance_live_window(self) -> None:
         """Move the viewport to follow the live head (only when in live mode)."""
         if not self._is_live:
@@ -242,7 +237,8 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
         for plot in (self._eeg_plot, self._motion_plot):
             plot.setXRange(t_start, t_end, padding=0)
 
-    @QtCore.Slot()
+
+    @pyqtExceptionPrintingSlot()
     def _on_user_panned(self) -> None:
         """Called when the user manually drags/zooms → enter backscroll mode."""
         if self._is_live:
@@ -254,7 +250,7 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
                 "Backscrolling – press '⟳ Sync to Live' to return to live view"
             )
 
-    @QtCore.Slot(bool)
+    @pyqtExceptionPrintingSlot(bool)
     def _on_live_btn_toggled(self, checked: bool) -> None:
         """Toggle live-follow mode from the toolbar button."""
         self._is_live = checked
@@ -270,7 +266,7 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
     # Data-arrival callbacks
     # ------------------------------------------------------------------ #
 
-    @QtCore.Slot()
+    @pyqtExceptionPrintingSlot()
     def _on_eeg_data(self) -> None:
         ts = self._eeg_ds.live_timestamp
         if ts is not None and self._is_live:
@@ -279,7 +275,7 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
                 f"Motion @ {_fmt_ts(self._motion_ds.live_timestamp)}"
             )
 
-    @QtCore.Slot()
+    @pyqtExceptionPrintingSlot()
     def _on_motion_data(self) -> None:
         ts = self._motion_ds.live_timestamp
         if ts is not None and self._is_live:
@@ -294,11 +290,7 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _start_synthetic_eeg_outlet(
-    n_channels: int = 14,
-    sfreq: float = 128.0,
-    stream_name: str = "SyntheticEEG",
-) -> object:
+def _start_synthetic_eeg_outlet(n_channels: int = 14, sfreq: float = 128.0, stream_name: str = "SyntheticEEG") -> object:
     """Push a synthetic EEG outlet via pylsl (for local testing).
 
     Returns the :class:`pylsl.StreamOutlet` (keep a reference to prevent GC).
@@ -342,10 +334,7 @@ def _push_synthetic_samples(outlet: object, n_channels: int = 14, sfreq: float =
         time.sleep(interval)
 
 
-def _start_synthetic_motion_outlet(
-    stream_name: str = "SyntheticMotion",
-    sfreq: float = 32.0,
-) -> object:
+def _start_synthetic_motion_outlet(stream_name: str = "SyntheticMotion", sfreq: float = 32.0) -> object:
     """Push a synthetic IMU outlet via pylsl (for local testing)."""
     try:
         import pylsl  # type: ignore
@@ -460,7 +449,7 @@ def main(use_synthetic: bool = False) -> int:
     )
 
     # ── main window ─────────────────────────────────────────────────────
-    window = LiveLSLTimeline(
+    window: LiveLSLTimeline = LiveLSLTimeline(
         eeg_datasource=eeg_ds,
         motion_datasource=motion_ds,
         window_seconds=WINDOW_SECONDS,

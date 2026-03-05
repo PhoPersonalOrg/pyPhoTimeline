@@ -39,6 +39,7 @@ from typing import List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 from qtpy import QtCore
+from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 
 try:
     import pylsl  # type: ignore
@@ -173,7 +174,7 @@ class LSLStreamReceiver(QtCore.QObject):
             parts.append(f"name='{self.stream_name}'")
         return " and ".join(parts) if parts else "type!=''"  # match anything if no filters
 
-    @QtCore.Slot()
+    @pyqtExceptionPrintingSlot()
     def _try_connect(self) -> None:
         """Attempt to resolve and open an LSL inlet."""
         if not _PYLSL_AVAILABLE or self._inlet is not None:
@@ -213,7 +214,7 @@ class LSLStreamReceiver(QtCore.QObject):
             names.append(f"ch{len(names)}")
         return names[:n]
 
-    @QtCore.Slot()
+    @pyqtExceptionPrintingSlot()
     def _poll(self) -> None:
         """Drain the LSL inlet and emit data_received."""
         if self._inlet is None:
@@ -392,14 +393,14 @@ class LiveEEGTrackDatasource(IntervalProvidingTrackDatasource):
     # Slots
     # ------------------------------------------------------------------ #
 
-    @QtCore.Slot(object)
+    @pyqtExceptionPrintingSlot(object)
     def _on_stream_found(self, info: object) -> None:
         ch_names = self._receiver.channel_names
         if ch_names:
             self._channel_names = ch_names
             self._ring = _LiveRingBuffer(ch_names, self._buffer_seconds)
 
-    @QtCore.Slot(object, object, object)
+    @pyqtExceptionPrintingSlot(object, object, object)
     def _on_data_received(self, channel_names: List[str], timestamps: np.ndarray, samples: np.ndarray) -> None:
         self._ring.append(timestamps, samples, channel_names)
         self._update_intervals()
@@ -497,14 +498,14 @@ class LiveMotionTrackDatasource(IntervalProvidingTrackDatasource):
         receiver.data_received.connect(self._on_data_received)
         receiver.stream_found.connect(self._on_stream_found)
 
-    @QtCore.Slot(object)
+    @pyqtExceptionPrintingSlot(object)
     def _on_stream_found(self, info: object) -> None:
         ch_names = self._receiver.channel_names
         if ch_names:
             self._channel_names = ch_names
             self._ring = _LiveRingBuffer(ch_names, self._buffer_seconds)
 
-    @QtCore.Slot(object, object, object)
+    @pyqtExceptionPrintingSlot(object, object, object)
     def _on_data_received(self, channel_names: List[str], timestamps: np.ndarray, samples: np.ndarray) -> None:
         self._ring.append(timestamps, samples, channel_names)
         self._update_intervals()
