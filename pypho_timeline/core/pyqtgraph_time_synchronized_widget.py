@@ -103,7 +103,10 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         super().__init__(application_name=application_name, window_name=(window_name or PyqtgraphTimeSynchronizedWidget.windowName), parent=parent) # Call the inherited classes __init__ method
             
         ## Init containers:
-        self.params = VisualizationParameters(name=name, plot_function_name=plot_function_name, debug_print=False, wants_crosshairs=kwargs.get('wants_crosshairs', False), should_force_discrete_to_bins=kwargs.get('should_force_discrete_to_bins', False))
+        self.params = VisualizationParameters(name=name, plot_function_name=plot_function_name, debug_print=False, wants_crosshairs=kwargs.get('wants_crosshairs', False),
+                            should_force_discrete_to_bins=kwargs.get('should_force_discrete_to_bins', False),
+                            plotAreaMouseInteractionCriteria=kwargs.get('plotAreaMouseInteractionCriteria', None), # #TODO 2026-03-05 09:04: - [ ] not yet used, not sure if needed
+                            )
         self.plots_data = RenderPlotsData(name=name)
         self.plots = PyqtgraphRenderPlots(name=name)
         self.ui = PhoUIContainer(name=name, connections=ConnectionsContainer())
@@ -132,6 +135,30 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         # self.last_window_time = None
         self.setup()
         
+
+        # #TODO 2026-03-05 08:52: - [ ] Build the mouse criteria to determine which drags are allowed (hopefully allowing left-click drag)
+        # #### This code came from `pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.GraphicsObjects.CustomLinearRegionItem.CustomLinearRegionItem`, get the rest there when needed.
+        # ## Setup the mouse action critiera for the background rectangle (excluding the two end-position lines, which are set below):
+        # if self.params.plotAreaMouseInteractionCriteria is None:
+        #     # Original/Default Conditions
+        #     self.params.plotAreaMouseInteractionCriteria = MouseInteractionCriteria(drag=lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.LeftButton),
+        #                                                                 hover=lambda an_evt: (an_evt.acceptDrags(QtCore.Qt.MouseButton.LeftButton)),
+        #                                                                 click=lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.RightButton) ## allow right-clicking
+        #     )
+            
+        #     # Actually override drag:
+        #     def _override_accept_either_mouse_button_drags(an_evt):
+        #         can_accept = an_evt.acceptDrags(QtCore.Qt.MouseButton.LeftButton)
+        #         can_accept = can_accept and an_evt.acceptDrags(QtCore.Qt.MouseButton.MiddleButton)
+        #         return can_accept
+        #     self.params.plotAreaMouseInteractionCriteria.hover = _override_accept_either_mouse_button_drags
+            
+        #     self.params.plotAreaMouseInteractionCriteria.drag = lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.LeftButton) or (an_evt.button() == QtCore.Qt.MouseButton.MiddleButton)
+            
+            
+        # self._custom_area_mouse_action_criteria = self.params.plotAreaMouseInteractionCriteria
+
+
         self.buildUI()
         # self.TrackOptionsPanelOwningMixin_on_buildUI()
         
@@ -150,35 +177,6 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
     def setup(self):
         assert hasattr(self.ui, 'connections')
         
-        # self.setup_spike_rendering_mixin() # NeuronIdentityAccessingMixin
-        # self.app = pg.mkQApp(self.applicationName)
-        # self.params = VisualizationParameters(self.applicationName)
-        
-
-        # # Add a trace region (initially hidden)
-        # self.trace_region = pg.LinearRegionItem(movable=True, brush=(0, 0, 255, 50))
-        # self.trace_region.setZValue(10)  # Ensure it appears above the plot
-        # self.trace_region.hide()  # Initially hide the trace region
-        # self.plot_widget.addItem(self.trace_region)
-
-        # # Override the PlotWidget's mouse events
-        # self.plot_widget.scene().sigMouseClicked.connect(self.mouse_clicked)
-        # self.plot_widget.scene().sigMouseMoved.connect(self.mouse_moved)
-        # self.plot_widget.scene().sigMouseReleased.connect(self.mouse_released)
-        # self.dragging = False
-        # self.start_pos = None
-                
-
-        # self.params.shared_axis_order = 'row-major'
-        # self.params.shared_axis_order = 'column-major'
-        # self.params.shared_axis_order = None
-        
-        ## Build the colormap to be used:
-        # self.params.cmap = pg.ColorMap(pos=np.linspace(0.0, 1.0, 6), color=colors)
-        # self.params.cmap = pg.colormap.get('jet','matplotlib') # prepare a linear color map
-        # self.params.image_margins = 0.0
-        # self.params.image_bounds_extent, self.params.x_range, self.params.y_range = pyqtplot_build_image_bounds_extent(self.active_one_step_decoder.xbin, self.active_one_step_decoder.ybin, margin=self.params.image_margins, debug_print=self.enable_debug_print)
-
         self.TrackOptionsPanelOwningMixin_on_setup()
         
 
@@ -234,6 +232,11 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         
         self.ui.root_plot.setMouseEnabled(x=True, y=False)
         self.ui.root_plot.setMenuEnabled(enableMenu=False)
+
+
+        # _conn = vb.sigLeftDrag.connect(on_window_update)
+
+
         
         # ## Optional Interactive Color Bar:
         # bar = pg.ColorBarItem(values= (0, 1), colorMap=self.params.cmap, width=5, interactive=False) # prepare interactive color bar
