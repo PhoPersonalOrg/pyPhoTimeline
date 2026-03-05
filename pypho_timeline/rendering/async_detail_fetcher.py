@@ -3,7 +3,7 @@
 This module provides async data fetching using Qt QThreadPool for fetching detailed
 data when intervals scroll into the viewport.
 """
-from typing import Dict, List, Optional, Callable, Any, Tuple
+from typing import Dict, List, Optional, Callable, Any, Tuple, Union
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from threading import Lock
@@ -122,26 +122,26 @@ class AsyncDetailFetcher(QtCore.QObject):
         logger.info(f"[{threading.current_thread().name}] AsyncDetailFetcher __init__ - initialized with max_cache_size={max_cache_size}, max_threads={max_threads}")
     
 
-    def fetch_detail_async(self, track_id: str, interval: pd.Series, 
-                          datasource: TrackDatasource, callback: Optional[Callable] = None):
+    def fetch_detail_async(self, track_id: str, interval: Union[pd.Series, pd.DataFrame], datasource: TrackDatasource, callback: Optional[Callable] = None):
         """Queue an async fetch for detailed data.
         
         Args:
             track_id: Unique identifier for the track
-            interval: Series with at least 't_start' and 't_duration' columns
+            interval: Single-row DataFrame or Series with at least 't_start' and 't_duration'
             datasource: TrackDatasource to fetch from
-            callback: Optional callback function(track_id, cache_key, interval, data, error)
+            callback: Optional callback function(track_id, cache_key, interval_df, data, error); interval_df is always DataFrame
                      If None, the detail_data_ready signal will be emitted instead
         """
         thread_name = threading.current_thread().name
-        cache_key = datasource.get_detail_cache_key(interval)
-        logger.debug(f"[{thread_name}] AsyncDetailFetcher.fetch_detail_async track_id={track_id} cache_key='{cache_key}' interval=({_format_interval_for_log(interval)})")
+        interval_series = interval.iloc[0] if isinstance(interval, pd.DataFrame) else interval
+        interval_df = interval if isinstance(interval, pd.DataFrame) else interval.to_frame().T
+        cache_key = datasource.get_detail_cache_key(interval_df)
+        logger.debug(f"[{thread_name}] AsyncDetailFetcher.fetch_detail_async track_id={track_id} cache_key='{cache_key}' interval=({_format_interval_for_log(interval_series)})")
         with self._lock:
             if cache_key in self._cache:
                 data = self._cache[cache_key]
                 self._cache.move_to_end(cache_key)
                 logger.debug(f"[{thread_name}] AsyncDetailFetcher.fetch_detail_async() - cache HIT for cache_key='{cache_key}', returning immediately")
-                interval_df = interval.to_frame().T
                 if callback:
                     logger.debug(f"[{thread_name}] AsyncDetailFetcher.fetch_detail_async() - using callback for cache_key='{cache_key}'")
                     QtCore.QTimer.singleShot(0, lambda: callback(track_id, cache_key, interval_df, data, None))
@@ -155,7 +155,7 @@ class AsyncDetailFetcher(QtCore.QObject):
         logger.debug(f"[{thread_name}] AsyncDetailFetcher.fetch_detail_async() - cache MISS for cache_key='{cache_key}', creating worker")
         with self._lock:
             self._pending_callbacks[cache_key] = callback
-        worker = DetailFetchWorker(track_id, interval, datasource, cache_key, self)
+        worker = DetailFetchWorker(track_id, interval_series, datasource, cache_key, self)
         logger.debug(f"[{thread_name}] AsyncDetailFetcher.fetch_detail_async() - created worker for cache_key='{cache_key}'")
         with self._lock:
             if track_id not in self._pending_workers:

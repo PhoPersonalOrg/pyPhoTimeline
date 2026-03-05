@@ -36,7 +36,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
     
     sigTrackAdded = QtCore.Signal(str)  # track_id
     sigTrackRemoved = QtCore.Signal(str)  # track_id
-    sigTrackDetailLoaded = QtCore.Signal(str, pd.Series, object)  # track_id, interval, detail_data
+    sigTrackDetailLoaded = QtCore.Signal(str, pd.DataFrame, object)  # track_id, interval, detail_data
     
     @property
     def track_datasources(self) -> RenderPlotsData:

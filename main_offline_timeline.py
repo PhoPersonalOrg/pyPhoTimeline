@@ -72,13 +72,13 @@ DEMO_XDF_PATHS: List[Path] = [
     Path('E:/Dropbox (Personal)/Databases/UnparsedData/LabRecorderStudies/sub-P001/LabRecorder_Apogee_2026-03-03T005759.073Z_eeg.xdf'),
     Path('E:/Dropbox (Personal)/Databases/UnparsedData/PhoLogToLabStreamingLayer_logs/20260303_005724_log.xdf'),
 ]
-
+ob
 
 # n_most_recent_sessions_to_preprocess: int = None # None means all sessions
 # n_most_recent_sessions_to_preprocess: int = 100
 # n_most_recent_sessions_to_preprocess: int = 35
-# n_most_recent_sessions_to_preprocess: int = 5
-n_most_recent_sessions_to_preprocess: int = 15
+n_most_recent_sessions_to_preprocess: int = 5
+# n_most_recent_sessions_to_preprocess: int = 15
 # n_most_recent_sessions_to_preprocess = None
 
 # Optional: only include streams whose name matches any of these patterns (regex).

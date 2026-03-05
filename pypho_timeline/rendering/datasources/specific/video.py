@@ -719,8 +719,10 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         return VideoThumbnailDetailRenderer(thumbnail_height=50.0, spacing=0.1, thumbnail_size=self.thumbnail_size)
     
 
-    def get_detail_cache_key(self, interval: pd.Series) -> str:
-        """Get cache key for interval."""
+    def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
+        """Get cache key for interval (single-row DataFrame or Series)."""
+        if isinstance(interval, pd.DataFrame):
+            interval = interval.iloc[0]
         base_key = super().get_detail_cache_key(interval)
         video_path = interval.get('video_file_path', '')
         if video_path:

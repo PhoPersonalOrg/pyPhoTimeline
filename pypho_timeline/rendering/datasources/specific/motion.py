@@ -343,10 +343,8 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         )
 
 
-    def get_detail_cache_key(self, interval: pd.Series) -> str:
-        """Get cache key for interval."""
-        # Delegate to base implementation which handles datetime/timedelta correctly
-        # and includes the datasource name to avoid collisions across tracks.
+    def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
+        """Get cache key for interval (single-row DataFrame or Series)."""
         return super().get_detail_cache_key(interval)
 
     @classmethod

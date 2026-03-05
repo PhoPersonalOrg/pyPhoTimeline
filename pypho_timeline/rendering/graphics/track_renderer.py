@@ -265,22 +265,17 @@ class TrackRenderer(QtCore.QObject):
                     """
                     logger.info(f"TrackRenderer[{self.track_id}] detail_render_callback called for rect_index={rect_index}")
                     
-                    # Get the corresponding interval from overview_df
+                    # Get the corresponding interval from overview_df (single-row DataFrame)
                     if self._overview_df is None or rect_index >= len(self._overview_df):
                         logger.warning(f"TrackRenderer[{self.track_id}] Invalid rect_index={rect_index} for overview_df length={len(self._overview_df) if self._overview_df is not None else 0}")
                         return
                     
-                    # Get interval as Series
-                    interval_series = self._overview_df.iloc[rect_index] ## rect_index is changing correctly
-                    
-                    # Convert to single-row DataFrame for _render_detail
                     interval_df = self._overview_df.iloc[[rect_index]]
                     
-                    # Get cache key
-                    cache_key = self.datasource.get_detail_cache_key(interval_series)
+                    # Get cache key (datasource accepts DataFrame)
+                    cache_key = self.datasource.get_detail_cache_key(interval_df)
                     
-
-                    logger.debug(f"TrackRenderer[{self.track_id}] detail_render_callback - interval_series: {interval_series}, cache_key='{cache_key}'")
+                    logger.debug(f"TrackRenderer[{self.track_id}] detail_render_callback - interval_df shape={interval_df.shape}, cache_key='{cache_key}'")
                     
                     # Add to visible_intervals to prevent it from being cleared
                     self.visible_intervals.add(cache_key)
@@ -293,9 +288,9 @@ class TrackRenderer(QtCore.QObject):
                         self._render_detail(interval_df, cache_key, cached_data)
                         self.detail_loaded.emit(self.track_id, interval_df, cached_data)
                     else:
-                        # Fetch asynchronously
+                        # Fetch asynchronously (pass DataFrame)
                         logger.debug(f"TrackRenderer[{self.track_id}] detail_render_callback - fetching detail data asynchronously for cache_key='{cache_key}'")
-                        self.async_fetcher.fetch_detail_async(self.track_id, interval_series, self.datasource)
+                        self.async_fetcher.fetch_detail_async(self.track_id, interval_df, self.datasource)
                         # Note: _on_detail_data_ready will be called when data is ready
                 
                 detail_render_callback = detail_render_callback_fn
@@ -362,11 +357,10 @@ class TrackRenderer(QtCore.QObject):
             cache_misses = 0
             already_visible = 0
             
-            # For non-video tracks, do full detail fetching logic
-            for idx, interval_series in intervals_df.iterrows():
-                # Convert Series to single-row DataFrame for DetailRenderer methods
+            # For non-video tracks, do full detail fetching logic (always use DataFrame for interval)
+            for idx in range(len(intervals_df)):
                 interval_df = intervals_df.iloc[[idx]]
-                cache_key = self.datasource.get_detail_cache_key(interval_series)
+                cache_key = self.datasource.get_detail_cache_key(interval_df)
                 new_visible_keys.add(cache_key)
                 
                 # If not already visible and not already loaded, fetch detail
@@ -375,12 +369,12 @@ class TrackRenderer(QtCore.QObject):
                     cached_data = self.async_fetcher.get_cached_data(cache_key)
                     if cached_data is not None:
                         cache_hits += 1
-                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' ({_format_interval_for_log(interval_series)}) - cache HIT, rendering immediately")
+                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' ({_format_interval_for_log(interval_df.iloc[0])}) - cache HIT, rendering immediately")
                         self._render_detail(interval_df, cache_key, cached_data)
                     else:
                         cache_misses += 1
-                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' ({_format_interval_for_log(interval_series)}) - cache MISS, requesting async fetch")
-                        self.async_fetcher.fetch_detail_async(self.track_id, interval_series, self.datasource) ## I believe after this asynchronously completes, `self._on_detail_data_ready` is called.
+                        logger.debug(f"TrackRenderer[{self.track_id}] Interval cache_key='{cache_key}' ({_format_interval_for_log(interval_df.iloc[0])}) - cache MISS, requesting async fetch")
+                        self.async_fetcher.fetch_detail_async(self.track_id, interval_df, self.datasource)
                 else:
                     already_visible += 1
             ## END for idx, interval_series in intervals_df.iterrows()...

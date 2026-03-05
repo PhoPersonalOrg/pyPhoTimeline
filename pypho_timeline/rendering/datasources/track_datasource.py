@@ -157,11 +157,11 @@ class TrackDatasource(Protocol):
         ...
     
     # Optional method (has default implementation in BaseTrackDatasource)
-    def get_detail_cache_key(self, interval: pd.Series) -> str:
+    def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
         """Get a unique cache key for an interval's detailed data.
         
         Args:
-            interval: Series with at least 't_start' and 't_duration' columns
+            interval: Single-row DataFrame or Series with at least 't_start' and 't_duration'
             
         Returns:
             String key that uniquely identifies this interval's detailed data
@@ -289,30 +289,20 @@ class BaseTrackDatasource(QtCore.QObject):
         """
         return self.df
     
-    def get_detail_cache_key(self, interval: pd.Series) -> str:
+    def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
         """Get a unique cache key for an interval's detailed data.
         
         Default implementation generates a key from `t_start` and `t_duration`,
         supporting float, datetime, and timedelta types. Override if you need a more specific key format.
         
         Args:
-            interval: Series with at least 't_start' and 't_duration' columns
-
-        interval_series: 
-            t_start                                                   1773126048.489956
-            t_duration                                                      7092.950728
-            t_end                                                     1773133141.440685
-            series_vertical_offset                                                  0.0
-            series_height                                                           1.0
-            pen                         <PyQt5.QtGui.QPen object at 0x000002783F9EF610>
-            brush                     <PyQt5.QtGui.QBrush object at 0x000002783F9EF5A0>
-            t_start_dt                                       2026-03-10 07:00:48.489956
-            t_end_dt                                         2026-03-10 08:59:01.440685
-
+            interval: Single-row DataFrame or Series with at least 't_start' and 't_duration'
             
         Returns:
             String key that uniquely identifies this interval's detailed data
         """
+        if isinstance(interval, pd.DataFrame):
+            interval = interval.iloc[0]
         t_start = interval.get('t_start', 0.0)
         t_duration = interval.get('t_duration', 0.0)
         if hasattr(t_start, 'item'):
@@ -663,27 +653,17 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
 
 
             
-    def get_detail_cache_key(self, interval: pd.Series) -> str:
-        """Get cache key for interval."""
-        # Extract values from Series - use .iloc[0] if it's a single-row DataFrame converted to Series
-        # or direct access if it's already a Series
+    def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
+        """Get cache key for interval (single-row DataFrame or Series)."""
+        if isinstance(interval, pd.DataFrame):
+            interval = interval.iloc[0]
         active_t_start = None
-        if isinstance(interval, pd.Series):
-            t_start_dt = interval.get('t_start_dt', interval.iloc[0] if 't_start_dt' in interval.index else None)
-            active_t_start = t_start_dt
-            if t_start_dt is None:
-                t_start = interval.get('t_start', interval.iloc[0] if 't_start' in interval.index else None)
-                active_t_start = t_start
-            t_duration = interval.get('t_duration', interval.iloc[0] if 't_duration' in interval.index else None)
-        else:
-            # Fallback for DataFrame row
-            t_start_dt = interval.get('t_start_dt') if hasattr(interval, 'get') else interval['t_start_dt'] ## #TODO 2026-02-28 14:59: - [ ] this one might fail if the column doesn't exist
-            active_t_start = t_start_dt
-            if active_t_start is None:
-                t_start = interval.get('t_start') if hasattr(interval, 'get') else interval['t_start']
-                active_t_start = t_start
-
-            t_duration = interval.get('t_duration') if hasattr(interval, 'get') else interval['t_duration']
+        t_start_dt = interval.get('t_start_dt', interval.iloc[0] if 't_start_dt' in interval.index else None)
+        active_t_start = t_start_dt
+        if t_start_dt is None:
+            t_start = interval.get('t_start', interval.iloc[0] if 't_start' in interval.index else None)
+            active_t_start = t_start
+        t_duration = interval.get('t_duration', interval.iloc[0] if 't_duration' in interval.index else None)
         
         assert active_t_start is not None
         # Convert pandas scalars/numpy types to Python native types
