@@ -835,7 +835,6 @@ Let me check what abstract methods BaseTrackDatasource defines and whether anyth
 
 ---
 
-
 Checking how `BaseTrackDatasource` and `ABC` are used so we can switch it to `QObject` without breaking abstract method enforcement:
 
 
@@ -918,7 +917,282 @@ class _QObjectABCMeta(type(QtCore.QObject), ABCMeta):
 
 Then class BaseTrackDatasource(QtCore.QObject, ABC, metaclass=_QObjectABCMeta). This is a known pattern. Let me implement that first; if it fails on the user's stack (e.g. PySide6 uses a different metaclass), we can fall back to QObject-only and drop ABC.
 
-Actually re-reading the user message again: "make it a QObject subclass instead of an ABC subclass anyway unless that would cause problems". So they're saying: prefer making it a QObject, and only keep ABC if dropping it would cause problems. So the minimal change is: replace ABC with QObject. That would cause loss of abstract method enforcement. I'll </details></think>
+Actually re-reading the user message again: "make it a QObject subclass instead of an ABC subclass anyway unless that would cause problems". So they're saying: prefer making it a QObject, and only keep ABC if dropping it would cause problems. So the minimal change is: replace ABC with QObject. That would cause loss of abstract method enforcement. I'll do the combined metaclass approach so we get both QObject and ABC behavior without conflict. If that's problematic (e.g. qtpy might use different backends), we could document and try.
+</details></think>
+
+---
+
+Checking the file start for imports and whether `source_data_changed_signal` is used:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\track_datasource.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "pattern": "source_data_changed_signal",
+  "path": "c:\\Users\\pho\\repos\\EmotivEpoc\\ACTIVE_DEV\\pyPhoTimeline",
+  "caseInsensitive": false
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "pattern": "source_data_changed_signal",
+  "path": "c:\\Users\\pho\\repos\\EmotivEpoc\\ACTIVE_DEV\\pyPhoTimeline",
+  "outputMode": "content",
+  "totalFiles": 5,
+  "totalMatches": 25,
+  "topFiles": [
+    {
+      "uri": "pypho_timeline/rendering/datasources/track_datasource.py",
+      "matchCount": 3
+    },
+    {
+      "uri": ".specstory/history/2026-01-23_21-10Z-datasource-datetime-offset-on-timeline.md",
+      "matchCount": 7
+    },
+    {
+      "uri": "pypho_timeline/rendering/mixins/epoch_rendering_mixin.py",
+      "matchCount": 11
+    },
+    {
+      "uri": "pypho_timeline/_embed/interval_datasource.py",
+      "matchCount": 3
+    },
+    {
+      "uri": ".cursor/plans/standardize_datasource_protocol_0bb09055.plan.md",
+      "matchCount": 1
+    }
+  ]
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+
+So `source_data_changed_signal` is used and is expected to be a Qt Signal. Currently it's assigned in __init__ as `self.source_data_changed_signal = QtCore.Signal()` - but that's actually wrong for a non-QObject: you typically define Signals as class attributes on QObject subclasses, not instance attributes. So making BaseTrackDatasource a QObject will fix that too (Signals must be class-level on QObject). I'll define it as a class attribute: `source_data_changed_signal = QtCore.Signal()` and remove it from __init__.
+
+To have both QObject and ABC we need a combined metaclass. The standard approach:
+
+from abc import ABCMeta
+class _QObjectABCMeta(type(QtCore.QObject), ABCMeta):
+    pass
+
+Then:
+class BaseTrackDatasource(QtCore.QObject, ABC, metaclass=_QObjectABCMeta):
+
+And in __init__ we must call QtCore.QObject.__init__(self) - and we need to do it in a way that works with the inheritance chain. So BaseTrackDatasource.__init__ should call super().__init__() which will go to QObject.__init__(self). So we need to make sure QObject is initialized. With multiple inheritance, the MRO for BaseTrackDatasource would be BaseTrackDatasource, QObject, ABC, ... So super().__init__() in BaseTrackDatasource would call QObject.__init__. Good. But we need to pass parent to QObject if we want. Let me check - BaseTrackDatasource.__init__(self) takes no args. So we'd do super().__init__(self) which becomes QObject.__init__(self). QObject.__init__(self, parent=None) - so that</details></think>
+
+---
+
+_**User**_
+
+I just want QObject, not ABC, I don't need abstract method enforcement
+
+---
+
+_**Agent (model default, mode Agent)**_
+
+<think><details><summary>Thought Process</summary>
+
+The user wants to replace ABC with QObject in BaseTrackDatasource only - no combined metaclass, no abstract method enforcement. I need to:
+
+1. In track_datasource.py: Change BaseTrackDatasource from inheriting ABC to inheriting QtCore.QObject, remove the ABC import if no longer used elsewhere, remove @abstractmethod decorators from BaseTrackDatasource (or leave them as no-ops for documentation - they won't enforce without ABC). I'll remove the abstractmethod decorators and the ABC base. Also BaseTrackDatasource.__init__ must call QtCore.QObject.__init__(self). And source_data_changed_signal should be a class-level Signal on the QObject, not created in __init__ - so I'll add it as a class attribute and remove the line from __init__.
+
+2. Revert the lsl.py changes: LiveEEGTrackDatasource and LiveMotionTrackDatasource should go back to single inheritance (IntervalProvidingTrackDatasource only) and use super().__init__ again, since IntervalProvidingTrackDatasource will now inherit from BaseTrackDatasource which is a QObject - so the whole chain will be QObject. And remove the explicit QtCore.QObject.__init__ and IntervalProvidingTrackDatasource.__init__ calls in lsl.py, restoring super().__init__(...).
+
+Let me do track_datasource.py first:
+- class BaseTrackDatasource(QtCore.QObject):
+- Remove ABC from imports if nothing else uses it - grep shows only BaseTrackDatasource uses ABC. So we can change to "from abc import abstractmethod" and remove ABC, or just remove both if we're not using @abstractmethod. User said they don't need abstract method enforcement, so I'll remove the @abstractmethod decorators from the methods in BaseTrackDatasource and remove the ABC import entirely.
+- __init__: call super().__init__() (which will be QObject.__init__). And remove self.source_data_changed_signal = QtCore.Signal() - on QObject, signals are class attributes, so add at class level: source_data_changed_signal = QtCore.Signal()
+- Remove all @abstractmethod decorators from BaseTrackDatasource.
+
+Then IntervalProvidingTrackDatasource - its __init__ calls super().__init__() which will now call BaseTrackDatasource.__init__, which calls super().__init__() which is QObject.__init__. So we need to make sure IntervalProvidingTrackDatasource.__init__ doesn't pass unexpected args to BaseTrackDatasource.__init__. Currently it does super().__init__() with no args - so BaseTrackDatasource.__init__(self) is called. So we need BaseTrackDatasource.__init__ to accept no arguments (or optional parent). QObject.__init__(self, parent=None). So BaseTrackDatasource.__init__(self) and we can add parent=None and pass it: def __init__(self, parent=None): super().__init__(parent). That way subclasses can pass parent if they want.
+
+Let me check IntervalProvidingTrackDatasource.__init__ again - it calls super().__init__() with no args. So BaseTrackDatasource.__init__(self) - no parent. So we're good with def __init__(self, parent=None): super().__init__(parent).
+
+Now revert lsl.py: LiveEEGTrackDatasource and LiveMotionTrackDatasource back to just IntervalProvidingTrackDatasource, and in __init__ use super().__init__(...) again with the stub_intervals etc. Remove the QtCore.QObject.__init__ and the explicit IntervalProvidingTrackDatasource.__init__ calls.
+</details></think>
+
+---
+
+Making BaseTrackDatasource inherit from QObject only (dropping ABC and abstract enforcement), then reverting the LSL datasource classes to use the updated base.
+
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\track_datasource.py</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\track_datasource.py</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\track_datasource.py</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\track_datasource.py</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\track_datasource.py</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\track_datasource.py</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\track_datasource.py</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\track_datasource.py</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+
+I need to remove the unused `abstractmethod` import and fix IntervalProvidingTrackDatasource to pass parent if needed. Let me check - IntervalProvidingTrackDatasource.__init__ calls super().__init__() with no args. BaseTrackDatasource.__init__(self, parent=None) - so when IntervalProvidingTrackDatasource calls super().__init__(), it will call BaseTrackDatasource.__init__(self) which means parent is None. So we need IntervalProvidingTrackDatasource to accept **kwargs or parent and pass it. Let me check its signature again.
+
+IntervalProvidingTrackDatasource.__init__(self, intervals_df, detailed_df=None, custom_datasource_name=None, detail_renderer=None, max_points_per_second=1000.0, enable_downsampling=True). So it doesn't take parent. So when it calls super().__init__(), that goes to BaseTrackDatasource.__init__(self) - but we now have BaseTrackDatasource.__init__(self, parent=None), so super().__init__() from IntervalProvidingTrackDatasource would pass no arguments, and BaseTrackDatasource.__init__(self, parent=None) gets parent=None. Good.
+
+Now remove the unused `abstractmethod` import.
+</details></think>
+
+---
+
+Removing the unused `abstractmethod` import and updating `IntervalProvidingTrackDatasource` to call the base `__init__`.
+
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\track_datasource.py</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\track_datasource.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+
+IntervalProvidingTrackDatasource calls super().__init__() with no args. BaseTrackDatasource.__init__(self, parent=None) - so that's fine. No change needed there.
+
+Now revert the LSL live datasource classes to single inheritance and normal super().__init__(...).
+</details></think>
+
+---
+
+Reverting the LSL datasource classes to single inheritance and normal super().__init__.
+
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\specific\lsl.py</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\datasources\specific\lsl.py</summary>
+
+</details>
+
+</tool-use>
+
+---
+
+Cancelled
 
 ---
 
