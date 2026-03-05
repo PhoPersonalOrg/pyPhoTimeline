@@ -5,7 +5,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QApplication, QVBoxLayout, QWidget
 # import pyqtgraph as pg
-import pyphoplacecellanalysis.External.pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 from pyphoplacecellanalysis.External.pyqtgraph_extensions.mixins.SelectableItemMixin import SelectableItemMixin
 
 __all__ = ['CustomRectBoundedTextItem']

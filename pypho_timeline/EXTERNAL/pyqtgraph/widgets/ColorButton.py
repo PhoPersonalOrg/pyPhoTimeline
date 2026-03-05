@@ -1,7 +1,7 @@
 from .. import functions as functions
 # from ..Qt import QtCore, QtGui, QtWidgets
 
-# import pyphoplacecellanalysis.External.pyqtgraph as pg
+# import pypho_timeline.EXTERNAL.pyqtgraph as pg
 from qtpy import QtCore, QtGui, QtWidgets # for QColor
 from qtpy.QtGui import QColor, QBrush, QPen
 from pyphoplacecellanalysis.External.pyqt_color_picker.colorPickerDialog import ColorPickerDialog
