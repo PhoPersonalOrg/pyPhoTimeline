@@ -288,7 +288,71 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                     all_plot_items[-1][1].showAxis('bottom')
             
             return video_widget, root_graphics, plot_item, dock
+
+
+    def add_calendar_navigator(self):
+        """Adds the calendar navigator to the bottom of the timeline."""
+        from pypho_timeline.widgets import TimelineCalendarWidget
+
+        self.ui.calendar = TimelineCalendarWidget()
+        self.ui.layout.addWidget(self.ui.calendar)
+
+        # Initialize ranges
+        self.ui.calendar.set_total_range(self.total_data_start_time, self.total_data_end_time)
+        self.ui.calendar.set_active_window(self.active_window_start_time, self.active_window_end_time)
+
+        # Bidirectional sync
+        self.ui.calendar.sigWindowChanged.connect(lambda s, e: self.simulate_window_scroll(s))
+        self.window_scrolled.connect(self.ui.calendar.set_active_window)
+
+        return self.ui.calendar
+
+
+    def add_dataframe_table_track(self, track_name: str, dataframe: pd.DataFrame, time_column: Optional[str] = None, dockSize: Tuple[int, int] = (400, 200), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA):
+        """Add a dataframe table track to the timeline.
+        
+        Args:
+            track_name: Unique name for this track
+            dataframe: pandas DataFrame to display
+            time_column: Column name to sync with. If None, it will try to guess.
+            dockSize: Size of the dock widget. Default: (400, 200)
+            sync_mode: Synchronization mode. Default: TO_GLOBAL_DATA
             
+        Returns:
+            The created DataFrameTableWidget
+            
+        Example:
+            >>> timeline.add_dataframe_table_track("Text Log", timeline.datasources["TextLogger"].df)
+        """
+        from pypho_timeline.widgets import DataFrameTableWidget
+        
+        # Create the widget
+        table_widget = DataFrameTableWidget(df=dataframe, time_column=time_column, name=track_name, reference_datetime=self.reference_datetime)
+        
+        # Try to find the log widget to dock next to it
+        log_dock = self.ui.dynamic_docked_widget_container.find_display_dock('log_widget')
+        if log_dock:
+            dock_opts = [log_dock, 'right']
+        else:
+            dock_opts = ['bottom']
+            
+        # Add to docking system
+        self.ui.dynamic_docked_widget_container.add_display_dock(identifier=track_name, widget=table_widget, dockSize=dockSize, dockAddLocationOpts=dock_opts)
+        
+        # Connect synchronization
+        if sync_mode == SynchronizedPlotMode.TO_GLOBAL_DATA:
+            self.window_scrolled.connect(table_widget.on_window_changed)
+            # Initial sync
+            if hasattr(self, 'spikes_window'):
+                start_t = self.spikes_window.active_window_start_time
+                end_t = self.spikes_window.active_window_end_time
+                if isinstance(start_t, (datetime, pd.Timestamp)):
+                    start_t = start_t.timestamp()
+                if isinstance(end_t, (datetime, pd.Timestamp)):
+                    end_t = end_t.timestamp()
+                table_widget.on_window_changed(float(start_t), float(end_t))
+            
+        return table_widget
 
 
 # Re-export stream-to-datasources processing for backward compatibility

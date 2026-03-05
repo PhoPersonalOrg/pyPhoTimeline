@@ -4417,7 +4417,12 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "importlib-metadata", specifier = ">=6.0.0,<7" }]
+dev = [
+    { name = "importlib-metadata", specifier = ">=6.0.0,<7" },
+    { name = "pylsp-rope", specifier = ">=0.1.17" },
+    { name = "python-lsp-server", specifier = ">=1.14.0" },
+    { name = "rope", specifier = ">=1.14.0" },
+]
 viz = [
     { name = "hdf5plugin", specifier = ">=4.1.1,<5" },
     { name = "matplotlib", specifier = ">=3.6.3,<4" },

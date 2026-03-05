@@ -28,7 +28,6 @@ Let me search for these folders and any references to pyPhoPlaceCellAnalysis.
 
 ---
 
-
 Searching the pyqtgraph and pyqtgraph_extensions folders for import paths and any references to pyPhoPlaceCellAnalysis.
 
 
@@ -732,7 +731,6 @@ Let me get a complete list of all files in EXTERNAL/pyqtgraph and EXTERNAL/pyqtg
 
 ---
 
-
 Gathering all files that reference pyPhoPlaceCellAnalysis in EXTERNAL and checking how pyPhoTimeline exposes the embedded pyqtgraph.
 
 
@@ -948,7 +946,6 @@ Let me also check: does pyPhoTimeline expose EXTERNAL.pyqtgraph as the main pyqt
 
 ---
 
-
 Checking how the project exposes the EXTERNAL pyqtgraph and listing pyqtgraph_extensions structure:
 
 
@@ -1066,7 +1063,6 @@ I need to check how pyPhoTimeline actually exposes the EXTERNAL pyqtgraph. Looki
 </details></think>
 
 ---
-
 
 Checking how the rest of pyPhoTimeline imports pyqtgraph and whether EXTERNAL is used:
 
@@ -1229,7 +1225,6 @@ For embedding in pyPhoTimeline, the correct approach is:
 
 ---
 
-
 Checking package layout and whether EXTERNAL is a package; listing files that need import fixes:
 
 
@@ -1325,8 +1320,6 @@ Now for the import strategy when embedded in pyPhoTimeline:
 </details></think>
 
 ---
-
-
 
 
 
@@ -1478,7 +1471,6 @@ Summary of changes:
 
 ---
 
-
 Checking how pyqtgraph_extensions is used from the rest of pyPhoTimeline and whether EXTERNAL is a package:
 
 
@@ -1580,8 +1572,6 @@ I see that:
 
 
 
-
-
 ---
 
 <tool-use data-tool-type="generic" data-tool-name="glob_file_search">
@@ -1621,7 +1611,6 @@ A) EXTERNAL/pyqtgraph is meant to override the installed pyqtgraph (use the vend
 </details></think>
 
 ---
-
 
 Checking setuptools package discovery and listing all files that need edits:
 
@@ -1776,7 +1765,6 @@ Creating the plan.
 
 ---
 
-
 Checking one more edge case: `dockarea/Dock.py` and `GraphicsScene/exportDialog.py`:
 
 
@@ -1820,7 +1808,6 @@ I see that dockarea/Dock.py uses SynchronizedPlotMode from pyPhoPlaceCellAnalysi
 </details></think>
 
 ---
-
 
 Checking whether pyPhoTimeline defines SynchronizedPlotMode:
 
@@ -1914,7 +1901,6 @@ pyPhoTimeline has its own SynchronizedPlotMode in pypho_timeline.core.synchroniz
 </details></think>
 
 ---
-
 
 Creating the plan:
 
@@ -2010,7 +1996,6 @@ Let me check what dockarea imports.
 </details></think>
 
 ---
-
 
 Checking dockarea files and their imports to list required updates and upstream dependencies.
 
@@ -2132,7 +2117,6 @@ I'll add a TODO to the plan file. The user said "create a TODO" - they might wan
 
 ---
 
-
 Checking upstream modules dockarea imports for pyphoplacecellanalysis references:
 
 
@@ -2250,7 +2234,6 @@ I'll add a new section to the plan file with a focused TODO list.
 
 ---
 
-
 Adding a focused TODO section to the plan for dockarea and its upstream dependencies.
 
 
@@ -2276,7 +2259,6 @@ I'll also add these as proper todos in the frontmatter. The plan format uses YAM
 </details></think>
 
 ---
-
 
 Adding a focused "Dockarea only" TODO section and corresponding frontmatter todos.
 
@@ -2311,7 +2293,6 @@ Done. I added:
 </details></think>
 
 ---
-
 
 Summary of what was added:
 
@@ -2378,7 +2359,6 @@ I'll need to do a lot of edits. Let me start with the two todos and then proceed
 
 ---
 
-
 Implementing the plan: starting the dockarea todos, then working through the rest of the plan.
 
 
@@ -2420,8 +2400,6 @@ I have the context. Let me make the two edits for the dockarea todos.
 
 
 
-
-
 ---
 
 <tool-use data-tool-type="write" data-tool-name="edit_file_v2">
@@ -2453,8 +2431,6 @@ Dock.py had two occurrences - replace_all true should have replaced both. Qt/__i
 
 
 
-
-
 ---
 
 <tool-use data-tool-type="task" data-tool-name="todo_write">
@@ -2477,8 +2453,6 @@ Mark dockarea-upstream-qt as completed and add todos for the rest of the plan so
 
 
 
-
-
 ---
 
 <tool-use data-tool-type="task" data-tool-name="todo_write">
@@ -2498,7 +2472,6 @@ All plan todos are done. But the user said "Implement the plan as specified" and
 </details></think>
 
 ---
-
 
 Implementing the rest of the plan: fixing remaining EXTERNAL/pyqtgraph library files.
 
@@ -2600,8 +2573,6 @@ Good progress. Now: multiprocess/processes.py docstring, CSVExporter.py all 4 im
 
 
 
-
-
 ---
 
 <tool-use data-tool-type="write" data-tool-name="edit_file_v2">
@@ -2641,8 +2612,6 @@ JoystickButton docstring: replace with pyqtgraph.
 
 
 
-
-
 ---
 
 <tool-use data-tool-type="write" data-tool-name="edit_file_v2">
@@ -2661,7 +2630,6 @@ Section 1 done. Now section 2: all examples - bulk replace pyphoplacecellanalysi
 </details></think>
 
 ---
-
 
 Bulk-replacing in the examples tree:
 

@@ -308,10 +308,10 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
             
         elif len(dockAddLocationOpts) == 2:
             if isinstance(dockAddLocationOpts[0], Dock):
-               # starts with the Dock item, add current dock item to the end of the list
+               # add new dock (dDisplayItem) at position relative_string relative to existing relative_dock_item
                relative_string = dockAddLocationOpts[1]
                relative_dock_item = dockAddLocationOpts[0]
-               dockAddLocationOpts = [relative_dock_item, relative_string, dDisplayItem]
+               dockAddLocationOpts = [dDisplayItem, relative_string, relative_dock_item]
             elif isinstance(dockAddLocationOpts[1], Dock):
                 relative_string = dockAddLocationOpts[0]
                 relative_dock_item = dockAddLocationOpts[1]
