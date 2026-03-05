@@ -220,12 +220,14 @@ class TrackRenderingMixin(EpochRenderingMixin):
         
         Args:
             track_name: Name of the track
-            evt: Event from ViewBox.sigRangeChanged (contains (x_range, y_range))
+            evt: Event from SignalProxy(sigRangeChanged): tuple (viewbox, view_range, changed).
+                 view_range is (x_range, y_range).
         """
         if track_name not in self.track_renderers:
             return
-        
-        x_range, y_range = evt
+        # ViewBox.sigRangeChanged emits (self, viewRange, changed); SignalProxy forwards as single tuple
+        _, view_range, _ = evt
+        x_range, y_range = view_range
         if len(x_range) == 2:
             # Defer the update to avoid blocking the signal handler
             def deferred_update():
