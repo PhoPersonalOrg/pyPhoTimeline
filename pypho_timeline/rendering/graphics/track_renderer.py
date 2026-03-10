@@ -12,6 +12,7 @@ from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsI
 from pypho_timeline.rendering.async_detail_fetcher import AsyncDetailFetcher
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
+from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime
 
 # Import VideoTrackDatasource for type checking
 try:
@@ -48,7 +49,7 @@ class TrackRenderer(QtCore.QObject):
     detail_loaded = QtCore.Signal(str, pd.DataFrame, object)  # track_id, interval, detail_data
     
     def __init__(self, track_id: str, datasource: TrackDatasource, plot_item: pg.PlotItem,
-                 async_fetcher: AsyncDetailFetcher, parent=None):
+                 async_fetcher: AsyncDetailFetcher, parent=None, **kwargs):
         """Initialize the track renderer.
         
         Args:
@@ -57,6 +58,7 @@ class TrackRenderer(QtCore.QObject):
             plot_item: pyqtgraph PlotItem to render into
             async_fetcher: AsyncDetailFetcher for fetching detailed data
             parent: Parent QObject
+            **kwargs: Optional enable_time_crosshair=True for vertical time crosshair overlay
         """
         super().__init__(parent)
         self.track_id = track_id
@@ -78,6 +80,12 @@ class TrackRenderer(QtCore.QObject):
         # Channel visibility state (for channel-based renderers)
         self.channel_visibility: Dict[str, bool] = {}
         self._options_panel = None  # Reference to options panel if available
+        
+        # Time crosshair overlay (vertical line + time label)
+        self._time_crosshair_vline: Optional[pg.InfiniteLine] = None
+        self._time_crosshair_label: Optional[pg.TextItem] = None
+        self._time_crosshair_proxy = None
+        self._reference_datetime: Optional[datetime] = None
         
         # Initialize channel visibility from detail renderer if it has channel_names
         if hasattr(self.detail_renderer, 'channel_names') and self.detail_renderer.channel_names is not None:
@@ -105,6 +113,10 @@ class TrackRenderer(QtCore.QObject):
         
         # Initialize overview rendering
         self._update_overview()
+        
+        enable_time_crosshair = kwargs.pop('enable_time_crosshair', False)
+        if enable_time_crosshair:
+            self.enable_time_crosshair_overlay()
     
 
     def _update_overview(self):
@@ -314,6 +326,93 @@ class TrackRenderer(QtCore.QObject):
         except Exception as e:
             logger.error(f"TrackRenderer[{self.track_id}] _update_overview() - error: {e}", exc_info=True)
             raise
+    
+
+    def _resolve_reference_datetime_for_track(self) -> Optional[datetime]:
+        """Resolve reference_datetime from timeline parent for time-axis formatting."""
+        reference_datetime = None
+        try:
+            current = self.plot_item
+            while current is not None:
+                if hasattr(current, 'reference_datetime') and getattr(current, 'reference_datetime', None) is not None:
+                    reference_datetime = current.reference_datetime
+                    break
+                if hasattr(current, 'parentItem'):
+                    current = current.parentItem()
+                elif hasattr(current, 'parent'):
+                    current = current.parent()
+                else:
+                    break
+        except Exception as e:
+            logger.debug(f"TrackRenderer[{self.track_id}] Could not find reference_datetime: {e}")
+        return reference_datetime
+
+
+    def enable_time_crosshair_overlay(self) -> None:
+        """Add a vertical-only crosshair overlay with time label on the track."""
+        if self._time_crosshair_vline is not None:
+            return
+        self._reference_datetime = self._resolve_reference_datetime_for_track()
+        vb = self.plot_item.getViewBox()
+        if vb is None:
+            return
+        vLine = pg.InfiniteLine(angle=90, movable=False)
+        self.plot_item.addItem(vLine, ignoreBounds=True)
+        vLine.setVisible(False)
+        self._time_crosshair_vline = vLine
+        time_label = pg.TextItem(text='', anchor=(0.5, 0), color=(200, 200, 200))
+        self.plot_item.addItem(time_label)
+        time_label.setVisible(False)
+        self._time_crosshair_label = time_label
+        self._time_crosshair_proxy = pg.SignalProxy(self.plot_item.scene().sigMouseMoved, rateLimit=60, slot=lambda evt: self._on_time_crosshair_mouse_moved(evt[0]))
+        scene = self.plot_item.scene()
+        if hasattr(scene, 'sigMouseEntered') and hasattr(scene, 'sigMouseExited'):
+            scene.sigMouseEntered.connect(self._on_time_crosshair_enter_view)
+            scene.sigMouseExited.connect(self._on_time_crosshair_leave_view)
+        logger.debug(f"TrackRenderer[{self.track_id}] Time crosshair overlay enabled")
+    
+
+    def _on_time_crosshair_mouse_moved(self, pos) -> None:
+        """Update vertical line and time label to cursor x position."""
+        if self._time_crosshair_vline is None or self._time_crosshair_label is None or self.plot_item is None:
+            return
+        if not self.plot_item.sceneBoundingRect().contains(pos):
+            self._time_crosshair_vline.setVisible(False)
+            self._time_crosshair_label.setVisible(False)
+            return
+        vb = self.plot_item.getViewBox()
+        if vb is None:
+            return
+        mouse_point = vb.mapSceneToView(pos)
+        x_point = float(mouse_point.x())
+        self._time_crosshair_vline.setPos(x_point)
+        self._time_crosshair_vline.setVisible(True)
+        x_range, y_range = vb.viewRange()
+        y_top = float(y_range[1])
+        self._time_crosshair_label.setPos(x_point, y_top)
+        if self._reference_datetime is not None:
+            try:
+                dt = unix_timestamp_to_datetime(x_point)
+                time_str = dt.strftime('%H:%M:%S.%f')[:-3] if hasattr(dt, 'strftime') else str(dt)
+            except Exception:
+                time_str = f"t = {x_point:.2f} s"
+        else:
+            time_str = f"t = {x_point:.2f} s"
+        self._time_crosshair_label.setText(time_str)
+        self._time_crosshair_label.setVisible(True)
+    
+
+    def _on_time_crosshair_enter_view(self) -> None:
+        """Crosshair visibility is set on mouse move; enter is a no-op."""
+        pass
+    
+
+    def _on_time_crosshair_leave_view(self) -> None:
+        """Hide crosshair overlay when mouse leaves plot."""
+        if self._time_crosshair_vline is not None:
+            self._time_crosshair_vline.setVisible(False)
+        if self._time_crosshair_label is not None:
+            self._time_crosshair_label.setVisible(False)
     
 
     def update_viewport(self, viewport_start: float, viewport_end: float):
@@ -540,6 +639,32 @@ class TrackRenderer(QtCore.QObject):
             logger.debug(f"TrackRenderer[{self.track_id}] remove() - removing overview item")
             self.plot_item.removeItem(self.overview_rects_item)
             self.overview_rects_item = None
+        
+        # Remove time crosshair overlay
+        if self.plot_item is not None and self.plot_item.scene() is not None:
+            scene = self.plot_item.scene()
+            if hasattr(scene, 'sigMouseEntered'):
+                try:
+                    scene.sigMouseEntered.disconnect(self._on_time_crosshair_enter_view)
+                except (TypeError, RuntimeError):
+                    pass
+            if hasattr(scene, 'sigMouseExited'):
+                try:
+                    scene.sigMouseExited.disconnect(self._on_time_crosshair_leave_view)
+                except (TypeError, RuntimeError):
+                    pass
+        if self._time_crosshair_proxy is not None:
+            try:
+                self._time_crosshair_proxy.disconnect()
+            except Exception:
+                pass
+            self._time_crosshair_proxy = None
+        if self._time_crosshair_vline is not None and self.plot_item is not None:
+            self.plot_item.removeItem(self._time_crosshair_vline)
+            self._time_crosshair_vline = None
+        if self._time_crosshair_label is not None and self.plot_item is not None:
+            self.plot_item.removeItem(self._time_crosshair_label)
+            self._time_crosshair_label = None
         
         # Disconnect from async fetcher
         try:
