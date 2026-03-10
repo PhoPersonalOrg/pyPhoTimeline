@@ -26,6 +26,7 @@ class MainTimelineWindow(QMainWindow):
         self.show() # Show the GUI
 
     def initUI(self):
+        self.statusBar().hide()
         self._log_widget = LogWidget(parent=self.logPanel)
         self.logPanel.layout().addWidget(self._log_widget)
         self.logPanel.setVisible(False)

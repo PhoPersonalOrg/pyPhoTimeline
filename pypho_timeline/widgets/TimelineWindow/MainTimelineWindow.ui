@@ -94,6 +94,12 @@
        <number>1</number>
       </property>
       <layout class="QHBoxLayout" name="footerLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
        <item>
         <spacer name="horizontalSpacer">
          <property name="orientation">
