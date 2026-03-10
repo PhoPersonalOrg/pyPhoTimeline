@@ -1,11 +1,30 @@
 {
-    "python.testing.unittestArgs": [
-        "-v",
-        "-s",
-        "./tests",
-        "-p",
-        "*test*.py"
-    ],
-    "python.testing.pytestEnabled": false,
-    "python.testing.unittestEnabled": true
+  "python.testing.unittestArgs": [
+    "-v",
+    "-s",
+    "./tests",
+    "-p",
+    "*test*.py"
+  ],
+  "python.testing.pytestEnabled": false,
+  "python.testing.unittestEnabled": true,
+  "files.exclude": {
+    "**/pypho_timeline/rendering/__pycache__": true,
+    "**/pypho_timeline/__pycache__": true,
+    "**/pypho_timeline/rendering/detail_renderers/__pycache__": true,
+    "**/pypho_timeline/rendering/datasources/__pycache__": true,
+    "**/pypho_timeline/rendering/mixins/__pycache__": true,
+    "**/pypho_timeline/rendering/helpers/__pycache__": true,
+    "**/pypho_timeline/widgets/__pycache__": true,
+    "**/pypho_timeline/utils/__pycache__": true,
+    "**/pypho_timeline/rendering/graphics/__pycache__": true,
+    "**/pypho_timeline/rendering/datasources/specific/__pycache__": true,
+    "**/pypho_timeline/mixins/__pycache__": true,
+    "**/pypho_timeline/EXTERNAL/pyqtgraph/__pycache__": true,
+    "**/pypho_timeline/_embed/__pycache__": true,
+    "**/pypho_timeline/_embed/mixins/__pycache__": true,
+    "**/pypho_timeline/core/__pycache__": true,
+    "**/pypho_timeline/docking/__pycache__": true,
+    "**/pypho_timeline/EXTERNAL/pyqtgraph/dockarea/__pycache__": true
+  }
 }
