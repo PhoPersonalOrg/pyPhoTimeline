@@ -487,9 +487,10 @@ class EEGSpectrogramDetailRenderer(DetailRenderer):
         t_start = float(t_start)
         t_duration = float(t_duration)
         freq_min, freq_max = float(freqs_sel.min()), float(freqs_sel.max())
-        img_item = pg.ImageItem(img_sel)
+        img_item: pg.ImageItem = pg.ImageItem(img_sel)
         # Use y=0..1 so the image is visible with the timeline's default setYRange(0, 1) for all tracks
         img_item.setRect(QtCore.QRectF(t_start, 0.0, t_duration, 1.0))
+        img_item.setColorMap(pg.colormap.get('viridis'))
         plot_item.addItem(img_item)
         return [img_item]
 
