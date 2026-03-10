@@ -15,6 +15,7 @@ import pandas as pd
 import pyxdf
 from qtpy import QtWidgets
 from pypho_timeline.widgets import SimpleTimelineWidget
+from pypho_timeline.widgets.TimelineWindow.MainTimelineWindow import MainTimelineWindow
 from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
@@ -764,23 +765,17 @@ class TimelineBuilder:
         #TODO 2026-02-03 20:00: - [ ] Override `reference_datetime = None` so we use absolute datetimes        
         reference_datetime = None
 
-        # Create the timeline widget with reference datetime
-        timeline = SimpleTimelineWidget(
-            total_start_time=total_start_time,
-            total_end_time=total_end_time,
-            window_duration=window_duration,
-            window_start_time=window_start_time,
-            add_example_tracks=add_example_tracks,
-            reference_datetime=reference_datetime
-        )
-        
+        # Create main window (do not show until timeline is added and configured)
+        main_window = MainTimelineWindow(show_immediately=False)
+        # Create the timeline widget with reference datetime, parented to main window content area
+        timeline = SimpleTimelineWidget(total_start_time=total_start_time, total_end_time=total_end_time, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, reference_datetime=reference_datetime, parent=main_window.contentWidget)
+        main_window.contentWidget.layout().addWidget(timeline)
         # Add tracks to the timeline
         self._add_tracks_to_timeline(timeline, datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
-        
-        # Configure window
-        timeline.setWindowTitle(window_title or "pyPhoTimeline")
-        timeline.resize(window_size[0], window_size[1])
-        timeline.show()
+        # Configure and show main window
+        main_window.setWindowTitle(window_title or "pyPhoTimeline")
+        main_window.resize(window_size[0], window_size[1])
+        main_window.show()
         
         # Dock log widget at bottom if it exists
         if self.log_widget is not None:

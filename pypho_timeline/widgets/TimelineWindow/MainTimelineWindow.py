@@ -18,15 +18,18 @@ path = os.path.dirname(os.path.abspath(__file__))
 uiFile = os.path.join(path, 'MainTimelineWindow.ui')
 
 class MainTimelineWindow(QMainWindow):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, show_immediately: bool = True):
         super().__init__(parent=parent) # Call the inherited classes __init__ method
         self.ui = uic.loadUi(uiFile, self) # Load the .ui file
-
         self.initUI()
-        self.show() # Show the GUI
+        if show_immediately:
+            self.show() # Show the GUI
 
     def initUI(self):
         self.statusBar().hide()
+        content_layout = QVBoxLayout(self.contentWidget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        self.contentWidget.setLayout(content_layout)
         self._log_widget = LogWidget(parent=self.logPanel)
         self.logPanel.layout().addWidget(self._log_widget)
         self.logPanel.setVisible(False)
@@ -42,6 +45,16 @@ class MainTimelineWindow(QMainWindow):
     def _on_log_toggle(self, checked: bool):
         self.logPanel.setVisible(checked)
         self.logToggleButton.setText("Hide Log" if checked else "Show Log")
+
+
+    @property
+    def timeline_widget(self):
+        layout = self.contentWidget.layout()
+        if layout is not None and layout.count() > 0:
+            item = layout.itemAt(0)
+            if item is not None and item.widget() is not None:
+                return item.widget()
+        return None
 
 
 ## Start Qt event loop
