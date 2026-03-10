@@ -24,7 +24,7 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
         renderer = LogTextDataFramePlotDetailRenderer(channel_names=['log_message', 'level'], text_color='white', text_size=10)
     """
     
-    def __init__(self, channel_names: Optional[List[str]]=None, text_color='white', text_size=10, text_rotation=90, y_position=0.5, anchor=(0, 0.5), line_color=None, line_width=1, enable_lines=True):
+    def __init__(self, channel_names: Optional[List[str]]=None, text_color='white', text_size=10, text_rotation=90, y_position=0.0, anchor=(0.5, 0.5), line_color=None, line_width=1, enable_lines=True):
         """Initialize the text log plot renderer.
         
         Args:
@@ -33,7 +33,7 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
             text_size: Font size in points (default: 10)
             text_rotation: Rotation angle in degrees (default: 90 for vertical)
             y_position: Y-coordinate for text placement (default: 0.5)
-            anchor: Text anchor point as (x, y) tuple (default: (0, 0.5) for left-center)
+            anchor: Text anchor point as (x, y) tuple (default: (0, 0.5) for left-center)  A value of (0,0) sets the upper-left corner of the text box to be at the position specified by setPos(), while a value of (1,1) sets the lower-right corner.
             line_color: Color for vertical lines. If None, defaults to text_color (default: None)
             line_width: Width of vertical lines in pixels (default: 1)
             enable_lines: Whether to draw vertical lines at message times (default: True)
