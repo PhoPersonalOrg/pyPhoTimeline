@@ -1,4 +1,4 @@
-﻿"""
+"""
 Simple timeline widget for pyPhoTimeline library.
 
 This module provides a simple example timeline widget that demonstrates pyPhoTimeline usage,
@@ -214,7 +214,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
 
 
 
-    def add_video_track(self, track_name: str, video_datasource: VideoTrackDatasource, dockSize: Tuple[int, int] = (500, 80), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA, use_vispy: bool = False):
+    def add_video_track(self, track_name: str, video_datasource: VideoTrackDatasource, dockSize: Tuple[int, int] = (500, 80), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA, use_vispy: bool = False, enable_time_crosshair: bool = True):
             """Add a video track to the timeline.
             
             This is a convenience method that creates a plot widget and adds the video track.
@@ -225,6 +225,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                 dockSize: Size of the dock widget (width, height). Default: (500, 80)
                 sync_mode: Synchronization mode for the plot. Default: TO_GLOBAL_DATA
                 use_vispy: If True, use high-performance vispy renderer instead of pyqtgraph (default: False)
+                enable_time_crosshair: If True, show vertical time crosshair overlay on this track (default: True)
                 
             Returns:
                 Tuple of (widget, root_graphics, plot_item, dock) from add_new_embedded_pyqtgraph_render_plot_widget
@@ -268,7 +269,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             self.TrackRenderingMixin_on_buildUI()
             
             # Add track
-            self.add_track(video_datasource, name=track_name, plot_item=plot_item)
+            self.add_track(video_datasource, name=track_name, plot_item=plot_item, enable_time_crosshair=enable_time_crosshair)
             
             # Hide x-axis labels for all tracks except the bottom-most one
             if len(self.ui.matplotlib_view_widgets) > 1:
