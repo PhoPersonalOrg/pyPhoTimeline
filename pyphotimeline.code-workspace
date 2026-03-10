@@ -31,6 +31,55 @@
 			"sideBarSectionHeader.border": "#C8E6C9"
 		},
 		"git.ignoreLimitWarning": true,
-		"python.languageServer": "None"
+		"python.languageServer": "None",
+		"editor.codeActionWidget.includeNearbyQuickFixes": false,
+        "editor.dragAndDrop": false,
+        "actionButtons": {
+
+            "commands": [
+                {
+                    "name": "Restart Python Language Server",
+                    "color": "#00FF00",
+                    "useVsCodeApi": true,
+                    "command": "python.analysis.restartLanguageServer"
+                },
+                {
+                    "name": "PyQtGraph Examples",
+                    "tooltip": "Launch PyQtGraph examples browser",
+                    "color": "#d4e6ec",
+                    "useVsCodeApi": false,
+                    "command": "cd ${workspaceFolder} && uv run python \"LibrariesExamples\\PyQtPlot\\PyQtPlot_EXAMPLES.py\""
+                },
+                {
+                    "name": "Silx Examples",
+                    "tooltip": "Launch Silx examples browser",
+                    "color": "#d4e6ec",
+                    "useVsCodeApi": false,
+                    "command": "cd ${workspaceFolder} && uv run python \"LibrariesExamples/Silx/Silx_EXAMPLES.py\""
+                },
+                {
+                    "name": "Vispy Examples",
+                    "tooltip": "Launch Vispy examples browser",
+                    "color": "#d4e6ec",
+                    "useVsCodeApi": false,
+                    "command": "cd ${workspaceFolder} && uv run python \"LibrariesExamples/vispy/vispy_EXAMPLES.py\""
+                },
+                {
+                    "name": "\u00e2\u2021\u00a5 Convert to File Spaces",
+                    "color": "white",
+                    "tooltip": "Convert tabs to spaces in the current file",
+                    "useVsCodeApi": true,
+                    "command": "editor.action.indentationToSpaces"
+                }
+            ],
+            "defaultColor": "grey",
+            "reloadButton": "\u00e2\u2020\u00bb",
+            "loadNpmCommands": true
+        },
+        "[python]": {
+            "editor.suggest.showFiles": false
+        },
+        "editor.suggest.showFiles": false,
+        "workbench.editor.enablePreview": false
 	}
 }
