@@ -10,7 +10,8 @@ from PyQt5.QtGui import QPainter, QBrush, QPen, QColor, QFont, QIcon
 from PyQt5.QtCore import Qt, QPoint, QRect, QObject, QEvent, pyqtSignal, pyqtSlot, QSize, QDir
 
 ## IMPORTS:
-# 
+from pypho_timeline.widgets.log_widget import LogWidget, QtLogHandler
+from pypho_timeline.utils.logging_util import get_rendering_logger
 
 ## Define the .ui file path
 path = os.path.dirname(os.path.abspath(__file__))
@@ -25,7 +26,21 @@ class MainTimelineWindow(QMainWindow):
         self.show() # Show the GUI
 
     def initUI(self):
-        pass
+        self._log_widget = LogWidget(parent=self.logPanel)
+        self.logPanel.layout().addWidget(self._log_widget)
+        self.logPanel.setVisible(False)
+        self.logToggleButton.setChecked(False)
+        self.logToggleButton.setText("Show Log")
+        self.logToggleButton.toggled.connect(self._on_log_toggle)
+        _log_handler = QtLogHandler(parent=self)
+        _log_handler.log_record_received.connect(self._log_widget.append_log)
+        get_rendering_logger(__name__).addHandler(_log_handler)
+        self._qt_log_handler = _log_handler
+
+
+    def _on_log_toggle(self, checked: bool):
+        self.logPanel.setVisible(checked)
+        self.logToggleButton.setText("Hide Log" if checked else "Show Log")
 
 
 ## Start Qt event loop
