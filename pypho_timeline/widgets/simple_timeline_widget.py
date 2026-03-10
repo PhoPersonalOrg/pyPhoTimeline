@@ -77,7 +77,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                  add_example_tracks=False, 
                  reference_datetime: Optional[datetime] = None, 
                  parent=None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         
         # Store whether to add example tracks
         self._add_example_tracks = add_example_tracks
@@ -214,7 +214,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
 
 
 
-    def add_video_track(self, track_name: str, video_datasource: VideoTrackDatasource, dockSize: Tuple[int, int] = (500, 80), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA, use_vispy: bool = False, enable_time_crosshair: bool = True):
+    def add_video_track(self, track_name: str, video_datasource: VideoTrackDatasource, dockSize: Tuple[int, int] = (500, 80), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA, 
+            use_vispy: bool = False, enable_time_crosshair: bool = True, hide_other_track_x_axes: bool = False):
             """Add a video track to the timeline.
             
             This is a convenience method that creates a plot widget and adds the video track.
@@ -272,21 +273,22 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             self.add_track(video_datasource, name=track_name, plot_item=plot_item, enable_time_crosshair=enable_time_crosshair)
             
             # Hide x-axis labels for all tracks except the bottom-most one
-            if len(self.ui.matplotlib_view_widgets) > 1:
-                # Get all plot items
-                all_plot_items = []
-                for widget_name, widget in self.ui.matplotlib_view_widgets.items():
-                    plot_item_widget = widget.getRootPlotItem()
-                    if plot_item_widget is not None:
-                        all_plot_items.append((widget_name, plot_item_widget))
-                
-                # Hide x-axis for all except the last one (bottom-most)
-                if len(all_plot_items) > 1:
-                    # Hide x-axis for all tracks except the last one
-                    for widget_name, plot_item_widget in all_plot_items[:-1]:
-                        plot_item_widget.hideAxis('bottom')
-                    # Ensure the last track shows its x-axis
-                    all_plot_items[-1][1].showAxis('bottom')
+            if hide_other_track_x_axes:
+                if len(self.ui.matplotlib_view_widgets) > 1:
+                    # Get all plot items
+                    all_plot_items = []
+                    for widget_name, widget in self.ui.matplotlib_view_widgets.items():
+                        plot_item_widget = widget.getRootPlotItem()
+                        if plot_item_widget is not None:
+                            all_plot_items.append((widget_name, plot_item_widget))
+                    
+                    # Hide x-axis for all except the last one (bottom-most)
+                    if len(all_plot_items) > 1:
+                        # Hide x-axis for all tracks except the last one
+                        for widget_name, plot_item_widget in all_plot_items[:-1]:
+                            plot_item_widget.hideAxis('bottom')
+                        # Ensure the last track shows its x-axis
+                        all_plot_items[-1][1].showAxis('bottom')
             
             return video_widget, root_graphics, plot_item, dock
 

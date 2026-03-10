@@ -13,10 +13,13 @@ import re
 import numpy as np
 import pandas as pd
 import pyxdf
+from qtpy import QtWidgets
 from pypho_timeline.widgets import SimpleTimelineWidget
 from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
+from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockButtonConfig
+from pypho_timeline.docking.dock_display_configs import FigureWidgetDockDisplayConfig
 from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler, get_rendering_logger
 from pypho_timeline.widgets import LogWidget
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, get_earliest_reference_datetime, datetime_to_float, float_to_datetime
@@ -1179,14 +1182,29 @@ class TimelineBuilder:
         for datasource in datasources:
             # Get detail renderer
             a_detail_renderer = datasource.get_detail_renderer()
-            
-            # Create plot widget for this track
+            display_config = None
+            if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
+                display_config = FigureWidgetDockDisplayConfig(showCloseButton=True, showCollapseButton=False, showGroupButton=False)
+                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonIcon=QtWidgets.QStyle.StandardPixmap.SP_FileDialogListView, buttonToolTip='Show table')})
             track_widget, a_root_graphics, a_plot_item, a_dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
                 name=datasource.custom_datasource_name,
                 dockSize=(500, 80),
                 dockAddLocationOpts=['bottom'],
+                display_config=display_config,
                 sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA
             )
+            if display_config is not None and getattr(datasource, 'detailed_df', None) is not None:
+                def _on_show_table(dock, button_id, tl=timeline, ds=datasource):
+                    if button_id != 'show_table':
+                        return
+                    table_name = f"{ds.custom_datasource_name}_table"
+                    existing = tl.ui.dynamic_docked_widget_container.find_display_dock(table_name)
+                    if existing is not None:
+                        existing.show()
+                        existing.raise_()
+                        return
+                    tl.add_dataframe_table_track(track_name=table_name, dataframe=getattr(ds, 'detailed_df'), time_column='t', dockSize=(400, 200), sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA)
+                a_dock.sigCustomButtonClicked.connect(_on_show_table)
             
             assert a_detail_renderer is not None, f"Detail renderer is None for datasource: {datasource.custom_datasource_name}"
             track_widget.set_track_renderer(a_detail_renderer)
