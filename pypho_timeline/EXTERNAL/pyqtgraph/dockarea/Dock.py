@@ -74,12 +74,25 @@ def debug_print_dock(a_dock, widget_name="Unknown"):
     print("--- End Debug Info ---\n")
 
 
+@define(slots=False)
+class DockButtonConfig:
+    """Holds the configuration options for a Dock button."""
+    showButton: bool = field(default=True)
+    buttonIcon: QtWidgets.QStyle.StandardPixmap = field(default=QtWidgets.QStyle.StandardPixmap.SP_ToolBarHorizontalExtensionButton)
+    buttonToolTip: str = field(default='')
+    buttonCallback: Callable = field(default=None)
+    buttonShortcut: str = field(default='')
+    buttonShortcutContext: QtCore.Qt.ShortcutContext = field(default=QtCore.Qt.ShortcutContext.WidgetShortcut)
 
 
 
 @define(slots=False)
 class DockDisplayConfig(object):
-    """Holds the display and configuration options for a Dock, such as how to format its title bar (color and font), whether it's closable, etc."""
+    """Holds the display and configuration options for a Dock, such as how to format its title bar (color and font), whether it's closable, etc.
+    
+    from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockDisplayConfig
+
+    """
     showCloseButton: bool = field(default=True)
     showCollapseButton: bool = field(default=True)
     showGroupButton: bool = field(default=False)
@@ -87,7 +100,7 @@ class DockDisplayConfig(object):
     showTimelineSyncModeButton: bool = field(default=True)
     showOptionsButton: bool = field(default=False)  # Will be set dynamically when widget provides options
     # showCustomButtons: Dict[str, bool] = field(default=Factory(dict))
-    
+    custom_button_configs: Dict[str, DockButtonConfig] = field(default=Factory(dict), metadata={'desc': 'a dictionary of custom button configurations for the Dock.'})
     
     hideTitleBar: bool = field(default=False)
     fontSize: str = field(default='10px')
@@ -193,6 +206,8 @@ buttonIconTimelineSyncMode = {
 }
 
 
+buttonIcon_ShowTable = {'main': QtWidgets.QStyle.StandardPixmap.SP_FileDialogListView}
+
 
 class Dock(QtWidgets.QWidget, DockDrop):
     """ 
@@ -208,7 +223,7 @@ class Dock(QtWidgets.QWidget, DockDrop):
     sigGroupClicked = QtCore.Signal(object)
     sigToggleOrientationClicked = QtCore.Signal(object, bool)
     sigToggleTimelineSyncModeClicked = QtCore.Signal(object, str)
-    
+    sigCustomButtonClicked = QtCore.Signal(object, str)  # (dock, button_id)
 
     @property
     def config(self) -> Optional[DockDisplayConfig]:
@@ -254,10 +269,16 @@ class Dock(QtWidgets.QWidget, DockDrop):
             self.label.sigToggleTimelineSyncModeClicked.connect(self.on_sync_mode_btn_toggled)
         if display_config.showOptionsButton:
             self.label.sigOptionsClicked.connect(self.on_options_btn_clicked)
-            
+        self.label.sigCustomButtonClicked.connect(self._on_custom_button_clicked)
 
         # Add this line to connect the new rename signal
         self.connections['on_renamed'] = self.label.sigRenamed.connect(self.on_renamed)
+        
+        self._custom_button_shortcuts = {}
+        for key, cfg in getattr(display_config, 'custom_button_configs', {}).items():
+            if getattr(cfg, 'buttonShortcut', ''):
+                shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(cfg.buttonShortcut), self, cfg.buttonShortcutContext, activated=lambda k=key: self._on_custom_button_clicked(k))
+                self._custom_button_shortcuts[key] = shortcut
         
         self.contentsHidden = False
         self.labelHidden = False
@@ -631,6 +652,20 @@ class Dock(QtWidgets.QWidget, DockDrop):
         self.sigToggleTimelineSyncModeClicked.emit(self, mode_name)
 
 
+    def _on_custom_button_clicked(self, button_id: str):
+        """Handle custom title-bar button click: emit signal and optionally call config callback."""
+        self.sigCustomButtonClicked.emit(self, button_id)
+        cfg = getattr(self.config, 'custom_button_configs', {}).get(button_id)
+        if cfg is not None and getattr(cfg, 'buttonCallback', None) is not None and callable(cfg.buttonCallback):
+            try:
+                import inspect
+                n = len(inspect.signature(cfg.buttonCallback).parameters)
+                if n >= 2:
+                    cfg.buttonCallback(self, button_id)
+                else:
+                    cfg.buttonCallback(self)
+            except (TypeError, ValueError):
+                cfg.buttonCallback(self, button_id)
 
 
     # ==================================================================================================================================================================================================================================================================================== #
@@ -997,7 +1032,7 @@ class DockLabel(VerticalLabel):
     sigToggleOrientationClicked = QtCore.Signal(bool)
     sigToggleTimelineSyncModeClicked = QtCore.Signal(str)
     sigOptionsClicked = QtCore.Signal()
-    
+    sigCustomButtonClicked = QtCore.Signal(str)  # Emits button_id
 
     sigContextMenuRequested = QtCore.Signal(object, object)  # Emits dock label and QPoint
     sigRenamed = QtCore.Signal(object, str)  # Emits dock and new name
@@ -1083,6 +1118,8 @@ class DockLabel(VerticalLabel):
         self.optionsButton.setToolTip("Open options panel")
         self.optionsButton.setVisible(False)  # Hidden by default, shown when widget provides options
         
+        self.custom_buttons = {}
+        
         # Set initial visibility based on config
         self.updateButtonsFromConfig()
         
@@ -1119,6 +1156,34 @@ class DockLabel(VerticalLabel):
         self.sigToggleTimelineSyncModeClicked.emit(mode_name)
 
 
+    def _on_custom_button_clicked(self, button_id: str):
+        """Emit when a custom title-bar button is clicked."""
+        self.sigCustomButtonClicked.emit(button_id)
+
+
+    def _buildCustomButtons(self):
+        """Sync self.custom_buttons with config.custom_button_configs: remove stale buttons, create new ones, update visibility/icon/tooltip."""
+        custom_button_configs = getattr(self.config, 'custom_button_configs', {})
+        MIN_BUTTON_SIZE = 12
+        for key in list(self.custom_buttons.keys()):
+            if key not in custom_button_configs:
+                self.custom_buttons[key].deleteLater()
+                del self.custom_buttons[key]
+        for key, cfg in custom_button_configs.items():
+            if key not in self.custom_buttons:
+                btn = QtWidgets.QToolButton(self)
+                btn.setIcon(QtWidgets.QApplication.style().standardIcon(cfg.buttonIcon))
+                btn.setToolTip(cfg.buttonToolTip or '')
+                btn.setMinimumSize(MIN_BUTTON_SIZE, MIN_BUTTON_SIZE)
+                btn.setFixedSize(MIN_BUTTON_SIZE, MIN_BUTTON_SIZE)
+                btn.clicked.connect(lambda checked=False, k=key: self._on_custom_button_clicked(k))
+                self.custom_buttons[key] = btn
+            btn = self.custom_buttons[key]
+            btn.setVisible(cfg.showButton)
+            btn.setIcon(QtWidgets.QApplication.style().standardIcon(cfg.buttonIcon))
+            btn.setToolTip(cfg.buttonToolTip or '')
+
+
     def updateButtonsFromConfig(self):
         """Updates button visibility and state based on current config."""
         # Set visibility based on config
@@ -1129,13 +1194,9 @@ class DockLabel(VerticalLabel):
         self.timelineSyncModeButton.setVisible(self.config.showTimelineSyncModeButton)
         self.optionsButton.setVisible(self.config.showOptionsButton)
         
-        # Update count of buttons
-        self.num_total_title_bar_buttons = (int(self.config.showCloseButton) + 
-                                        int(self.config.showCollapseButton) + 
-                                        int(self.config.showGroupButton) +
-                                        int(self.config.showOrientationButton) +
-                                        int(self.config.showTimelineSyncModeButton) +
-                                        int(self.config.showOptionsButton))
+        self._buildCustomButtons()
+        num_visible_custom = sum(1 for c in getattr(self.config, 'custom_button_configs', {}).values() if c.showButton)
+        self.num_total_title_bar_buttons = (int(self.config.showCloseButton) + int(self.config.showCollapseButton) + int(self.config.showGroupButton) + int(self.config.showOrientationButton) + int(self.config.showTimelineSyncModeButton) + int(self.config.showOptionsButton) + num_visible_custom)
         
         # Force a resize to update button positions
         self.updateGeometry()
@@ -1208,7 +1269,8 @@ class DockLabel(VerticalLabel):
         current_y = 0  # Track vertical positioning for buttons in vertical layout
 
         # Calculate button sizes and positions
-        if self.closeButton or self.collapseButton or self.orientationButton or self.groupButton or self.timelineSyncModeButton or self.optionsButton:
+        has_custom = bool(getattr(self, 'custom_buttons', {}))
+        if self.closeButton or self.collapseButton or self.orientationButton or self.groupButton or self.timelineSyncModeButton or self.optionsButton or has_custom:
             if self.orientation == 'vertical':
                 ## sideways mode with bar on left
                 button_size = ev.size().width()
@@ -1307,6 +1369,17 @@ class DockLabel(VerticalLabel):
                 self.optionsButton.move(button_x, 0)
                 current_x += button_size
         ## END if self.optionsButton...   
+
+        for btn in getattr(self, 'custom_buttons', {}).values():
+            if not btn.isVisible():
+                continue
+            btn.setFixedSize(QtCore.QSize(button_size, button_size))
+            if self.orientation == 'vertical':
+                btn.move(0, current_y)
+                current_y += button_size
+            else:
+                btn.move(current_x, 0)
+                current_x += button_size
 
         
         ## See how much space is left for the text label after subtracting away the buttons:
