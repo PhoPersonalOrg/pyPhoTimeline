@@ -150,7 +150,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
             self.track_datasources[name] = track_datasource
             
             # Create track renderer
-            track_renderer = TrackRenderer(track_id=name, datasource=track_datasource, plot_item=plot_item, async_fetcher=self.async_detail_fetcher)
+            track_renderer = TrackRenderer(track_id=name, datasource=track_datasource, plot_item=plot_item, async_fetcher=self.async_detail_fetcher, **kwargs)
             
             # Connect signals
             track_renderer.detail_loaded.connect(lambda tid, iv, dd: self.sigTrackDetailLoaded.emit(tid, iv, dd))
