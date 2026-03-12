@@ -7,17 +7,17 @@ __version__ = '0.12.4.dev1'
 
 ### import all the goodies and add some helper functions for easy CLI use
 
-# import os
-# import sys
+import os
+import sys
 
-# import numpy  # # pyqtgraph requires numpy
+import numpy  # # pyqtgraph requires numpy
 
 # ## 'Qt' is a local module; it is intended mainly to cover up the differences
 # ## between PyQt and PySide.
-# from .colors import palette
-# from .Qt import QtCore, QtGui, QtWidgets
-# from .Qt import exec_ as exec
-# from .Qt import mkQApp
+from .colors import palette
+from .Qt import QtCore, QtGui, QtWidgets
+from .Qt import exec_ as exec
+from .Qt import mkQApp
 
 ## Import almost everything to make it available from a single namespace
 ## don't import the more complex systems--canvas, parametertree, flowchart, dockarea
