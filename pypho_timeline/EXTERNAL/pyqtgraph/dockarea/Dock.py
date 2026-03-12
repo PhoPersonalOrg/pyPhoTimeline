@@ -277,7 +277,8 @@ class Dock(QtWidgets.QWidget, DockDrop):
         self._custom_button_shortcuts = {}
         for key, cfg in getattr(display_config, 'custom_button_configs', {}).items():
             if getattr(cfg, 'buttonShortcut', ''):
-                shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(cfg.buttonShortcut), self, cfg.buttonShortcutContext, activated=lambda k=key: self._on_custom_button_clicked(k))
+                shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(cfg.buttonShortcut), self, cfg.buttonShortcutContext)
+                shortcut.activated.connect(lambda k=key: self._on_custom_button_clicked(k))
                 self._custom_button_shortcuts[key] = shortcut
         
         self.contentsHidden = False
