@@ -259,6 +259,13 @@ class Dock(QtWidgets.QWidget, DockDrop):
         # Add this line to connect the new rename signal
         self.connections['on_renamed'] = self.label.sigRenamed.connect(self.on_renamed)
         
+        self._custom_button_shortcuts = {}
+        for key, cfg in getattr(display_config, 'custom_button_configs', {}).items():
+            if getattr(cfg, 'buttonShortcut', ''):
+                shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(cfg.buttonShortcut), self, cfg.buttonShortcutContext)
+                shortcut.activated.connect(lambda k=key: self._on_custom_button_clicked(k))
+                self._custom_button_shortcuts[key] = shortcut
+        
         self.contentsHidden = False
         self.labelHidden = False
         self.moveLabel = True  ## If false, the dock is no longer allowed to move the label.
