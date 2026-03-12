@@ -9,3 +9,5 @@ EXTERNAL/LOGGING
 .cursorindexingignore*
 templating/uv_deps_switcher/backups/*pyproject.toml.bak
 .cursor/rules/derived-cursor-rules.mdc
+pypho_timeline/widgets/TimelineWindow/rootwidget.ui
+pypho_timeline/widgets/TimelineWindow/MainTimelineWindow - Copy.ui
