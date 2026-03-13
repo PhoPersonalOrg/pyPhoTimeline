@@ -2,6 +2,7 @@
 # Generated from c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\widgets\TimelineWindow\MainTimelineWindow.ui automatically by PhoPyQtClassGenerator VSCode Extension
 import sys
 import os
+from typing import Callable, Optional, Any
 
 from PyQt5 import QtGui, QtWidgets, uic
 from PyQt5.QtWidgets import QMessageBox, QToolTip, QStackedWidget, QHBoxLayout, QVBoxLayout, QSplitter, QFormLayout, QLabel, QFrame, QPushButton, QTableWidget, QTableWidgetItem, QMainWindow
@@ -18,8 +19,10 @@ path = os.path.dirname(os.path.abspath(__file__))
 uiFile = os.path.join(path, 'MainTimelineWindow.ui')
 
 class MainTimelineWindow(QMainWindow):
-    def __init__(self, parent=None, show_immediately: bool = True):
+    def __init__(self, parent=None, show_immediately: bool = True, refresh_callback: Optional[Callable[[], None]] = None, builder: Optional[Any] = None):
         super().__init__(parent=parent) # Call the inherited classes __init__ method
+        self._refresh_callback = refresh_callback
+        self._timeline_builder = builder
         self.ui = uic.loadUi(uiFile, self) # Load the .ui file
         self.initUI()
         if show_immediately:
@@ -36,6 +39,9 @@ class MainTimelineWindow(QMainWindow):
         self.logToggleButton.setChecked(False)
         self.logToggleButton.setText("Show Log")
         self.logToggleButton.toggled.connect(self._on_log_toggle)
+        if hasattr(self, "refreshFilesButton"):
+            self.refreshFilesButton.clicked.connect(self._on_refresh_files_clicked)
+            self.refreshFilesButton.setEnabled((self._refresh_callback is not None) or (self._timeline_builder is not None))
         _log_handler = QtLogHandler(parent=self)
         _log_handler.log_record_received.connect(self._log_widget.append_log)
         get_rendering_logger(__name__).addHandler(_log_handler)
@@ -45,6 +51,14 @@ class MainTimelineWindow(QMainWindow):
     def _on_log_toggle(self, checked: bool):
         self.logPanel.setVisible(checked)
         self.logToggleButton.setText("Hide Log" if checked else "Show Log")
+
+
+    def _on_refresh_files_clicked(self):
+        if self._refresh_callback is not None:
+            self._refresh_callback()
+            return
+        if self._timeline_builder is not None and hasattr(self._timeline_builder, "refresh_from_directories"):
+            self._timeline_builder.refresh_from_directories()
 
 
     @property

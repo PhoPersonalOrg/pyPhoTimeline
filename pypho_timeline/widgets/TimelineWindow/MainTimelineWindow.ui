@@ -123,6 +123,13 @@
          </property>
         </widget>
        </item>
+       <item>
+        <widget class="QPushButton" name="refreshFilesButton">
+         <property name="text">
+          <string>Refresh files</string>
+         </property>
+        </widget>
+       </item>
       </layout>
      </widget>
     </item>

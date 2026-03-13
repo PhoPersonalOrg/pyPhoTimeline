@@ -115,6 +115,7 @@ def main() -> int:
     # headset_motion_recordings_file_path: Path = db_root_path.joinpath('UnparsedData/EmotivEpocX_EEGRecordings/MOTION_RECORDINGS/fif')
     # WhisperVideoTranscripts_LSL_Converted = db_root_path.joinpath('UnparsedData/WhisperVideoTranscripts_LSL_Converted')
     pho_log_to_LSL_recordings_path: Path = db_root_path.joinpath('UnparsedData/PhoLogToLabStreamingLayer_logs')
+    video_recordings_path: Path = db_root_path.joinpath('UnparsedData/LabRecorderStudies/sub-P001/Videos')
     ## These contain little LSL .fif files with names like: '20250808_062814_log.fif',
 
     # eeg_analyzed_parent_export_path = db_root_path.joinpath('AnalysisData/MNE_preprocessed')
@@ -175,6 +176,8 @@ def main() -> int:
     app = pg.mkQApp("pyPhoTimelineOffline")
 
     builder: TimelineBuilder = TimelineBuilder()
+    active_video_discovery_dirs: List[Path] = [video_recordings_path] if video_recordings_path.exists() and video_recordings_path.is_dir() else []
+    builder.set_refresh_config(xdf_discovery_dirs=[lab_recorder_output_path, pho_log_to_LSL_recordings_path], n_most_recent=n_most_recent_sessions_to_preprocess, stream_allowlist=STREAM_ALLOWLIST, stream_blocklist=STREAM_BLOCKLIST, video_discovery_dirs=active_video_discovery_dirs)
     timeline = builder.build_from_xdf_files(xdf_file_paths=final_xdf_paths, stream_allowlist=STREAM_ALLOWLIST, stream_blocklist=STREAM_BLOCKLIST)
 
     if timeline is None:

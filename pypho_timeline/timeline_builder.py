@@ -6,7 +6,7 @@ from different data sources such as XDF files, pre-loaded streams, or existing d
 """
 
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Tuple, Optional, Union, Any, Set
 from datetime import datetime, timezone, timedelta
 import logging
 import re
@@ -25,6 +25,11 @@ from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_hand
 from pypho_timeline.widgets import LogWidget
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, get_earliest_reference_datetime, datetime_to_float, float_to_datetime
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
+
+try:
+    from phopymnehelper.historical_data import HistoricalData
+except ImportError:
+    HistoricalData = None
 
 
 logger = None # get_rendering_logger(__name__)
@@ -111,6 +116,12 @@ class TimelineBuilder:
         self.log_to_console = log_to_console
         self.log_to_file = log_to_file
         self.log_widget = None
+        self._current_main_window = None
+        self._current_timeline = None
+        self._refresh_config: Optional[Dict[str, Any]] = None
+        self._loaded_xdf_paths: Set[Path] = set()
+        self._loaded_video_paths: Set[Path] = set()
+        self._refresh_generation: int = 0
         
 
         # Create log widget
@@ -132,6 +143,112 @@ class TimelineBuilder:
 
         if self.log_to_console or self.log_to_file:
             logger.info(f"Logging configured for TimelineBuilder - console: {self.log_to_console}, file: {self.log_to_file} ({self.log_file})")
+
+
+    def set_refresh_config(self, xdf_discovery_dirs: Optional[List[Path]] = None, n_most_recent: Optional[int] = None, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, video_discovery_dirs: Optional[List[Path]] = None, video_extensions: Optional[List[str]] = None):
+        xdf_discovery_dirs = [Path(p) for p in (xdf_discovery_dirs or [])]
+        video_discovery_dirs = [Path(p) for p in (video_discovery_dirs or [])]
+        self._refresh_config = {
+            "xdf_discovery_dirs": xdf_discovery_dirs,
+            "n_most_recent": n_most_recent,
+            "stream_allowlist": stream_allowlist,
+            "stream_blocklist": stream_blocklist,
+            "video_discovery_dirs": video_discovery_dirs,
+            "video_extensions": tuple(video_extensions or ['.mp4', '.avi', '.mov', '.mkv', '.wmv']),
+        }
+
+
+    def _append_refresh_log(self, message: str, level: int = logging.INFO, level_name: str = "INFO"):
+        logger.log(level, message)
+        if self._current_main_window is not None and hasattr(self._current_main_window, "_log_widget"):
+            self._current_main_window._log_widget.append_log(message, level, level_name)
+
+
+    def _build_discovered_xdf_paths(self, xdf_discovery_dirs: List[Path], n_most_recent: Optional[int]) -> List[Path]:
+        if HistoricalData is None:
+            raise ImportError("HistoricalData is not available. Refresh from directories requires phopymnehelper.")
+        if len(xdf_discovery_dirs) == 0:
+            return []
+        discovered_xdf_files = HistoricalData.get_recording_files(recordings_dir=xdf_discovery_dirs, recordings_extensions=['.xdf'])
+        if n_most_recent is not None:
+            discovered_xdf_files = discovered_xdf_files[:n_most_recent]
+        if len(discovered_xdf_files) == 0:
+            return []
+        discovered_xdf_df = HistoricalData.build_file_comparison_df(recording_files=discovered_xdf_files)
+        return [Path(v) for v in discovered_xdf_df['src_file'].to_list()]
+
+
+    def _collect_new_datasources_for_xdf_path(self, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> List[TrackDatasource]:
+        streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+        if (stream_allowlist is not None) or (stream_blocklist is not None):
+            streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+        if len(streams) == 0:
+            return []
+        _, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=[streams], xdf_file_paths=[xdf_file_path], file_headers=[file_header])
+        output_datasources: List[TrackDatasource] = []
+        for datasource in all_streams_datasources.values():
+            if datasource is None:
+                continue
+            datasource.custom_datasource_name = f"{datasource.custom_datasource_name} [{xdf_file_path.stem}]"
+            output_datasources.append(datasource)
+        return output_datasources
+
+
+    def refresh_from_directories(self):
+        if self._current_timeline is None or self._current_main_window is None:
+            self._append_refresh_log("Refresh skipped: timeline window is not ready yet.", level=logging.WARNING, level_name="WARNING")
+            return
+        if self._refresh_config is None:
+            self._append_refresh_log("Refresh skipped: no discovery directories were configured at startup.", level=logging.WARNING, level_name="WARNING")
+            return
+        xdf_discovery_dirs: List[Path] = self._refresh_config.get("xdf_discovery_dirs", [])
+        n_most_recent: Optional[int] = self._refresh_config.get("n_most_recent", None)
+        stream_allowlist: Optional[List[str]] = self._refresh_config.get("stream_allowlist", None)
+        stream_blocklist: Optional[List[str]] = self._refresh_config.get("stream_blocklist", None)
+        video_discovery_dirs: List[Path] = self._refresh_config.get("video_discovery_dirs", [])
+        video_extensions: Tuple[str, ...] = self._refresh_config.get("video_extensions", ('.mp4', '.avi', '.mov', '.mkv', '.wmv'))
+        self._append_refresh_log("Refreshing XDF/Video directories...", level=logging.INFO, level_name="INFO")
+        try:
+            discovered_xdf_paths: List[Path] = self._build_discovered_xdf_paths(xdf_discovery_dirs=xdf_discovery_dirs, n_most_recent=n_most_recent)
+            new_xdf_paths: List[Path] = [p for p in discovered_xdf_paths if p not in self._loaded_xdf_paths]
+            for xdf_path in new_xdf_paths:
+                self._append_refresh_log(f"Discovered new XDF: {xdf_path}", level=logging.INFO, level_name="INFO")
+            all_new_datasources: List[TrackDatasource] = []
+            for xdf_path in new_xdf_paths:
+                try:
+                    all_new_datasources.extend(self._collect_new_datasources_for_xdf_path(xdf_file_path=xdf_path, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist))
+                    self._loaded_xdf_paths.add(xdf_path)
+                except Exception as e:
+                    self._append_refresh_log(f"Failed to load new XDF '{xdf_path}': {e}", level=logging.ERROR, level_name="ERROR")
+            new_video_paths: List[Path] = []
+            for video_dir in video_discovery_dirs:
+                if not video_dir.exists() or not video_dir.is_dir():
+                    continue
+                for video_path in sorted(video_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+                    if video_path.suffix.lower() in video_extensions and video_path not in self._loaded_video_paths:
+                        new_video_paths.append(video_path)
+            if n_most_recent is not None and len(new_video_paths) > n_most_recent:
+                new_video_paths = new_video_paths[:n_most_recent]
+            if len(new_video_paths) > 0:
+                for video_path in new_video_paths:
+                    self._append_refresh_log(f"Discovered new Video: {video_path}", level=logging.INFO, level_name="INFO")
+                if VideoTrackDatasource is None:
+                    self._append_refresh_log("Video datasource unavailable; skipping new video tracks.", level=logging.WARNING, level_name="WARNING")
+                else:
+                    self._refresh_generation += 1
+                    try:
+                        video_datasource = VideoTrackDatasource(video_paths=new_video_paths, custom_datasource_name=f"VIDEO_REFRESH_{self._refresh_generation}")
+                        all_new_datasources.append(video_datasource)
+                        self._loaded_video_paths.update(new_video_paths)
+                    except Exception as e:
+                        self._append_refresh_log(f"Failed to load new videos: {e}", level=logging.ERROR, level_name="ERROR")
+            if len(all_new_datasources) == 0:
+                self._append_refresh_log("Refresh complete: no new XDF or Video entries found.", level=logging.INFO, level_name="INFO")
+                return
+            self.update_timeline(timeline=self._current_timeline, datasources=all_new_datasources, update_time_range=True)
+            self._append_refresh_log(f"Refresh complete: added {len(all_new_datasources)} new track datasource(s).", level=logging.INFO, level_name="INFO")
+        except Exception as e:
+            self._append_refresh_log(f"Refresh failed: {e}", level=logging.ERROR, level_name="ERROR")
 
 
     
@@ -197,6 +314,7 @@ class TimelineBuilder:
         """
         if not xdf_file_paths:
             raise ValueError("xdf_file_paths list cannot be empty")
+        self._loaded_xdf_paths = set([Path(p) for p in xdf_file_paths])
         
         
         logger.info("=" * 60)
@@ -324,6 +442,8 @@ class TimelineBuilder:
                 frames_per_second=frames_per_second,
                 thumbnail_size=thumbnail_size
             )
+        if video_paths is not None:
+            self._loaded_video_paths.update([Path(p) for p in video_paths])
         
         # Check if datasource has any intervals
         if video_datasource.intervals_df.empty:
@@ -766,12 +886,14 @@ class TimelineBuilder:
         reference_datetime = None
 
         # Create main window (do not show until timeline is added and configured)
-        main_window = MainTimelineWindow(show_immediately=False)
+        main_window = MainTimelineWindow(show_immediately=False, builder=self)
         # Create the timeline widget with reference datetime, parented to main window content area
         timeline = SimpleTimelineWidget(total_start_time=total_start_time, total_end_time=total_end_time, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, reference_datetime=reference_datetime, parent=main_window.contentWidget)
         main_window.contentWidget.layout().addWidget(timeline)
         # Add tracks to the timeline
         self._add_tracks_to_timeline(timeline, datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
+        self._current_main_window = main_window
+        self._current_timeline = timeline
         # Configure and show main window
         main_window.setWindowTitle(window_title or "pyPhoTimeline")
         main_window.resize(window_size[0], window_size[1])
