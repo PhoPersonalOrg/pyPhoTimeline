@@ -28,6 +28,17 @@ def to_display_timezone(dt: Union[datetime, pd.Timestamp]) -> datetime:
     return dt_py.astimezone(DISPLAY_TIMEZONE)
 
 
+def _to_utc_datetime(dt: Union[datetime, pd.Timestamp]) -> datetime:
+    """Normalize datetime-like value to timezone-aware UTC.
+
+    Naive inputs are interpreted as local display timezone.
+    """
+    dt_py = dt.to_pydatetime() if isinstance(dt, pd.Timestamp) else dt
+    if dt_py.tzinfo is None:
+        dt_py = dt_py.replace(tzinfo=DISPLAY_TIMEZONE)
+    return dt_py.astimezone(timezone.utc)
+
+
 def create_am_pm_date_axis(orientation='bottom'):
     """Create a DateAxisItem with 12-hour AM/PM time format.
     
@@ -69,18 +80,19 @@ def create_am_pm_date_axis(orientation='bottom'):
         return None
 
 
+
 # def determine_timelike_value_format(value):
 #     """ Unfinished 
 #     #TODO 2026-02-04 02:47: - [ ] broken out of `get_reference_datetime_from_xdf_header` for reuse.
 #     """
-
-
+#
+#
 #     # Check the format of start_t (is it datetime, Unix timestamp, or relative seconds)?
 #     start_t_type = type(start_t)
 #     is_datetime = False
 #     is_unix_timestamp = False
 #     is_relative_seconds = False
-
+#
 #     if isinstance(start_t, (pd.Timestamp, datetime)):
 #         is_datetime = True
 #     elif isinstance(start_t, (float, int)):
@@ -93,9 +105,9 @@ def create_am_pm_date_axis(orientation='bottom'):
 #     else:
 #         # Unknown format; handle accordingly or log warning if desired
 #         pass
-    
+#    
 #     #TODO 2026-02-04 03:24: - [ ] Seperate implementation, more complete but with no heuristic and forcibly assumes timestamp format
-
+#
 #     # Try to parse as datetime
 #     if isinstance(value, (int, float)):
 #         # Unix timestamp (seconds since epoch)
@@ -131,19 +143,18 @@ def create_am_pm_date_axis(orientation='bottom'):
 #                     continue
 #             logger.warning(f"Could not parse datetime string: {value}")
 #             return None
-
+#
 #     elif isinstance(value, datetime):
 #         # Make timezone-aware if naive
 #         if value.tzinfo is None:
 #             value = value.replace(tzinfo=timezone.utc)
 #         return value
-
+#
 #     else:
 #         raise NotImplementedError(f'unexpected type for value: {type(value)}, value: {value}')
-
-        
-
-
+#
+#        
+#
 def get_reference_datetime_from_xdf_header(file_header: dict) -> Optional[datetime]:
     """Extract reference datetime from XDF file header.
     
@@ -241,6 +252,7 @@ def datetime_to_unix_timestamp(dt: Union[datetime, np.ndarray, List[datetime]]) 
     
     Reciprocal of `unix_timestamp_to_datetime`: round-tripping preserves the instant.
     This function safely handles both naive and timezone-aware datetimes.
+    Naive datetimes are interpreted as local display timezone (`DISPLAY_TIMEZONE`).
     
     Args:
         dt: datetime object (naive or timezone-aware), numpy array, or list of datetime objects
@@ -259,25 +271,20 @@ def datetime_to_unix_timestamp(dt: Union[datetime, np.ndarray, List[datetime]]) 
     if isinstance(dt, (np.ndarray, list)):
         # Convert to pandas DatetimeIndex for vectorized processing
         dt_series = pd.to_datetime(dt)
-        # Ensure UTC timezone
+        # Normalize to UTC (naive interpreted as local display timezone)
         if dt_series.tz is None:
-            dt_series = dt_series.tz_localize('UTC')
+            dt_series = dt_series.tz_localize(DISPLAY_TIMEZONE)
+            dt_series = dt_series.tz_convert('UTC')
         else:
             dt_series = dt_series.tz_convert('UTC')
-
-        ## convert to user-display timezone (e.g. Eastern Standard Time 'America/Detroit')
-        # dt_series = dt_series.tz_convert(DISPLAY_TIMEZONE) ## confirmed to have no effect :[
 
         # Convert to Unix timestamps (nanoseconds to seconds)
         timestamps = (dt_series.astype('int64') / 1e9).tolist()
         return timestamps
     
     # Scalar value
-    # If naive, assume UTC
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    
-    return dt.timestamp()
+    dt_utc = _to_utc_datetime(dt)
+    return dt_utc.timestamp()
 
 
 def unix_timestamp_to_datetime(ts: Union[float, np.ndarray, List[float]]) -> Union[datetime, List[datetime]]:

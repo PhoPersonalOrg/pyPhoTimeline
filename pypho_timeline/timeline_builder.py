@@ -877,10 +877,6 @@ class TimelineBuilder:
                 from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
                 reference_datetime = get_earliest_reference_datetime([], datasources)
 
-
-        #TODO 2026-02-03 20:00: - [ ] Override `reference_datetime = None` so we use absolute datetimes        
-        reference_datetime = None
-
         # Create main window (do not show until timeline is added and configured)
         main_window = MainTimelineWindow(show_immediately=False, builder=self)
         # Create the timeline widget with reference datetime, parented to main window content area

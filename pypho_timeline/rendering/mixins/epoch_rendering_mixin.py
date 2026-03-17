@@ -23,7 +23,7 @@ from pypho_timeline.rendering.graphics.rectangle_helpers import RectangleRenderT
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.rendering.mixins.live_window_monitoring_mixin import LiveWindowEventIntervalMonitoringMixin
 import pyqtgraph as pg
-from datetime import datetime
+from datetime import datetime, timezone
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 from pypho_timeline._embed import IntervalsDatasource, General2DRenderTimeEpochs
@@ -59,7 +59,7 @@ class NowCurrentDatetimeLineRenderingMixin:
         """Perform any parameters setting/checking during init."""
         self.plots_data['now_lines'] = RenderPlotsData('NowCurrentDatetimeLineRenderingMixin')
         # Get current datetime
-        self.plots_data['now_lines'].now_dt = datetime.now()
+        self.plots_data['now_lines'].now_dt = datetime.now(timezone.utc)
         # Convert to unix timestamp
         self.plots_data['now_lines'].now_timestamp = datetime_to_unix_timestamp(self.plots_data['now_lines'].now_dt)
 
@@ -124,7 +124,7 @@ class NowCurrentDatetimeLineRenderingMixin:
     def update_now_lines(self):
         """ called to refresh the now (current) datetime for all now line items and updates the lines themselves if they exist. """
         # Get current datetime
-        self.plots_data['now_lines'].now_dt = datetime.now()
+        self.plots_data['now_lines'].now_dt = datetime.now(timezone.utc)
         # Convert to unix timestamp
         self.plots_data['now_lines'].now_timestamp = datetime_to_unix_timestamp(self.plots_data['now_lines'].now_dt)
         for plot_item, vline in self.plots.now_lines.now_line_items.items():
