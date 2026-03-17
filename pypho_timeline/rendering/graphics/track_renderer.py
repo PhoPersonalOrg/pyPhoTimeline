@@ -12,7 +12,7 @@ from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsI
 from pypho_timeline.rendering.async_detail_fetcher import AsyncDetailFetcher
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
-from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime
+from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime, to_display_timezone
 
 # Import VideoTrackDatasource for type checking
 try:
@@ -393,7 +393,8 @@ class TrackRenderer(QtCore.QObject):
         if self._reference_datetime is not None:
             try:
                 dt = unix_timestamp_to_datetime(x_point)
-                time_str = dt.strftime('%H:%M:%S.%f')[:-3] if hasattr(dt, 'strftime') else str(dt)
+                display_dt = to_display_timezone(dt)
+                time_str = display_dt.strftime('%H:%M:%S.%f')[:-3] if hasattr(display_dt, 'strftime') else str(display_dt)
             except Exception:
                 time_str = f"t = {x_point:.2f} s"
         else:

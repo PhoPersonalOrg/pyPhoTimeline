@@ -330,10 +330,6 @@ class TimelineBuilder:
         all_streams_by_file = []
         all_file_headers = []
         
-        
-
-        
-
         for xdf_file_path in xdf_file_paths:
             logger.info(f"Loading XDF file: {xdf_file_path} ...")
             streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
@@ -898,7 +894,14 @@ class TimelineBuilder:
         main_window.setWindowTitle(window_title or "pyPhoTimeline")
         main_window.resize(window_size[0], window_size[1])
         main_window.show()
+            
+        ## Add the calendar widget
+        a_cal_nav = timeline.add_calendar_navigator()
         
+        ## add the table widget:
+        if "LOG_TextLogger" in timeline.track_datasources:
+            table_widget = timeline.add_dataframe_table_track("Text Log", timeline.track_datasources["LOG_TextLogger"].df) # timeline.add_dataframe_table_track()
+
         # Dock log widget at bottom if it exists
         if self.log_widget is not None:
             # Hide standalone window before adding to dock (so it doesn't show as separate window)

@@ -11,11 +11,21 @@ from typing import Optional, List, Tuple, Dict, Any, Union
 import logging
 import numpy as np
 import pandas as pd
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
 # Unix epoch in UTC (timezone-aware)
 UNIX_EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
+DISPLAY_TIMEZONE = ZoneInfo("America/New_York")
+
+
+def to_display_timezone(dt: Union[datetime, pd.Timestamp]) -> datetime:
+    """Convert datetime-like input to display timezone for UI labels."""
+    dt_py = dt.to_pydatetime() if isinstance(dt, pd.Timestamp) else dt
+    if dt_py.tzinfo is None:
+        dt_py = dt_py.replace(tzinfo=timezone.utc)
+    return dt_py.astimezone(DISPLAY_TIMEZONE)
 
 
 def create_am_pm_date_axis(orientation='bottom'):
@@ -37,7 +47,7 @@ def create_am_pm_date_axis(orientation='bottom'):
             def tickStrings(self, values, scale, spacing):
                 """Override to format tick labels in 12-hour AM/PM format."""
                 # Convert timestamps to datetime objects
-                dt_values = [datetime.fromtimestamp(value, tz=timezone.utc) for value in values]
+                dt_values = [to_display_timezone(datetime.fromtimestamp(value, tz=timezone.utc)) for value in values]
                 # Format datetime objects to 12-hour format with AM/PM
                 # Use format like "01/09 02:33 PM" for date and time
                 return [dt.strftime('%m/%d %I:%M %p') for dt in dt_values]
@@ -50,7 +60,7 @@ def create_am_pm_date_axis(orientation='bottom'):
             if hasattr(pg, "DateAxisItem"):
                 class AMPMDateAxisItem(pg.DateAxisItem):
                     def tickStrings(self, values, scale, spacing):
-                        dt_values = [datetime.fromtimestamp(value, tz=timezone.utc) for value in values]
+                        dt_values = [to_display_timezone(datetime.fromtimestamp(value, tz=timezone.utc)) for value in values]
                         return [dt.strftime('%m/%d %I:%M %p') for dt in dt_values]
                 return AMPMDateAxisItem(orientation=orientation)
         except:
@@ -254,6 +264,10 @@ def datetime_to_unix_timestamp(dt: Union[datetime, np.ndarray, List[datetime]]) 
             dt_series = dt_series.tz_localize('UTC')
         else:
             dt_series = dt_series.tz_convert('UTC')
+
+        ## convert to user-display timezone (e.g. Eastern Standard Time 'America/Detroit')
+        # dt_series = dt_series.tz_convert(DISPLAY_TIMEZONE) ## confirmed to have no effect :[
+
         # Convert to Unix timestamps (nanoseconds to seconds)
         timestamps = (dt_series.astype('int64') / 1e9).tolist()
         return timestamps

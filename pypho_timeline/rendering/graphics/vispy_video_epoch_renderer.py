@@ -23,7 +23,7 @@ except ImportError:
     vispy = None
 
 from pypho_timeline.utils.logging_util import get_rendering_logger
-from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_float
+from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_float, to_display_timezone
 
 logger = get_rendering_logger(__name__)
 
@@ -268,6 +268,7 @@ class VispyVideoEpochRenderer(QtCore.QObject):
             try:
                 # Convert float to datetime
                 dt = float_to_datetime(float(value), self.reference_datetime)
+                dt = to_display_timezone(dt)
                 # Format as readable date/time
                 return dt.strftime('%m/%d %H:%M:%S')
             except Exception:
