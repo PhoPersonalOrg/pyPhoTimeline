@@ -421,6 +421,12 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                         if raw is not None:
                             try:
                                 from phopymnehelper.EEG_data import EEGComputations
+                                bad_ch_result = EEGComputations.time_independent_bad_channels(raw)
+                                bad_channels = bad_ch_result.get('all_bad_channels', [])
+                                if bad_channels:
+                                    logger.info(f'Bad channels detected for "{stream_name}": {bad_channels}')
+                                    datasource.exclude_bad_channels(bad_channels)
+
                                 spec_result = EEGComputations.raw_spectogram_working(raw, nperseg=1024, noverlap=512)
                                 spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}")
                                 all_streams_datasources[f"EEG_Spectrogram_{stream_name}"] = spec_datasource

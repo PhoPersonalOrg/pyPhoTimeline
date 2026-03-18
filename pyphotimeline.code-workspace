@@ -17,6 +17,9 @@
         },
         {
             "path": "../phopyqthelper"
+        },
+        {
+            "path": "../python_xdf_streamer"
         }
     ],
 	"settings": {
@@ -84,5 +87,10 @@
         },
         "editor.suggest.showFiles": false,
         "workbench.editor.enablePreview": false
-	}
+    },
+    "extensions": {
+        "recommendations": [
+            "phohale.group-bookmarks"
+        ]
+    }
 }

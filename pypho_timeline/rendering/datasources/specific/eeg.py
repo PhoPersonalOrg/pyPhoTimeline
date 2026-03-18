@@ -315,7 +315,7 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
                  arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
                  normalize: bool = True, normalize_over_full_data: bool = True,
-                 normalization_reference_df: Optional[pd.DataFrame] = None, parent: Optional[QtCore.QObject] = None,
+                 normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, parent: Optional[QtCore.QObject] = None,
                  ):
         """Initialize with eeg data and intervals.
         
@@ -351,6 +351,7 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
         self.arbitrary_bounds = arbitrary_bounds
         self.normalize_over_full_data = normalize_over_full_data
         self.normalization_reference_df = normalization_reference_df
+        self.channel_names = channel_names
 
         # Override visualization properties (parent sets blue, we want blue too, but keep same height)
         # Parent already sets series_height=1.0, which is what we want, so no change needed
@@ -358,22 +359,40 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
     
     def get_detail_renderer(self):
         """Get detail renderer for eeg data."""
+        _extra_kw = {'channel_names': self.channel_names} if self.channel_names is not None else {}
         if self.detailed_df is None:
             print(f'WARN: self.detailed_df is None!')
-            return EEGPlotDetailRenderer(
-                pen_width=2,
-                fallback_normalization_mode=self.fallback_normalization_mode,
-                normalization_mode_dict=self.normalization_mode_dict,
-                arbitrary_bounds=self.arbitrary_bounds,
-                normalize=self.normalize, normalize_over_full_data=self.normalize_over_full_data, normalization_reference_df=self.normalization_reference_df,                
-            )
-        return EEGPlotDetailRenderer(
-            pen_width=2,
-            fallback_normalization_mode=self.fallback_normalization_mode,
-            normalization_mode_dict=self.normalization_mode_dict,
-            arbitrary_bounds=self.arbitrary_bounds,
-            normalize=self.normalize, normalize_over_full_data=self.normalize_over_full_data, normalization_reference_df=self.normalization_reference_df,
-        )
+        return EEGPlotDetailRenderer(pen_width=2, fallback_normalization_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds, normalize=self.normalize, normalize_over_full_data=self.normalize_over_full_data, normalization_reference_df=self.normalization_reference_df, **_extra_kw)
+
+
+    def exclude_bad_channels(self, bad_channels: List[str]) -> None:
+        """Remove bad channels from this datasource's data, normalization config, and renderer channel list.
+
+        Drops the bad-channel columns from ``detailed_df`` and ``normalization_reference_df``,
+        updates ``channel_names`` to only good channels, and filters ``normalization_mode_dict``
+        so that normalization is computed only over the remaining channels.
+        """
+        bad_set = set(bad_channels)
+        _default_eeg = ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4']
+        all_channels = self.channel_names if self.channel_names is not None else _default_eeg
+        self.channel_names = [ch for ch in all_channels if ch not in bad_set]
+
+        for attr in ('detailed_df', 'normalization_reference_df'):
+            df = getattr(self, attr, None)
+            if df is not None:
+                cols_to_drop = [ch for ch in bad_channels if ch in df.columns]
+                if cols_to_drop:
+                    setattr(self, attr, df.drop(columns=cols_to_drop))
+
+        if self.normalization_mode_dict is not None:
+            updated_norm_dict = {}
+            for ch_tuple, mode in self.normalization_mode_dict.items():
+                filtered = tuple(ch for ch in ch_tuple if ch not in bad_set)
+                if filtered:
+                    updated_norm_dict[filtered] = mode
+            self.normalization_mode_dict = updated_norm_dict
+
+        logger.info(f'Excluded {len(bad_channels)} bad channels; {len(self.channel_names)} good channels remain: {self.channel_names}')
 
 
     def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
@@ -384,7 +403,7 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
     @function_attributes(short_name=None, tags=['MAIN'], input_requires=[], output_provides=[], uses=[], used_by=[], creation_date='2026-03-02 04:23', related_items=[])
     @classmethod
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True,
-                                   fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None) -> 'EEGTrackDatasource':
+                                   fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None) -> 'EEGTrackDatasource':
         """Create an EEGTrackDatasource by merging data from multiple sources.
         
         Args:
@@ -433,7 +452,8 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
             arbitrary_bounds=arbitrary_bounds,
             normalize=normalize,
             normalize_over_full_data=normalize_over_full_data,
-            normalization_reference_df=normalization_reference_df
+            normalization_reference_df=normalization_reference_df,
+            channel_names=channel_names,
         )
 
 

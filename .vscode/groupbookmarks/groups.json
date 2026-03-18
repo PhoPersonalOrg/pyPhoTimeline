@@ -1,0 +1,17 @@
+{
+  "version": "1.1.0",
+  "groups": [
+    {
+      "id": "4b213986-6c5a-4318-aaf5-34892268782e",
+      "name": "EEGComputation -- main",
+      "displayName": "1. EEGComputation -- main",
+      "number": 1,
+      "color": "#4CAF50",
+      "order": 0,
+      "sortMode": "custom",
+      "showGhostText": true,
+      "createdAt": 1773849864803,
+      "updatedAt": 1773849864803
+    }
+  ]
+}
