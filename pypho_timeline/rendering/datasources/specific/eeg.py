@@ -142,11 +142,26 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         # normalized_channel_df may have fewer rows due to index intersection during normalization
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
         if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
-            # Convert datetime to Unix timestamps
-            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values ## #TODO 2026-02-06 20:20: - [ ] Extremely slow (~5 seconds), plus returns all the values, not just the ones in this interval, PLUS it connects them by intermediate lines
+            t_values = np.asarray(datetime_to_unix_timestamp(t_col_aligned.to_list()), dtype=float)
         else:
-            t_values = t_col_aligned.values
-        ## #TODO 2026-02-06 21:14: - [ ] is downsampling working?
+            t_values = t_col_aligned.to_numpy(dtype=float, copy=False)
+
+        # Keep detailed EEG x-values in the owning interval bounds; if there is no overlap,
+        # fallback to evenly rebasing samples into [t_start, t_end] to prevent visual drift.
+        if interval is not None and len(interval) > 0 and 't_start' in interval.columns and 't_duration' in interval.columns and len(t_values) > 0:
+            interval_t_start = interval['t_start'].iloc[0]
+            interval_t_duration = interval['t_duration'].iloc[0]
+            interval_t_start_unix = float(datetime_to_unix_timestamp(interval_t_start)) if isinstance(interval_t_start, (datetime, pd.Timestamp)) else float(interval_t_start)
+            interval_t_end_unix = interval_t_start_unix + float(interval_t_duration)
+            in_interval_mask = np.logical_and(t_values >= interval_t_start_unix, t_values <= interval_t_end_unix)
+            if np.any(in_interval_mask):
+                t_values = t_values[in_interval_mask]
+                normalized_channel_df = normalized_channel_df.loc[normalized_channel_df.index[in_interval_mask]]
+            elif len(t_values) > 1:
+                t_values = np.linspace(interval_t_start_unix, interval_t_end_unix, num=len(t_values), endpoint=True)
+
+        if len(t_values) == 0:
+            return []
 
         nPlots: int = len(found_channel_names)
         single_channel_height: float = 1.0 / float(nPlots)
