@@ -474,7 +474,7 @@ class EEGSpectrogramDetailRenderer(DetailRenderer):
             Sxx = Sxx.values
         Sxx = np.asarray(Sxx)
         if Sxx.ndim == 3:
-            Sxx = np.nanmean(Sxx, axis=0)
+            Sxx = np.nanmean(Sxx, axis=0) ## average over all channels
         if Sxx.ndim != 2 or Sxx.shape[0] != len(freqs) or Sxx.shape[1] != len(t):
             return None
         return (freqs, t, Sxx)

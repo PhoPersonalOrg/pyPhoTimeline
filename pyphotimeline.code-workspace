@@ -1,12 +1,24 @@
 {
 	"folders": [
-		{
-			"path": "."
-		},
-		{
-			"path": "../stream_viewer"
-		}
-	],
+        {
+            "path": "."
+        },
+        {
+            "path": "../stream_viewer"
+        },
+        {
+            "path": "../PhoPyMNEHelper"
+        },
+        {
+            "path": "../PhoPyLSLhelper"
+        },
+        {
+            "path": "../PhoOfflineEEGAnalysis"
+        },
+        {
+            "path": "../phopyqthelper"
+        }
+    ],
 	"settings": {
 		"workbench.colorCustomizations": {
             "editor.lineHighlightBackground": "#E67E002d",

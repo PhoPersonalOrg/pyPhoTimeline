@@ -133,11 +133,25 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         # normalized_channel_df may have fewer rows due to index intersection during normalization
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
         if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
-            # Convert datetime to Unix timestamps
-            from datetime import datetime
-            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
+            t_values = np.asarray(datetime_to_unix_timestamp(t_col_aligned.to_list()), dtype=float)
         else:
-            t_values = t_col_aligned.values
+            t_values = t_col_aligned.to_numpy(dtype=float, copy=False)
+
+        # Clamp motion x-values to owning interval bounds (mirrors EEG fix)
+        if interval is not None and len(interval) > 0 and 't_start' in interval.columns and 't_duration' in interval.columns and len(t_values) > 0:
+            _t_start_raw = interval['t_start'].iloc[0]
+            _t_dur = float(interval['t_duration'].iloc[0])
+            _t_start_unix = float(datetime_to_unix_timestamp(_t_start_raw)) if isinstance(_t_start_raw, (datetime, pd.Timestamp)) else float(_t_start_raw)
+            _t_end_unix = _t_start_unix + _t_dur
+            in_interval_mask = np.logical_and(t_values >= _t_start_unix, t_values <= _t_end_unix)
+            if np.any(in_interval_mask):
+                t_values = t_values[in_interval_mask]
+                normalized_channel_df = normalized_channel_df.loc[normalized_channel_df.index[in_interval_mask]]
+            elif len(t_values) > 1:
+                t_values = np.linspace(_t_start_unix, _t_end_unix, num=len(t_values), endpoint=True)
+
+        if len(t_values) == 0:
+            return graphics_objects
 
 
         nPlots: int = len(found_channel_names)

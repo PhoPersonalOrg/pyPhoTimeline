@@ -340,10 +340,27 @@ class DataframePlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, Deta
         t_col = df_sorted['t']
         if pd.api.types.is_datetime64_any_dtype(t_col):
             from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-            t_values = t_col.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
+            t_values = np.asarray(datetime_to_unix_timestamp(t_col.to_list()), dtype=float)
         else:
-            t_values = t_col.values
-        
+            t_values = t_col.to_numpy(dtype=float, copy=False)
+
+        # Clamp x-values to owning interval bounds to prevent visual drift
+        if interval is not None and len(interval) > 0 and 't_start' in interval.columns and 't_duration' in interval.columns and len(t_values) > 0:
+            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+            _t_start_raw = interval['t_start'].iloc[0]
+            _t_dur = float(interval['t_duration'].iloc[0])
+            _t_start_unix = float(datetime_to_unix_timestamp(_t_start_raw)) if isinstance(_t_start_raw, (datetime, pd.Timestamp)) else float(_t_start_raw)
+            _t_end_unix = _t_start_unix + _t_dur
+            in_interval_mask = np.logical_and(t_values >= _t_start_unix, t_values <= _t_end_unix)
+            if np.any(in_interval_mask):
+                t_values = t_values[in_interval_mask]
+                df_sorted = df_sorted.iloc[in_interval_mask]
+            elif len(t_values) > 1:
+                t_values = np.linspace(_t_start_unix, _t_end_unix, num=len(t_values), endpoint=True)
+
+        if len(t_values) == 0:
+            return graphics_objects
+
         # Auto-detect channels if channel_names is None
         if self.channel_names is None:
             # Auto-detect: all numeric columns except 't'
