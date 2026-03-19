@@ -59,6 +59,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
     
     # Signal emitted when the time window changes
     window_scrolled = QtCore.Signal(float, float)
+    compare_window_scrolled = QtCore.Signal(float, float)
     
     @property
     def interval_rendering_plots(self):
@@ -144,6 +145,11 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         self.spikes_window = SimpleTimeWindow(
             self.total_data_start_time, self.total_data_end_time, window_duration, self.active_window_start_time
         )
+        self.compare_window_start_time = self.active_window_start_time
+        self.compare_window_end_time = self.active_window_end_time
+        self._is_updating_compare_window = False
+        self.ui.compare_track_names = set()
+        self.ui.compare_track_master_name = None
         
         # Initialize plots_data and plots BEFORE setupUI (needed by mixins)
         # Initialize track rendering mixin
@@ -159,6 +165,15 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         # Create main layout
         self.ui.layout = QtWidgets.QVBoxLayout(self)
         self.ui.layout.setContentsMargins(0, 0, 0, 0)
+
+        self.ui.controls_layout = QtWidgets.QHBoxLayout()
+        self.ui.controls_layout.setContentsMargins(4, 4, 4, 0)
+        self.ui.controls_layout.addStretch(1)
+        self.ui.split_all_tracks_button = QtWidgets.QPushButton("Split All Tracks")
+        self.ui.split_all_tracks_button.setToolTip("Create an independent compare column for every track.")
+        self.ui.split_all_tracks_button.clicked.connect(self._on_split_all_tracks_clicked)
+        self.ui.controls_layout.addWidget(self.ui.split_all_tracks_button)
+        self.ui.layout.addLayout(self.ui.controls_layout)
         
         # Create the dock area container
         self.ui.dynamic_docked_widget_container = NestedDockAreaWidget()
@@ -172,6 +187,11 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         # Add some example tracks (only if requested)
         if self._add_example_tracks:
             self.add_example_tracks()
+
+
+    def _on_split_all_tracks_clicked(self):
+        """Split every primary track into the compare column."""
+        self.add_compare_column_for_all_tracks()
         
 
     def simulate_window_scroll(self, new_start_time: Union[float, datetime, pd.Timestamp]):
@@ -211,6 +231,172 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             print(f"Window scrolled to: {new_start_time} - {new_end_time}")
         else:
             print(f"Window scrolled to: {new_start_time:.2f} - {new_end_time:.2f}")
+
+
+    def _window_value_to_signal_float(self, value: Union[float, datetime, pd.Timestamp]) -> float:
+        """Convert a stored window boundary value to the float expected by Qt signals."""
+        if isinstance(value, (datetime, pd.Timestamp)):
+            return value.timestamp() if hasattr(value, 'timestamp') else pd.Timestamp(value).timestamp()
+        return float(value)
+
+
+    def _resolve_window_bounds(self, start_time: Optional[Union[float, datetime, pd.Timestamp]], end_time: Optional[Union[float, datetime, pd.Timestamp]], default_start: Union[float, datetime, pd.Timestamp], default_end: Union[float, datetime, pd.Timestamp]):
+        """Resolve a partial window specification using the current window duration."""
+        if (start_time is None) and (end_time is None):
+            return default_start, default_end
+
+        window_duration = default_end - default_start
+        resolved_start = default_start if start_time is None else start_time
+        resolved_end = default_end if end_time is None else end_time
+
+        if start_time is None:
+            resolved_start = resolved_end - window_duration
+        elif end_time is None:
+            resolved_end = resolved_start + window_duration
+
+        return resolved_start, resolved_end
+
+
+    def _copy_track_plot_configuration(self, source_plot_item: pg.PlotItem, destination_plot_item: pg.PlotItem):
+        """Copy the visible plot configuration needed for compare tracks."""
+        _, source_y_range = source_plot_item.viewRange()
+        if len(source_y_range) == 2:
+            destination_plot_item.setYRange(source_y_range[0], source_y_range[1], padding=0)
+
+        destination_plot_item.hideAxis('left')
+        if source_plot_item.getAxis('bottom').isVisible():
+            destination_plot_item.showAxis('bottom')
+        else:
+            destination_plot_item.hideAxis('bottom')
+
+
+    def _set_compare_window_state(self, start_time: Union[float, datetime, pd.Timestamp], end_time: Union[float, datetime, pd.Timestamp], emit_signal: bool = True):
+        """Update the compare window state and notify any compare navigators."""
+        self.compare_window_start_time = start_time
+        self.compare_window_end_time = end_time
+
+        if emit_signal:
+            self.compare_window_scrolled.emit(self._window_value_to_signal_float(start_time), self._window_value_to_signal_float(end_time))
+
+
+    def _on_compare_master_viewport_changed(self, evt):
+        """Mirror the compare master viewport into the compare window state."""
+        if self._is_updating_compare_window:
+            return
+
+        _, view_range, _ = evt
+        x_range, _ = view_range
+        if len(x_range) != 2:
+            return
+
+        if self.reference_datetime is not None:
+            compare_start = unix_timestamp_to_datetime(x_range[0])
+            compare_end = unix_timestamp_to_datetime(x_range[1])
+        else:
+            compare_start = float(x_range[0])
+            compare_end = float(x_range[1])
+
+        self._set_compare_window_state(compare_start, compare_end, emit_signal=True)
+
+
+    def _set_compare_track_master(self, compare_track_name: str):
+        """Designate the compare-column master plot that drives linked compare tracks."""
+        self.ui.compare_track_master_name = compare_track_name
+        compare_widget = self.ui.matplotlib_view_widgets.get(compare_track_name, None)
+        if compare_widget is None:
+            return
+
+        compare_plot_item = compare_widget.getRootPlotItem()
+        compare_viewbox = compare_plot_item.getViewBox() if compare_plot_item is not None else None
+        if compare_viewbox is None:
+            return
+
+        proxy_key = 'compare_track_master_viewport_proxy'
+        self.ui.connections[proxy_key] = pg.SignalProxy(compare_viewbox.sigRangeChanged, rateLimit=30, slot=self._on_compare_master_viewport_changed)
+
+
+    def simulate_compare_window_scroll(self, new_start_time: Union[float, datetime, pd.Timestamp]):
+        """Scroll the independent compare column without affecting the primary timeline."""
+        if isinstance(self.compare_window_start_time, (datetime, pd.Timestamp)) and isinstance(self.compare_window_end_time, (datetime, pd.Timestamp)):
+            duration = self.compare_window_end_time - self.compare_window_start_time
+            if isinstance(new_start_time, (int, float)):
+                if self.reference_datetime is not None:
+                    new_start_time = self.reference_datetime + timedelta(seconds=float(new_start_time))
+                else:
+                    new_start_time = pd.Timestamp.fromtimestamp(float(new_start_time), tz='UTC')
+            new_end_time = new_start_time + duration
+        else:
+            duration = self.compare_window_end_time - self.compare_window_start_time
+            if isinstance(new_start_time, (datetime, pd.Timestamp)):
+                new_start_time = new_start_time.timestamp() if hasattr(new_start_time, 'timestamp') else pd.Timestamp(new_start_time).timestamp()
+            new_end_time = new_start_time + duration
+
+        compare_master_name = getattr(self.ui, 'compare_track_master_name', None)
+        compare_master_widget = self.ui.matplotlib_view_widgets.get(compare_master_name, None) if compare_master_name is not None else None
+
+        self._is_updating_compare_window = True
+        try:
+            self._set_compare_window_state(new_start_time, new_end_time, emit_signal=False)
+            if compare_master_widget is not None:
+                compare_master_widget.on_window_changed(new_start_time, new_end_time)
+        finally:
+            self._is_updating_compare_window = False
+
+        self._set_compare_window_state(new_start_time, new_end_time, emit_signal=True)
+
+
+    def add_compare_track_view(self, track_name: str, compare_track_name: Optional[str] = None, compare_window_start_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_window_end_time: Optional[Union[float, datetime, pd.Timestamp]] = None, dockSize: Optional[Tuple[int, int]] = None, enable_time_crosshair: bool = True):
+        """Clone an existing timeline track into the independent compare column."""
+        primary_widget, primary_track_renderer, primary_datasource = self.get_track_tuple(track_name)
+        if (primary_widget is None) or (primary_track_renderer is None) or (primary_datasource is None):
+            raise ValueError(f'Cannot create compare view for missing track "{track_name}".')
+
+        if compare_track_name is None:
+            compare_track_name = f"{track_name}__compare"
+
+        compare_window_start_time, compare_window_end_time = self._resolve_window_bounds(compare_window_start_time, compare_window_end_time, self.compare_window_start_time, self.compare_window_end_time)
+        extant_compare_widget, extant_compare_renderer, _ = self.get_track_tuple(compare_track_name)
+        if (extant_compare_widget is not None) and (extant_compare_renderer is not None):
+            extant_compare_plot_item = extant_compare_widget.getRootPlotItem()
+            extant_compare_dock = self.ui.dynamic_docked_widget_container.find_display_dock(compare_track_name)
+            extant_compare_widget.on_window_changed(compare_window_start_time, compare_window_end_time)
+            self._set_compare_window_state(compare_window_start_time, compare_window_end_time, emit_signal=True)
+            return extant_compare_widget, extant_compare_widget.getRootGraphicsLayoutWidget(), extant_compare_plot_item, extant_compare_dock
+
+        primary_dock = self.ui.dynamic_docked_widget_container.find_display_dock(track_name)
+        dock_add_location_opts = [primary_dock, 'right'] if primary_dock is not None else ['bottom']
+        if dockSize is None:
+            dockSize = (max(primary_widget.width(), 500), max(primary_widget.height(), 80))
+
+        compare_widget, root_graphics, compare_plot_item, compare_dock = self.add_new_embedded_pyqtgraph_render_plot_widget(name=compare_track_name, dockSize=dockSize, dockAddLocationOpts=dock_add_location_opts, sync_mode=SynchronizedPlotMode.NO_SYNC)
+        primary_plot_item = primary_widget.getRootPlotItem()
+        self._copy_track_plot_configuration(primary_plot_item, compare_plot_item)
+        self.add_track(primary_datasource, name=compare_track_name, plot_item=compare_plot_item, enable_time_crosshair=enable_time_crosshair, window_sync_group='compare')
+
+        self.ui.compare_track_names.add(compare_track_name)
+        if self.ui.compare_track_master_name is None:
+            self._set_compare_track_master(compare_track_name)
+        else:
+            master_plot_item = self.ui.matplotlib_view_widgets[self.ui.compare_track_master_name].getRootPlotItem()
+            compare_plot_item.setXLink(master_plot_item)
+
+        compare_widget.on_window_changed(compare_window_start_time, compare_window_end_time)
+        self._set_compare_window_state(compare_window_start_time, compare_window_end_time, emit_signal=True)
+
+        return compare_widget, root_graphics, compare_plot_item, compare_dock
+
+
+    def add_compare_column_for_all_tracks(self, track_names: Optional[List[str]] = None, compare_window_start_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_window_end_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_suffix: str = '__compare', enable_time_crosshair: bool = True):
+        """Create a compare-column clone for each primary track."""
+        if track_names is None:
+            track_names = self.get_track_names_for_window_sync_group(window_sync_group='primary')
+
+        created_compare_tracks = {}
+        for track_name in track_names:
+            compare_track_name = f"{track_name}{compare_suffix}"
+            created_compare_tracks[track_name] = self.add_compare_track_view(track_name=track_name, compare_track_name=compare_track_name, compare_window_start_time=compare_window_start_time, compare_window_end_time=compare_window_end_time, enable_time_crosshair=enable_time_crosshair)
+
+        return created_compare_tracks
 
 
 
@@ -309,6 +495,22 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         self.window_scrolled.connect(self.ui.calendar.set_active_window)
 
         return self.ui.calendar
+
+
+    def add_compare_calendar_navigator(self):
+        """Adds a second calendar navigator for the independent compare column."""
+        from pypho_timeline.widgets import TimelineCalendarWidget
+
+        self.ui.compare_calendar = TimelineCalendarWidget()
+        self.ui.layout.addWidget(self.ui.compare_calendar)
+
+        self.ui.compare_calendar.set_total_range(self.total_data_start_time, self.total_data_end_time)
+        self.ui.compare_calendar.set_active_window(self.compare_window_start_time, self.compare_window_end_time)
+
+        self.ui.compare_calendar.sigWindowChanged.connect(lambda s, e: self.simulate_compare_window_scroll(s))
+        self.compare_window_scrolled.connect(self.ui.compare_calendar.set_active_window)
+
+        return self.ui.compare_calendar
 
 
     def add_dataframe_table_track(self, track_name: str, dataframe: pd.DataFrame, time_column: Optional[str] = None, dockSize: Tuple[int, int] = (400, 200), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA):

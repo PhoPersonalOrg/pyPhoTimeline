@@ -329,33 +329,42 @@ class TimelineBuilder:
         # Load all XDF files
         all_streams_by_file = []
         all_file_headers = []
-        
+        all_loaded_xdf_file_paths = []
+
         for xdf_file_path in xdf_file_paths:
             logger.info(f"Loading XDF file: {xdf_file_path} ...")
-            streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+            try:
+                streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
 
-            # # #TODO 2026-03-02 05:30: - [ ] Could instead do 
-            # from phopymnehelper.xdf_files import XDFDataStreamAccessor, LabRecorderXDF
+                # # #TODO 2026-03-02 05:30: - [ ] Could instead do 
+                # from phopymnehelper.xdf_files import XDFDataStreamAccessor, LabRecorderXDF
 
-            # obj: LabRecorderXDF = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_file_path, should_load_full_file_data=True) ## #TODO 2026-03-02 07:47: - [ ] introduces `ValueError: Date must be datetime object in UTC: datetime.datetime(2026, 3, 1, 2, 9, 18, tzinfo=<UTC>)` error
-            # # stream_infos = _obj.stream_infos
-            # # raws = _obj.datasets
-            # # raws_dict = _obj.datasets_dict
-            # ## Convert back to the simple outputs:
-            # streams = obj.xdf_streams
-            # file_header = obj.xdf_header
+                # obj: LabRecorderXDF = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_file_path, should_load_full_file_data=True) ## #TODO 2026-03-02 07:47: - [ ] introduces `ValueError: Date must be datetime object in UTC: datetime.datetime(2026, 3, 1, 2, 9, 18, tzinfo=<UTC>)` error
+                # # stream_infos = _obj.stream_infos
+                # # raws = _obj.datasets
+                # # raws_dict = _obj.datasets_dict
+                # ## Convert back to the simple outputs:
+                # streams = obj.xdf_streams
+                # file_header = obj.xdf_header
 
-            logger.info(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
-            
-            # Filter streams if allowlist/blocklist is provided
-            if (stream_allowlist is not None) or (stream_blocklist is not None):
-                streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
-            
-            all_streams_by_file.append(streams)
-            all_file_headers.append(file_header)
-        
+                logger.info(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
+                
+                # Filter streams if allowlist/blocklist is provided
+                if (stream_allowlist is not None) or (stream_blocklist is not None):
+                    streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+                
+                all_streams_by_file.append(streams)
+                all_file_headers.append(file_header)
+                all_loaded_xdf_file_paths.append(xdf_file_path)
+
+            except (OSError, FileExistsError, FileNotFoundError) as err:
+                logger.warning(f'failed to load file {xdf_file_path} with error: {err}. Skipping.')
+                pass
+        ## END for xdf_file_path in xdf_file_paths
+
+
         ## Calls `perform_process_all_streams_multi_xdf(...)` to process streams from all files and merge by stream name
-        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=xdf_file_paths, file_headers=all_file_headers)
+        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_xdf_file_paths, file_headers=all_file_headers)
         
         if not all_streams:
             logger.warning("No streams found.")
@@ -381,11 +390,11 @@ class TimelineBuilder:
         
         # Generate window title if not provided
         if window_title is None:
-            if len(xdf_file_paths) == 1:
-                window_title = f"pyPhoTimeline - ALL Modalities from XDF: {xdf_file_paths[0].name}"
+            if len(all_loaded_xdf_file_paths) == 1:
+                window_title = f"pyPhoTimeline - ALL Modalities from XDF: {all_loaded_xdf_file_paths[0].name}"
             else:
-                file_names = ", ".join([p.name for p in xdf_file_paths])
-                window_title = f"pyPhoTimeline - ALL Modalities from {len(xdf_file_paths)} XDF files: {file_names}"
+                file_names = ", ".join([p.name for p in all_loaded_xdf_file_paths])
+                window_title = f"pyPhoTimeline - ALL Modalities from {len(all_loaded_xdf_file_paths)} XDF files: {file_names}"
         
         # Build timeline from merged datasources with reference datetime
         return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, reference_datetime=reference_datetime, **kwargs)

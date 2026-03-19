@@ -52,6 +52,11 @@ class TrackRenderingMixin(EpochRenderingMixin):
     def async_detail_fetcher(self) -> AsyncDetailFetcher:
         """The async_detail_fetcher property."""
         return self.plots_data['async_detail_fetcher']
+
+    @property
+    def track_window_sync_groups(self) -> Dict[str, str]:
+        """Map of track name to window sync group."""
+        return self.plots_data['track_window_sync_groups']
     
     @pyqtExceptionPrintingSlot()
     def TrackRenderingMixin_on_init(self):
@@ -61,6 +66,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
         
         # Initialize track rendering data structures
         self.plots_data['track_datasources'] = RenderPlotsData('TrackRenderingMixin')
+        self.plots_data['track_window_sync_groups'] = {}
         self.plots.track_renderers = {}
         
         # Create async detail fetcher
@@ -75,6 +81,8 @@ class TrackRenderingMixin(EpochRenderingMixin):
         # Ensure async fetcher exists
         if 'async_detail_fetcher' not in self.plots_data:
             self.plots_data['async_detail_fetcher'] = AsyncDetailFetcher(max_cache_size=100)
+        if 'track_window_sync_groups' not in self.plots_data:
+            self.plots_data['track_window_sync_groups'] = {}
     
     @pyqtExceptionPrintingSlot()
     def TrackRenderingMixin_on_buildUI(self):
@@ -116,7 +124,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
         self.EpochRenderingMixin_on_destroy()
     
 
-    def add_track(self, track_datasource: TrackDatasource, name: str, plot_item: Optional[pg.PlotItem] = None, **kwargs) -> TrackRenderer:
+    def add_track(self, track_datasource: TrackDatasource, name: str, plot_item: Optional[pg.PlotItem] = None, window_sync_group: str = 'primary', **kwargs) -> TrackRenderer:
         """Add a new track to the timeline.
         
         Updates:
@@ -148,6 +156,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
             
             # Store datasource
             self.track_datasources[name] = track_datasource
+            self.set_track_window_sync_group(name, window_sync_group)
             
             # Create track renderer
             track_renderer = TrackRenderer(track_id=name, datasource=track_datasource, plot_item=plot_item, async_fetcher=self.async_detail_fetcher, **kwargs)
@@ -252,6 +261,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
         # Remove datasource
         if name in self.track_datasources:
             del self.track_datasources[name]
+        self.track_window_sync_groups.pop(name, None)
         
         # Cancel pending fetches
         self.async_detail_fetcher.cancel_all_pending_fetches(name)
@@ -270,10 +280,35 @@ class TrackRenderingMixin(EpochRenderingMixin):
         """
         if new_start is None or new_end is None:
             return
-        
-        # Schedule each track's update asynchronously with small delays to prevent blocking
-        # This ensures the UI remains responsive even if one track is slow
-        for idx, (track_name, track_renderer) in enumerate(self.track_renderers.items()):
+
+        self._schedule_track_group_window_update(window_sync_group='primary', new_start=new_start, new_end=new_end)
+
+
+    def set_track_window_sync_group(self, name: str, window_sync_group: str = 'primary'):
+        """Register which window sync group controls a track renderer."""
+        self.track_window_sync_groups[name] = window_sync_group
+
+
+    def get_track_window_sync_group(self, name: str) -> str:
+        """Get the window sync group for a track renderer."""
+        return self.track_window_sync_groups.get(name, 'primary')
+
+
+    def get_track_names_for_window_sync_group(self, window_sync_group: str = 'primary') -> List[str]:
+        """Get all track names in a window sync group."""
+        return [track_name for track_name in self.track_renderers.keys() if self.get_track_window_sync_group(track_name) == window_sync_group]
+
+
+    def _schedule_track_group_window_update(self, window_sync_group: str = 'primary', new_start: Optional[float] = None, new_end: Optional[float] = None):
+        """Schedule viewport updates for all renderers in a sync group."""
+        if new_start is None or new_end is None:
+            return
+
+        grouped_track_items = [(track_name, track_renderer) for track_name, track_renderer in self.track_renderers.items() if self.get_track_window_sync_group(track_name) == window_sync_group]
+
+        # Schedule each track's update asynchronously with small delays to prevent blocking.
+        # This lets compare renderers opt out of the primary window while still sharing the same fetcher/cache.
+        for idx, (track_name, track_renderer) in enumerate(grouped_track_items):
             def make_update_fn(renderer, start, end):
                 def update_fn():
                     renderer.update_viewport(start, end)
