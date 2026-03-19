@@ -7,7 +7,7 @@ along with utility functions for processing stream data.
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, List, Dict, Optional, Union
+from typing import Tuple, List, Dict, Optional, Union, Any
 from datetime import datetime, timedelta
 from pathlib import Path
 from qtpy import QtWidgets, QtCore
@@ -60,6 +60,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
     # Signal emitted when the time window changes
     window_scrolled = QtCore.Signal(float, float)
     compare_window_scrolled = QtCore.Signal(float, float)
+    SPLIT_PRIMARY_DOCK_GROUP = 'timeline_primary_column'
+    SPLIT_COMPARE_DOCK_GROUP = 'timeline_compare_column'
     
     @property
     def interval_rendering_plots(self):
@@ -150,6 +152,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         self._is_updating_compare_window = False
         self.ui.compare_track_names = set()
         self.ui.compare_track_master_name = None
+        self.ui.split_group_docks = {}
         
         # Initialize plots_data and plots BEFORE setupUI (needed by mixins)
         # Initialize track rendering mixin
@@ -168,6 +171,16 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
 
         self.ui.controls_layout = QtWidgets.QHBoxLayout()
         self.ui.controls_layout.setContentsMargins(4, 4, 4, 0)
+        self.ui.jump_prev_interval_button = QtWidgets.QPushButton("◀")
+        self.ui.jump_prev_interval_button.setToolTip("Jump to the start of the previous interval")
+        self.ui.jump_prev_interval_button.setAutoDefault(False)
+        self.ui.jump_prev_interval_button.clicked.connect(self._on_jump_prev_interval_clicked)
+        self.ui.controls_layout.addWidget(self.ui.jump_prev_interval_button)
+        self.ui.jump_next_interval_button = QtWidgets.QPushButton("▶")
+        self.ui.jump_next_interval_button.setToolTip("Jump to the start of the next interval")
+        self.ui.jump_next_interval_button.setAutoDefault(False)
+        self.ui.jump_next_interval_button.clicked.connect(self._on_jump_next_interval_clicked)
+        self.ui.controls_layout.addWidget(self.ui.jump_next_interval_button)
         self.ui.controls_layout.addStretch(1)
         self.ui.split_all_tracks_button = QtWidgets.QPushButton("Split All Tracks")
         self.ui.split_all_tracks_button.setToolTip("Create an independent compare column for every track.")
@@ -188,10 +201,113 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         if self._add_example_tracks:
             self.add_example_tracks()
 
+        self.sigTrackAdded.connect(lambda _n: self._update_interval_jump_buttons_enabled())
+        self.sigTrackRemoved.connect(lambda _n: self._update_interval_jump_buttons_enabled())
+        self._update_interval_jump_buttons_enabled()
+        QtCore.QTimer.singleShot(0, self._update_interval_jump_buttons_enabled)
+
 
     def _on_split_all_tracks_clicked(self):
         """Split every primary track into the compare column."""
         self.add_compare_column_for_all_tracks()
+
+
+    def _scalar_to_sort_float(self, t: Any) -> float:
+        """Map a time scalar to float seconds for ordering (unix timestamp when datetime-like)."""
+        if isinstance(t, (datetime, pd.Timestamp)):
+            return pd.Timestamp(t).timestamp()
+        if isinstance(t, (np.floating, np.integer)):
+            return float(t)
+        return float(t)
+
+
+    def _collect_primary_interval_starts_unique(self) -> Tuple[np.ndarray, List[Any]]:
+        """Sorted unique interval start keys (float) and one original scalar per key from primary tracks."""
+        pairs: List[Tuple[float, Any]] = []
+        for name in self.get_track_names_for_window_sync_group(window_sync_group='primary'):
+            ds = self.track_datasources.get(name, None)
+            if ds is None:
+                continue
+            df = getattr(ds, 'df', None)
+            if df is None or df.empty or ('t_start' not in df.columns):
+                continue
+            for raw in df['t_start'].values:
+                pairs.append((self._scalar_to_sort_float(raw), raw))
+        if not pairs:
+            return np.array([], dtype=float), []
+        pairs.sort(key=lambda x: x[0])
+        fs = np.array([p[0] for p in pairs], dtype=float)
+        uniq_sorted, first_idx = np.unique(fs, return_index=True)
+        originals = [pairs[int(i)][1] for i in first_idx]
+        return uniq_sorted, originals
+
+
+    def _interval_jump_prev_next_targets(self) -> Tuple[Optional[Any], Optional[Any]]:
+        """(previous_start, next_start) relative to active_window_start_time; None if absent."""
+        arr, originals = self._collect_primary_interval_starts_unique()
+        if arr.size == 0:
+            return None, None
+        w = self._scalar_to_sort_float(self.active_window_start_time)
+        idx_l = int(np.searchsorted(arr, w, side='left'))
+        idx_r = int(np.searchsorted(arr, w, side='right'))
+        prev_tgt = originals[idx_l - 1] if idx_l > 0 else None
+        next_tgt = originals[idx_r] if idx_r < len(originals) else None
+        return prev_tgt, next_tgt
+
+
+    def _update_interval_jump_buttons_enabled(self):
+        if not hasattr(self.ui, 'jump_prev_interval_button'):
+            return
+        prev_t, next_t = self._interval_jump_prev_next_targets()
+        self.ui.jump_prev_interval_button.setEnabled(prev_t is not None)
+        self.ui.jump_next_interval_button.setEnabled(next_t is not None)
+
+
+    def _on_jump_prev_interval_clicked(self):
+        prev_t, _ = self._interval_jump_prev_next_targets()
+        if prev_t is not None:
+            self.simulate_window_scroll(prev_t)
+
+
+    def _on_jump_next_interval_clicked(self):
+        _, next_t = self._interval_jump_prev_next_targets()
+        if next_t is not None:
+            self.simulate_window_scroll(next_t)
+
+
+    def _set_track_dock_group(self, track_name: str, dock_group_name: str):
+        """Assign a single group name to an existing track dock."""
+        track_dock = self.ui.dynamic_docked_widget_container.find_display_dock(track_name)
+        if track_dock is None:
+            return None
+
+        track_dock.config.dock_group_names = [dock_group_name]
+        return track_dock
+
+
+    def _retag_split_track_docks(self):
+        """Tag primary and compare tracks so they can be wrapped into parent split columns."""
+        for track_name in self.get_track_names_for_window_sync_group(window_sync_group='primary'):
+            self._set_track_dock_group(track_name, self.SPLIT_PRIMARY_DOCK_GROUP)
+
+        for track_name in self.get_track_names_for_window_sync_group(window_sync_group='compare'):
+            self._set_track_dock_group(track_name, self.SPLIT_COMPARE_DOCK_GROUP)
+
+
+    def _rebuild_split_track_dock_groups(self):
+        """Wrap the primary and compare tracks into two parent docks that resize as columns."""
+        dock_container = self.ui.dynamic_docked_widget_container
+        if hasattr(dock_container, 'nested_dock_items') and len(dock_container.nested_dock_items) > 0:
+            dock_container.unwrap_docks_in_all_nested_dock_area()
+
+        self._retag_split_track_docks()
+        split_group_docks, _ = dock_container.layout_dockGroups(dock_group_names_order=[self.SPLIT_PRIMARY_DOCK_GROUP, self.SPLIT_COMPARE_DOCK_GROUP], dock_group_add_location_opts={self.SPLIT_PRIMARY_DOCK_GROUP: ['bottom']})
+        primary_group_dock = split_group_docks.get(self.SPLIT_PRIMARY_DOCK_GROUP, None)
+        if primary_group_dock is not None and (self.SPLIT_COMPARE_DOCK_GROUP in split_group_docks):
+            dock_container.unwrap_docks_in_nested_dock_area(dock_group_name=self.SPLIT_COMPARE_DOCK_GROUP)
+            dock_container.layout_dockGroups(dock_group_names_order=[self.SPLIT_PRIMARY_DOCK_GROUP, self.SPLIT_COMPARE_DOCK_GROUP], dock_group_add_location_opts={self.SPLIT_PRIMARY_DOCK_GROUP: ['bottom'], self.SPLIT_COMPARE_DOCK_GROUP: [primary_group_dock, 'right']})
+
+        self.ui.split_group_docks = getattr(dock_container, 'nested_dock_items', {})
         
 
     def simulate_window_scroll(self, new_start_time: Union[float, datetime, pd.Timestamp]):
@@ -231,6 +347,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             print(f"Window scrolled to: {new_start_time} - {new_end_time}")
         else:
             print(f"Window scrolled to: {new_start_time:.2f} - {new_end_time:.2f}")
+
+        self._update_interval_jump_buttons_enabled()
 
 
     def _window_value_to_signal_float(self, value: Union[float, datetime, pd.Timestamp]) -> float:
@@ -368,7 +486,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         if dockSize is None:
             dockSize = (max(primary_widget.width(), 500), max(primary_widget.height(), 80))
 
-        compare_widget, root_graphics, compare_plot_item, compare_dock = self.add_new_embedded_pyqtgraph_render_plot_widget(name=compare_track_name, dockSize=dockSize, dockAddLocationOpts=dock_add_location_opts, sync_mode=SynchronizedPlotMode.NO_SYNC)
+        compare_widget, root_graphics, compare_plot_item, compare_dock = self.add_new_embedded_pyqtgraph_render_plot_widget(name=compare_track_name, dockSize=dockSize, dockAddLocationOpts=dock_add_location_opts, sync_mode=SynchronizedPlotMode.NO_SYNC, dock_group_names=[self.SPLIT_COMPARE_DOCK_GROUP])
         primary_plot_item = primary_widget.getRootPlotItem()
         self._copy_track_plot_configuration(primary_plot_item, compare_plot_item)
         self.add_track(primary_datasource, name=compare_track_name, plot_item=compare_plot_item, enable_time_crosshair=enable_time_crosshair, window_sync_group='compare')
@@ -396,6 +514,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             compare_track_name = f"{track_name}{compare_suffix}"
             created_compare_tracks[track_name] = self.add_compare_track_view(track_name=track_name, compare_track_name=compare_track_name, compare_window_start_time=compare_window_start_time, compare_window_end_time=compare_window_end_time, enable_time_crosshair=enable_time_crosshair)
 
+        self._rebuild_split_track_dock_groups()
         return created_compare_tracks
 
 
@@ -422,7 +541,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                 name=track_name,
                 dockSize=dockSize,
                 dockAddLocationOpts=['bottom'],
-                sync_mode=sync_mode
+                sync_mode=sync_mode,
+                dock_group_names=[self.SPLIT_PRIMARY_DOCK_GROUP]
             )
             
             # Set vispy renderer flag on datasource if requested

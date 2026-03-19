@@ -222,18 +222,24 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
 
 
     @function_attributes(short_name=None, tags=['dockGroup', 'layout', 'sizing'], input_requires=[], output_provides=[], uses=['get_dockGroup_dock_dict', 'build_wrapping_nested_dock_area'], used_by=[], creation_date='2025-02-17 10:26', related_items=[])
-    def layout_dockGroups(self):
+    def layout_dockGroups(self, dock_group_names_order: Optional[List[str]] = None, dock_group_add_location_opts: Optional[Dict[str, List]] = None):
         """ fetches the dockGroup items and perform layout """
         grouped_dock_items_dict: Dict[str, List[Dock]] = self.get_dockGroup_dock_dict()
         nested_dock_items = {}
         nested_dynamic_docked_widget_container_widgets = {}
-        for dock_group_name, flat_group_dockitems_list in grouped_dock_items_dict.items():
+        ordered_group_names = list(grouped_dock_items_dict.keys())
+        if dock_group_names_order is not None:
+            ordered_group_names = [dock_group_name for dock_group_name in dock_group_names_order if dock_group_name in grouped_dock_items_dict] + [dock_group_name for dock_group_name in ordered_group_names if dock_group_name not in (dock_group_names_order or [])]
+
+        for dock_group_name in ordered_group_names:
+            flat_group_dockitems_list = grouped_dock_items_dict[dock_group_name]
             # Skip if this group already has a container
             if hasattr(self, 'nested_dock_items') and (dock_group_name in self.nested_dock_items):
                 continue
             # else:
             ## create a new item
-            dDisplayItem, nested_dynamic_docked_widget_container = self.build_wrapping_nested_dock_area(flat_group_dockitems_list, dock_group_name=dock_group_name)
+            dock_add_location_opts = (dock_group_add_location_opts or {}).get(dock_group_name, None)
+            dDisplayItem, nested_dynamic_docked_widget_container = self.build_wrapping_nested_dock_area(flat_group_dockitems_list, dock_group_name=dock_group_name, dockAddLocationOpts=dock_add_location_opts)
             nested_dock_items[dock_group_name] = dDisplayItem # Dock
             nested_dynamic_docked_widget_container_widgets[dock_group_name] = nested_dynamic_docked_widget_container # nested_dynamic_docked_widget_container
 
@@ -451,7 +457,7 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
         return test_dock_planning_widget, dDisplayItem
 
     @function_attributes(short_name=None, tags=['docks', 'nested', 'wrapping'], input_requires=[], output_provides=[], uses=['self.add_display_dock(...)', 'NestedDockAreaWidget','CustomDockDisplayConfig'], used_by=['layout_dockGroups'], creation_date='2025-01-14 03:41', related_items=[])        
-    def build_wrapping_nested_dock_area(self, flat_group_dockitems_list: List[Dock], dock_group_name: str = 'ContinuousDecode_ - t_bin_size: 0.025'):
+    def build_wrapping_nested_dock_area(self, flat_group_dockitems_list: List[Dock], dock_group_name: str = 'ContinuousDecode_ - t_bin_size: 0.025', dockAddLocationOpts=None):
         """ 
         Builds a wrapping dock area containing several pre-existing dock items
         
@@ -484,7 +490,8 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
 
         name=f'GROUP[{dock_group_name}]'
         dockSize=(500, total_height)
-        dockAddLocationOpts=['bottom']
+        if dockAddLocationOpts is None:
+            dockAddLocationOpts = ['bottom']
 
         display_config = CustomDockDisplayConfig(showCloseButton=True, showCollapseButton=True, showGroupButton=True, showOrientationButton=True, orientation='horizontal', corner_radius='0px', fontSize='15px',
                                                 custom_get_colors_dict = {False: DockDisplayColors(fg_color='#5bf', bg_color='#0d001a', border_color='#5467ba'),
