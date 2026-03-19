@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from dataclasses import dataclass
 from qtpy import QtCore
 from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence
 from datetime import datetime
@@ -8,6 +9,21 @@ from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
+
+
+@dataclass
+class SpectrogramChannelGroupConfig:
+    """Defines a named group of EEG channels to average for one spectrogram track."""
+    name: str
+    channels: List[str]
+
+
+EMOTIV_EPOC_X_SPECTROGRAM_GROUPS: List[SpectrogramChannelGroupConfig] = [
+    SpectrogramChannelGroupConfig(name='Frontal-L', channels=['AF3', 'F7', 'FC5', 'F3']),
+    SpectrogramChannelGroupConfig(name='Frontal-R', channels=['AF4', 'F8', 'FC6', 'F4']),
+    SpectrogramChannelGroupConfig(name='Posterior-L', channels=['T7', 'P7', 'O1']),
+    SpectrogramChannelGroupConfig(name='Posterior-R', channels=['T8', 'P8', 'O2']),
+]
 
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGPlotDetailRenderer - Renders eeg data as line plots.                                                                                                                                                                                                                              #
@@ -467,21 +483,30 @@ class EEGSpectrogramDetailRenderer(DetailRenderer):
     at least 't' (1D), 'freqs' (1D), and 'Sxx' (xarray or ndarray: channels × freqs × times, or freqs × times).
     """
 
-    def __init__(self, freq_min: float = 1.0, freq_max: float = 40.0, **kwargs):
+    def __init__(self, freq_min: float = 1.0, freq_max: float = 40.0, group_channels: Optional[List[str]] = None, **kwargs):
         """Initialize the spectrogram renderer.
 
         Args:
             freq_min: Lower frequency bound (Hz) for display. Default: 1.0
             freq_max: Upper frequency bound (Hz) for display. Default: 40.0
+            group_channels: If set, only these channel names are averaged for this track.
+                When None, falls back to channel_visibility / all-channels averaging.
         """
         DetailRenderer.__init__(self, **kwargs)
         self.freq_min = freq_min
         self.freq_max = freq_max
+        self.group_channels: Optional[List[str]] = group_channels
 
 
     def _get_sxx_2d(self, detail_data: Dict) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """Extract (freqs, t, Sxx_2d) from spectrogram dict. Sxx_2d is (n_freqs, n_times).
-        When channel_visibility is set and detail_data has ch_names, averages only over visible/active channels."""
+
+        Channel selection priority:
+        1. If group_channels is set, use only those channels (intersected with available ch_names
+           and further filtered by channel_visibility if present).
+        2. Otherwise fall back to channel_visibility filtering.
+        3. Otherwise average over all channels.
+        """
         if not detail_data or not isinstance(detail_data, dict):
             return None
         freqs = detail_data.get('freqs')
@@ -496,10 +521,17 @@ class EEGSpectrogramDetailRenderer(DetailRenderer):
         Sxx = np.asarray(Sxx)
         if Sxx.ndim == 3:
             ch_names = detail_data.get('ch_names')
-            if ch_names is not None and len(ch_names) == Sxx.shape[0] and hasattr(self, 'channel_visibility') and self.channel_visibility:
-                visible_indices = [i for i, ch in enumerate(ch_names) if self.channel_visibility.get(ch, True)]
-                if visible_indices:
-                    Sxx = np.nanmean(Sxx[visible_indices, :, :], axis=0)
+            if ch_names is not None and len(ch_names) == Sxx.shape[0]:
+                if self.group_channels is not None:
+                    group_set = set(self.group_channels)
+                    has_visibility = hasattr(self, 'channel_visibility') and self.channel_visibility
+                    indices = [i for i, ch in enumerate(ch_names) if ch in group_set and (not has_visibility or self.channel_visibility.get(ch, True))]
+                elif hasattr(self, 'channel_visibility') and self.channel_visibility:
+                    indices = [i for i, ch in enumerate(ch_names) if self.channel_visibility.get(ch, True)]
+                else:
+                    indices = None
+                if indices is not None and indices:
+                    Sxx = np.nanmean(Sxx[indices, :, :], axis=0)
                 else:
                     Sxx = np.nanmean(Sxx, axis=0)
             else:
@@ -613,7 +645,7 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
     """TrackDatasource that shares intervals with an EEG track and displays spectrogram detail (from EEGComputations.raw_spectogram_working)."""
 
     def __init__(self, intervals_df: pd.DataFrame, spectrogram_result: Dict, custom_datasource_name: Optional[str] = None, spectrogram_results: Optional[List[Dict]] = None,
-                 freq_min: float = 1.0, freq_max: float = 40.0, parent: Optional[QtCore.QObject] = None):
+                 freq_min: float = 1.0, freq_max: float = 40.0, group_config: Optional[SpectrogramChannelGroupConfig] = None, parent: Optional[QtCore.QObject] = None):
         """Initialize with intervals and precomputed spectrogram result(s).
 
         Args:
@@ -622,12 +654,14 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
             custom_datasource_name: Name for this datasource (e.g. EEG_Spectrogram_StreamName).
             spectrogram_results: Optional list of spectrogram dicts, one per row in intervals_df (for merged multi-interval case).
             freq_min, freq_max: Passed to EEGSpectrogramDetailRenderer.
+            group_config: Optional channel group config; when set, the renderer averages only over these channels.
         """
         super().__init__(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name or "EEG_Spectrogram", max_points_per_second=None, enable_downsampling=False, parent=parent)
         self._spectrogram_result = spectrogram_result
         self._spectrogram_results = spectrogram_results
         self._freq_min = freq_min
         self._freq_max = freq_max
+        self._group_config = group_config
 
 
     def fetch_detailed_data(self, interval: pd.Series) -> Any:
@@ -645,7 +679,8 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
 
     def get_detail_renderer(self) -> EEGSpectrogramDetailRenderer:
         """Return the spectrogram detail renderer."""
-        return EEGSpectrogramDetailRenderer(freq_min=self._freq_min, freq_max=self._freq_max)
+        group_channels = self._group_config.channels if self._group_config is not None else None
+        return EEGSpectrogramDetailRenderer(freq_min=self._freq_min, freq_max=self._freq_max, group_channels=group_channels)
 
 
     def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
@@ -653,7 +688,7 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
 
 
     @classmethod
-    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], spectrogram_results: List[Dict], custom_datasource_name: Optional[str] = None, freq_min: float = 1.0, freq_max: float = 40.0) -> 'EEGSpectrogramTrackDatasource':
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], spectrogram_results: List[Dict], custom_datasource_name: Optional[str] = None, freq_min: float = 1.0, freq_max: float = 40.0, group_config: Optional[SpectrogramChannelGroupConfig] = None) -> 'EEGSpectrogramTrackDatasource':
         """Create one EEGSpectrogramTrackDatasource from multiple (intervals_df, spectrogram_result) pairs."""
         if not intervals_dfs or not spectrogram_results:
             raise ValueError("intervals_dfs and spectrogram_results must be non-empty")
@@ -661,8 +696,8 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
             raise ValueError("intervals_dfs and spectrogram_results must have the same length")
         merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start')
         first_result = spectrogram_results[0]
-        return cls(intervals_df=merged_intervals_df, spectrogram_result=first_result, custom_datasource_name=custom_datasource_name, spectrogram_results=spectrogram_results, freq_min=freq_min, freq_max=freq_max)
+        return cls(intervals_df=merged_intervals_df, spectrogram_result=first_result, custom_datasource_name=custom_datasource_name, spectrogram_results=spectrogram_results, freq_min=freq_min, freq_max=freq_max, group_config=group_config)
 
 
-__all__ = ['EEGPlotDetailRenderer', 'EEGTrackDatasource', 'EEGSpectrogramDetailRenderer', 'EEGSpectrogramTrackDatasource']
+__all__ = ['SpectrogramChannelGroupConfig', 'EMOTIV_EPOC_X_SPECTROGRAM_GROUPS', 'EEGPlotDetailRenderer', 'EEGTrackDatasource', 'EEGSpectrogramDetailRenderer', 'EEGSpectrogramTrackDatasource']
 
