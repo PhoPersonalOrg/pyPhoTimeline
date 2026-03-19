@@ -52,8 +52,15 @@ class SimpleTimeWindow:
 
 class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMixin, QtWidgets.QWidget):
     """A simple example timeline widget that demonstrates pyPhoTimeline usage.
-    
+
     from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget, SimpleTimeWindow
+
+    Optional read-only overview minimap (primary tracks, overview intervals only)::
+
+        tw = SimpleTimelineWidget(...)
+        tw.add_timeline_overview_strip(position='bottom', row_height_px=20)
+
+    XDF builder path adds the strip at the bottom by default via ``TimelineBuilder.build_from_xdf_files``.
 
     """
     
@@ -597,6 +604,99 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                         all_plot_items[-1][1].showAxis('bottom')
             
             return video_widget, root_graphics, plot_item, dock
+
+
+    def add_timeline_overview_strip(self, position: str = 'top', row_height_px: int = 20):
+        """Add a read-only overview strip: stacked interval previews per primary track and a viewport region.
+
+        Does not enable zoom or pan on the strip; the region follows ``window_scrolled``.
+        Safe to call once; subsequent calls return the existing strip.
+
+        Args:
+            position: ``'top'`` (above controls), ``'below_controls'`` (between controls and track docks),
+                or ``'bottom'`` (below the main dock area — default for :meth:`TimelineBuilder.build_from_xdf_files`).
+            row_height_px: Minimum height per track row in the strip.
+        """
+        from pypho_timeline.widgets.timeline_overview_strip import TimelineOverviewStrip
+        ext = self.ui.get('timeline_overview_strip', None)
+        if ext is not None:
+            return ext
+        strip = TimelineOverviewStrip(reference_datetime=self.reference_datetime, row_height_px=row_height_px, parent=self)
+        self.ui.timeline_overview_strip = strip
+        if position == 'top':
+            self.ui.layout.insertWidget(0, strip)
+        elif position == 'below_controls':
+            self.ui.layout.insertWidget(1, strip)
+        else:
+            self.ui.layout.addWidget(strip)
+        if not hasattr(self, '_overview_rebuild_timer'):
+            self._overview_rebuild_timer = QtCore.QTimer(self)
+            self._overview_rebuild_timer.setSingleShot(True)
+            self._overview_rebuild_timer.timeout.connect(self._rebuild_timeline_overview_strip)
+        if not hasattr(self, '_overview_connected_ds'):
+            self._overview_connected_ds = {}
+        self.window_scrolled.connect(strip.set_viewport)
+        self.sigTrackAdded.connect(self._schedule_timeline_overview_strip_rebuild)
+        self.sigTrackRemoved.connect(self._schedule_timeline_overview_strip_rebuild)
+        self._schedule_timeline_overview_strip_rebuild()
+        return strip
+
+
+
+    def _schedule_timeline_overview_strip_rebuild(self, *_args):
+        if self.ui.get('timeline_overview_strip', None) is None:
+            return
+        self._overview_rebuild_timer.start(45)
+
+
+
+    def _overview_on_datasource_changed(self):
+        self._schedule_timeline_overview_strip_rebuild()
+
+
+
+    def _resync_timeline_overview_datasource_connections(self):
+        if self.ui.get('timeline_overview_strip', None) is None:
+            return
+        current = {}
+        for name in self.get_track_names_for_window_sync_group(window_sync_group='primary'):
+            ds = self.track_datasources.get(name, None)
+            if ds is not None and hasattr(ds, 'source_data_changed_signal'):
+                current[id(ds)] = ds
+        for i, ds in list(self._overview_connected_ds.items()):
+            if i not in current:
+                try:
+                    ds.source_data_changed_signal.disconnect(self._overview_on_datasource_changed)
+                except TypeError:
+                    pass
+                del self._overview_connected_ds[i]
+        for i, ds in current.items():
+            if i not in self._overview_connected_ds:
+                ds.source_data_changed_signal.connect(self._overview_on_datasource_changed)
+                self._overview_connected_ds[i] = ds
+
+
+
+    def _overview_strip_fallback_x_range(self) -> Tuple[float, float]:
+        a = self._window_value_to_signal_float(self.total_data_start_time)
+        b = self._window_value_to_signal_float(self.total_data_end_time)
+        if b < a:
+            a, b = b, a
+        if b <= a:
+            b = a + 1.0
+        return (a, b)
+
+
+
+    def _rebuild_timeline_overview_strip(self):
+        strip = self.ui.get('timeline_overview_strip', None)
+        if strip is None:
+            return
+        self._resync_timeline_overview_datasource_connections()
+        names = self.get_track_names_for_window_sync_group(window_sync_group='primary')
+        strip.rebuild(names, lambda n: self.track_datasources.get(n), self._overview_strip_fallback_x_range())
+        strip.set_viewport(self._window_value_to_signal_float(self.active_window_start_time), self._window_value_to_signal_float(self.active_window_end_time))
+
 
 
     def add_calendar_navigator(self):

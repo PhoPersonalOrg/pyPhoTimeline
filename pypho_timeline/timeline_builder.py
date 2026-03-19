@@ -253,7 +253,7 @@ class TimelineBuilder:
 
     
     ## MAIN FUNCTION
-    def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, **kwargs) -> Optional[SimpleTimelineWidget]:
+    def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, add_overview_strip: bool = True, **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from an XDF file.
         
         Args:
@@ -265,16 +265,17 @@ class TimelineBuilder:
             window_size: Window size as (width, height) tuple (default: (1000, 800))
             stream_allowlist: Optional list of regex patterns. If provided, only streams matching any pattern are loaded.
             stream_blocklist: Optional list of regex patterns. If provided, streams matching any pattern are excluded.
+            add_overview_strip: Passed through to :meth:`build_from_xdf_files`.
             
         Returns:
             SimpleTimelineWidget instance, or None if no streams found
         """
         # Use multi-file method for backward compatibility
-        return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist, **kwargs)
+        return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist, add_overview_strip=add_overview_strip, **kwargs)
     
 
     # @function_attributes(short_name=None, tags=['MAIN', 'used], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
-    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, **kwargs) -> Optional[SimpleTimelineWidget]:
+    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, add_overview_strip: bool = True, **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from multiple XDF files, merging streams by name.
         
         Streams with the same name across different files will be merged into a single track.
@@ -289,6 +290,7 @@ class TimelineBuilder:
             window_size: Window size as (width, height) tuple (default: (1000, 800))
             stream_allowlist: Optional list of regex patterns. If provided, only streams matching any pattern are loaded.
             stream_blocklist: Optional list of regex patterns. If provided, streams matching any pattern are excluded.
+            add_overview_strip: If True (default), attach a read-only interval overview minimap below the main dock area.
             
         Returns:
             SimpleTimelineWidget instance, or None if no streams found
@@ -397,8 +399,11 @@ class TimelineBuilder:
                 window_title = f"pyPhoTimeline - ALL Modalities from {len(all_loaded_xdf_file_paths)} XDF files: {file_names}"
         
         # Build timeline from merged datasources with reference datetime
-        return self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, reference_datetime=reference_datetime, **kwargs)
-    
+        timeline = self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, reference_datetime=reference_datetime, **kwargs)
+        if (timeline is not None) and add_overview_strip:
+            timeline.add_timeline_overview_strip(position='bottom')
+        return timeline
+
 
     # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
     def build_from_video(self, video_datasource: Optional[VideoTrackDatasource] = None, video_folder_path: Optional[Path] = None, video_paths: Optional[List[Union[Path, str]]] = None, video_df: Optional[pd.DataFrame] = None, video_intervals_df: Optional[pd.DataFrame] = None, custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), **kwargs) -> SimpleTimelineWidget:

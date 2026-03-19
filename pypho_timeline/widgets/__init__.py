@@ -12,6 +12,8 @@ from pypho_timeline.widgets.log_widget import (
 
 from pypho_timeline.widgets.timeline_calendar_widget import TimelineCalendarWidget
 
+_TimelineOverviewStrip = None
+
 # Lazy import to avoid circular dependency
 # simple_timeline_widget imports from docking modules which import from core modules
 # that import from widgets.custom_graphics_layout_widget, creating a circular dependency
@@ -44,8 +46,14 @@ _DataFrameTableModel = None
 
 def __getattr__(name):
     """Lazy loading of simple_timeline_widget and dataframe_table_widget exports."""
-    global _SimpleTimelineWidget, _modality_channels_dict, _modality_sfreq_dict, _perform_process_single_xdf_file_all_streams, _perform_process_all_streams_multi_xdf, _DataFrameTableWidget, _DataFrameTableModel
-    
+    global _SimpleTimelineWidget, _modality_channels_dict, _modality_sfreq_dict, _perform_process_single_xdf_file_all_streams, _perform_process_all_streams_multi_xdf, _DataFrameTableWidget, _DataFrameTableModel, _TimelineOverviewStrip
+
+    if name == 'TimelineOverviewStrip':
+        if _TimelineOverviewStrip is None:
+            from pypho_timeline.widgets.timeline_overview_strip import TimelineOverviewStrip
+            _TimelineOverviewStrip = TimelineOverviewStrip
+        return _TimelineOverviewStrip
+
     if name in ('SimpleTimelineWidget', 'modality_channels_dict', 'modality_sfreq_dict', 'perform_process_single_xdf_file_all_streams', 'perform_process_all_streams_multi_xdf', 'DataFrameTableWidget', 'DataFrameTableModel'):
         if _SimpleTimelineWidget is None:
             (_SimpleTimelineWidget, _modality_channels_dict, _modality_sfreq_dict, 
@@ -80,6 +88,7 @@ __all__ = [
     'LogWidget',
     'QtLogHandler',
     'TimelineCalendarWidget',
+    'TimelineOverviewStrip',
     'DataFrameTableWidget',
     'DataFrameTableModel',
 ]
