@@ -667,10 +667,7 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                     # Create default visibility (all channels visible)
                     initial_visibility = {channel: True for channel in channel_names}
                 
-                self.options_panel = TrackChannelVisibilityOptionsPanel(
-                    channel_names=channel_names,
-                    initial_visibility=initial_visibility
-                )
+                self.options_panel = TrackChannelVisibilityOptionsPanel(channel_names=channel_names, initial_visibility=initial_visibility)
                 
                 # Forward panel signals to widget's mixin signals
                 self.options_panel.optionsChanged.connect(self.TrackOptionsPanelOwningMixin_optionsChanged)

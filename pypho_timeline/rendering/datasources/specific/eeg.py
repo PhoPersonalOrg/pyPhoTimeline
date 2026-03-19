@@ -480,7 +480,8 @@ class EEGSpectrogramDetailRenderer(DetailRenderer):
 
 
     def _get_sxx_2d(self, detail_data: Dict) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
-        """Extract (freqs, t, Sxx_2d) from spectrogram dict. Sxx_2d is (n_freqs, n_times)."""
+        """Extract (freqs, t, Sxx_2d) from spectrogram dict. Sxx_2d is (n_freqs, n_times).
+        When channel_visibility is set and detail_data has ch_names, averages only over visible/active channels."""
         if not detail_data or not isinstance(detail_data, dict):
             return None
         freqs = detail_data.get('freqs')
@@ -494,7 +495,15 @@ class EEGSpectrogramDetailRenderer(DetailRenderer):
             Sxx = Sxx.values
         Sxx = np.asarray(Sxx)
         if Sxx.ndim == 3:
-            Sxx = np.nanmean(Sxx, axis=0) ## average over all channels
+            ch_names = detail_data.get('ch_names')
+            if ch_names is not None and len(ch_names) == Sxx.shape[0] and hasattr(self, 'channel_visibility') and self.channel_visibility:
+                visible_indices = [i for i, ch in enumerate(ch_names) if self.channel_visibility.get(ch, True)]
+                if visible_indices:
+                    Sxx = np.nanmean(Sxx[visible_indices, :, :], axis=0)
+                else:
+                    Sxx = np.nanmean(Sxx, axis=0)
+            else:
+                Sxx = np.nanmean(Sxx, axis=0)
         if Sxx.ndim != 2 or Sxx.shape[0] != len(freqs) or Sxx.shape[1] != len(t):
             return None
         return (freqs, t, Sxx)
@@ -568,6 +577,33 @@ class EEGSpectrogramDetailRenderer(DetailRenderer):
         f_min = float(freqs[freq_mask].min())
         f_max = float(freqs[freq_mask].max())
         return (x_min, x_max, f_min, f_max)
+
+
+    ## override `_trigger_visibility_render` to recompute the correct average when channel visibility is updated
+    def _trigger_visibility_render(self):
+        """Helper method to clear all visible detail graphics and trigger re-render after visibility changes."""
+        # Clear all visible detail graphics
+        logger.warning(f"EEGSpectrogramDetailRenderer[{self.track_id}] _trigger_visibility_render()")
+        visible_cache_keys = list(self.visible_intervals)
+        logger.debug(f"EEGSpectrogramDetailRenderer[{self.track_id}] Clearing {len(visible_cache_keys)} intervals for re-render after visibility change")
+        
+        for cache_key in visible_cache_keys:
+            self._clear_detail(cache_key)
+        
+        # Clear visible_intervals so update_viewport() will treat all intervals as new and re-fetch/re-render them
+        self.visible_intervals.clear() ## this seems uneeded and relies on update_viewport to rebuild them
+        logger.debug(f"EEGSpectrogramDetailRenderer[{self.track_id}] Cleared visible_intervals to force re-fetch on next update_viewport()")
+        
+        # Trigger viewport update to re-render with new visibility
+        # This will re-fetch intervals and render with filtered channels
+        if self.plot_item is not None:
+            viewbox = self.plot_item.getViewBox()
+            if viewbox is not None:
+                x_range, y_range = viewbox.viewRange()
+                if len(x_range) == 2:
+                    self.update_viewport(x_range[0], x_range[1])
+
+
 
 
 # ==================================================================================================================================================================================================================================================================================== #
