@@ -232,6 +232,8 @@ class TrackRenderingMixin(EpochRenderingMixin):
             evt: Event from SignalProxy(sigRangeChanged): tuple (viewbox, view_range, changed).
                  view_range is (x_range, y_range).
         """
+        if getattr(self, '_applying_window_from_signal', False):
+            return
         if track_name not in self.track_renderers:
             return
         # ViewBox.sigRangeChanged emits (self, viewRange, changed); SignalProxy forwards as single tuple
@@ -240,7 +242,23 @@ class TrackRenderingMixin(EpochRenderingMixin):
         if len(x_range) == 2:
             # Defer the update to avoid blocking the signal handler
             def deferred_update():
+                if getattr(self, '_applying_window_from_signal', False):
+                    return
                 self.track_renderers[track_name].update_viewport(x_range[0], x_range[1])
+                if self.get_track_window_sync_group(track_name) != 'primary':
+                    return
+                apply_fn = getattr(self, 'apply_active_window_from_plot_x', None)
+                if apply_fn is None:
+                    return
+                x0, x1 = float(x_range[0]), float(x_range[1])
+                if x0 > x1:
+                    x0, x1 = x1, x0
+                la0 = getattr(self, '_last_applied_plot_window_x0', None)
+                la1 = getattr(self, '_last_applied_plot_window_x1', None)
+                eps = max(1e-6, (x1 - x0) * 1e-12)
+                if la0 is not None and la1 is not None and abs(x0 - la0) < eps and abs(x1 - la1) < eps:
+                    return
+                apply_fn(x0, x1)
             QtCore.QTimer.singleShot(0, deferred_update)
     
     

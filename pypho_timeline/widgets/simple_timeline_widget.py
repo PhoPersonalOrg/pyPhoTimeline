@@ -55,7 +55,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
 
     from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget, SimpleTimeWindow
 
-    Optional read-only overview minimap (primary tracks, overview intervals only)::
+    Optional overview minimap (primary tracks, overview intervals; viewport region syncs with main tracks)::
 
         tw = SimpleTimelineWidget(...)
         tw.add_timeline_overview_strip(position='bottom', row_height_px=20)
@@ -154,9 +154,12 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         self.spikes_window = SimpleTimeWindow(
             self.total_data_start_time, self.total_data_end_time, window_duration, self.active_window_start_time
         )
+        self._last_applied_plot_window_x0 = self._window_value_to_signal_float(self.active_window_start_time)
+        self._last_applied_plot_window_x1 = self._window_value_to_signal_float(self.active_window_end_time)
         self.compare_window_start_time = self.active_window_start_time
         self.compare_window_end_time = self.active_window_end_time
         self._is_updating_compare_window = False
+        self._applying_window_from_signal = False
         self.ui.compare_track_names = set()
         self.ui.compare_track_master_name = None
         self.ui.split_group_docks = {}
@@ -347,14 +350,43 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         else:
             emit_start = float(new_start_time)
             emit_end = float(new_end_time)
-        
-        self.window_scrolled.emit(emit_start, emit_end)
-        
+        self._last_applied_plot_window_x0 = float(emit_start)
+        self._last_applied_plot_window_x1 = float(emit_end)
+        self._applying_window_from_signal = True
+        try:
+            self.window_scrolled.emit(emit_start, emit_end)
+        finally:
+            self._applying_window_from_signal = False
         if isinstance(new_start_time, (datetime, pd.Timestamp)):
             print(f"Window scrolled to: {new_start_time} - {new_end_time}")
         else:
             print(f"Window scrolled to: {new_start_time:.2f} - {new_end_time:.2f}")
 
+        self._update_interval_jump_buttons_enabled()
+
+
+    def apply_active_window_from_plot_x(self, x0: float, x1: float):
+        """Set the active window from pyqtgraph plot x (Unix seconds if ``reference_datetime`` is set, else data seconds). Updates ``spikes_window`` and emits ``window_scrolled``."""
+        xa, xb = (float(x0), float(x1)) if x0 <= x1 else (float(x1), float(x0))
+        if xb <= xa:
+            xb = xa + 1e-9
+        if self.reference_datetime is not None:
+            new_start = pd.Timestamp(unix_timestamp_to_datetime(xa))
+            new_end = pd.Timestamp(unix_timestamp_to_datetime(xb))
+            emit_start, emit_end = xa, xb
+        else:
+            new_start, new_end = xa, xb
+            emit_start, emit_end = xa, xb
+        self.active_window_start_time = new_start
+        self.active_window_end_time = new_end
+        self.spikes_window.update_window_start_end(new_start, new_end)
+        self._last_applied_plot_window_x0 = float(emit_start)
+        self._last_applied_plot_window_x1 = float(emit_end)
+        self._applying_window_from_signal = True
+        try:
+            self.window_scrolled.emit(float(emit_start), float(emit_end))
+        finally:
+            self._applying_window_from_signal = False
         self._update_interval_jump_buttons_enabled()
 
 
@@ -607,9 +639,9 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
 
 
     def add_timeline_overview_strip(self, position: str = 'top', row_height_px: int = 20):
-        """Add a read-only overview strip: stacked interval previews per primary track and a viewport region.
+        """Add an overview strip: stacked interval previews per primary track and a viewport region.
 
-        Does not enable zoom or pan on the strip; the region follows ``window_scrolled``.
+        The strip view itself does not pan/zoom; dragging or resizing the viewport region updates the main window via ``sigViewportChanged`` (and the region follows ``window_scrolled``).
         Safe to call once; subsequent calls return the existing strip.
 
         Args:
@@ -636,6 +668,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         if not hasattr(self, '_overview_connected_ds'):
             self._overview_connected_ds = {}
         self.window_scrolled.connect(strip.set_viewport)
+        strip.sigViewportChanged.connect(self.apply_active_window_from_plot_x)
         self.sigTrackAdded.connect(self._schedule_timeline_overview_strip_rebuild)
         self.sigTrackRemoved.connect(self._schedule_timeline_overview_strip_rebuild)
         self._schedule_timeline_overview_strip_rebuild()
