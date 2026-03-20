@@ -9,7 +9,7 @@ import nptyping as ND
 from nptyping import NDArray
 import numpy as np
 import pyqtgraph as pg
-from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, create_am_pm_date_axis
+from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, create_am_pm_date_axis, unix_timestamp_to_datetime
 from pyphocorehelpers.DataStructure.general_parameter_containers import VisualizationParameters, RenderPlotsData, RenderPlots
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
 from pyphocorehelpers.DataStructure.dynamic_parameters import DynamicParameters
@@ -311,6 +311,9 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                 if isinstance(start_t, (datetime, pd.Timestamp)) and isinstance(end_t, (datetime, pd.Timestamp)):
                     dt_start = pd.Timestamp(start_t)
                     dt_end = pd.Timestamp(end_t)
+                elif isinstance(start_t, (int, float)) and isinstance(end_t, (int, float)) and float(start_t) > 1e9 and float(end_t) > 1e9:
+                    dt_start = pd.Timestamp(unix_timestamp_to_datetime(float(start_t)))
+                    dt_end = pd.Timestamp(unix_timestamp_to_datetime(float(end_t)))
                 else:
                     dt_start = float_to_datetime(start_t, self.reference_datetime)
                     dt_end = float_to_datetime(end_t, self.reference_datetime)

@@ -7,7 +7,7 @@ from typing import Any, Callable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from qtpy import QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 
 from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem
@@ -38,7 +38,10 @@ def _duration_to_seconds(d: Any) -> float:
 
 
 class TimelineOverviewStrip(pg.PlotWidget):
-    """Non-interactive minimap: one horizontal band per primary track (overview intervals only) and a fixed LinearRegionItem for the viewport."""
+    """Minimap: one horizontal band per primary track (overview intervals only) and a movable ``LinearRegionItem`` for the viewport (plot x = Unix seconds when using date axis)."""
+
+    sigViewportChanged = QtCore.Signal(float, float)
+
 
     def __init__(self, reference_datetime: Optional[datetime] = None, row_height_px: int = 20, band_margin: float = 0.12, parent: Optional[QtWidgets.QWidget] = None):
         axis_bottom = create_am_pm_date_axis(orientation='bottom') if reference_datetime is not None else None
@@ -60,6 +63,32 @@ class TimelineOverviewStrip(pg.PlotWidget):
         self.setBackground('w')
         self.showAxis('left', True)
 
+
+    def _on_viewport_region_change_finished(self):
+        r0, r1 = self._viewport_region.getRegion()
+        x_lo, x_hi = (float(r0), float(r1)) if r0 <= r1 else (float(r1), float(r0))
+        vb = self.getViewBox()
+        try:
+            xl = vb.state['limits']['xLimits']
+            xmin_lim, xmax_lim = xl[0], xl[1]
+        except (KeyError, TypeError, IndexError):
+            xmin_lim, xmax_lim = None, None
+        if xmin_lim is not None and xmax_lim is not None and xmax_lim > xmin_lim:
+            span = x_hi - x_lo
+            if x_lo < xmin_lim:
+                x_lo = float(xmin_lim)
+                x_hi = x_lo + span
+            if x_hi > xmax_lim:
+                x_hi = float(xmax_lim)
+                x_lo = x_hi - span
+            if x_lo < xmin_lim:
+                x_lo = float(xmin_lim)
+            if x_hi < x_lo:
+                x_hi = x_lo + 1e-9
+            self._viewport_region.blockSignals(True)
+            self._viewport_region.setRegion([x_lo, x_hi])
+            self._viewport_region.blockSignals(False)
+        self.sigViewportChanged.emit(x_lo, x_hi)
 
 
     def set_viewport(self, x_start: float, x_end: float) -> None:

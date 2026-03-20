@@ -806,7 +806,7 @@ class TimelineBuilder:
 
     # @function_attributes(short_name=None, tags=['MAIN'], input_requires=[], output_provides=[], uses=['self._add_tracks_to_timeline'], used_by=['self.build_from_eeg_raw_and_stream_info', 'self.build_from_streams', 'self.build_from_video', 'self.build_from_xdf_files'], creation_date='2026-02-03 19:53', related_items=[])
     def build_from_datasources(self, datasources: List[TrackDatasource], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), reference_datetime: Optional[datetime] = None,
-                use_absolute_datetime_track_mode: bool = True, **kwargs,
+                use_absolute_datetime_track_mode: bool = True, enable_calendar_widget_track: bool = False, enable_log_table_widget: bool = False, **kwargs,
                 ) -> SimpleTimelineWidget:
         """Build a timeline widget from existing datasources.
         
@@ -905,21 +905,27 @@ class TimelineBuilder:
         main_window.resize(window_size[0], window_size[1])
         main_window.show()
             
+        
+        # enable_dynamic_locked_widget_track: bool = False
+
+
         ## Add the calendar widget
-        a_cal_nav = timeline.add_calendar_navigator()
+        if enable_calendar_widget_track:
+            a_cal_nav = timeline.add_calendar_navigator()
         
         ## add the table widget:
-        if "LOG_TextLogger" in timeline.track_datasources:
-            table_widget = timeline.add_dataframe_table_track("Text Log", timeline.track_datasources["LOG_TextLogger"].df) # timeline.add_dataframe_table_track()
+        if enable_log_table_widget:
+            if "LOG_TextLogger" in timeline.track_datasources:
+                table_widget = timeline.add_dataframe_table_track("Text Log", timeline.track_datasources["LOG_TextLogger"].df) # timeline.add_dataframe_table_track()
 
-        # Dock log widget at bottom if it exists
-        if self.log_widget is not None:
-            # Hide standalone window before adding to dock (so it doesn't show as separate window)
-            self.log_widget.hide()
-            # Add to dock - the dock will automatically show the widget
-            _, dock = timeline.ui.dynamic_docked_widget_container.add_display_dock(identifier='log_widget', widget=self.log_widget, dockSize=(800, 200), dockAddLocationOpts=['bottom'])
-            # Explicitly show the widget to ensure it's visible in the dock
-            self.log_widget.show()
+            # Dock log widget at bottom if it exists
+            if self.log_widget is not None:
+                # Hide standalone window before adding to dock (so it doesn't show as separate window)
+                self.log_widget.hide()
+                # Add to dock - the dock will automatically show the widget
+                _, dock = timeline.ui.dynamic_docked_widget_container.add_display_dock(identifier='log_widget', widget=self.log_widget, dockSize=(800, 200), dockAddLocationOpts=['right'])
+                # Explicitly show the widget to ensure it's visible in the dock
+                self.log_widget.show()
         
         logger.info("\nTimeline widget created with tracks:")
         for ds in datasources:
