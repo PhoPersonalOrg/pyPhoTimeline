@@ -616,6 +616,7 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
             mask = pd.Series([False] * len(self.detailed_df))
         
         result_df = self.detailed_df[mask].copy()
+        result_df = self._post_slice_detailed_dataframe(result_df, interval)
         
         # Apply downsampling if enabled
         if self.enable_downsampling and (self.max_points_per_second is not None) and (len(result_df) > 0):
@@ -635,6 +636,11 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
                 print(f'curr_downsampled_points_per_sec: {curr_downsampled_points_per_sec}')
 
         print(f'result_df')
+        return result_df
+
+
+    def _post_slice_detailed_dataframe(self, result_df: pd.DataFrame, interval: pd.Series) -> pd.DataFrame:
+        """Hook for subclasses to filter rows after interval slice and before downsampling."""
         return result_df
     
 
