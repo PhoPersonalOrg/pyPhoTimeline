@@ -199,7 +199,7 @@ def merge_streams_by_name(streams_by_file: List[Tuple[List, Path]]) -> Dict[str,
     return streams_by_name
 
 
-@function_attributes(short_name=None, tags=['MAIN', 'multi_xdf_files', 'multi-streams'], input_requires=[], output_provides=[], uses=[], used_by=['TimelineBuilder'], creation_date='2026-03-02 03:00', related_items=['perform_process_single_xdf_file_all_streams'])
+@function_attributes(short_name=None, tags=['MAIN', 'multi_xdf_files', 'multi-streams'], input_requires=[], output_provides=[], uses=['merge_streams_by_name', 'unix_timestamp_to_datetime', 'float_to_datetime', 'datetime_to_unix_timestamp'], used_by=['TimelineBuilder'], creation_date='2026-03-02 03:00', related_items=['perform_process_single_xdf_file_all_streams'])
 def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[dict]] = None, enable_raw_xdf_processing: bool=True, spectrogram_channel_groups: Optional[List[SpectrogramChannelGroupConfig]] = EMOTIV_EPOC_X_SPECTROGRAM_GROUPS) -> Tuple[Dict, Dict]:
     """Process streams from multiple XDF files and merge streams with the same name.
 
@@ -219,6 +219,8 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         - all_streams_datasources: Dictionary mapping stream names to merged TrackDatasource instances
     """
     from phopymnehelper.historical_data import HistoricalData
+    from phopymnehelper.xdf_files import LabRecorderXDF
+    from phopymnehelper.SavedSessionsProcessor import DataModalityType
 
     if len(streams_list) != len(xdf_file_paths):
         raise ValueError(f"streams_list length ({len(streams_list)}) must match xdf_file_paths length ({len(xdf_file_paths)})")
@@ -226,7 +228,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
     # Extract reference datetimes from file headers
     file_reference_datetimes = {}
 
-    xdf_recording_file_metadta_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=xdf_file_paths) ## this should be cheap because most will already be cached
+    xdf_recording_file_metadata_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=xdf_file_paths) ## this should be cheap because most will already be cached
 
     if file_headers is None:
         file_headers = [None] * len(xdf_file_paths)
@@ -238,12 +240,12 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         if ref_dt is not None:
             file_reference_datetimes[file_path] = ref_dt
         else:
-            found_file_df_matches = xdf_recording_file_metadta_df[xdf_recording_file_metadta_df['src_file'].apply(lambda s: Path(s).resolve()) == Path(file_path).resolve()]
+            found_file_df_matches = xdf_recording_file_metadata_df[xdf_recording_file_metadata_df['src_file'].apply(lambda s: Path(s).resolve()) == Path(file_path).resolve()]
             if len(found_file_df_matches) == 1:
                 meas_datetime = found_file_df_matches.iloc[0]['meas_datetime'] if not found_file_df_matches.empty else None
                 ref_dt = meas_datetime
             else:
-                print(f'WARN: failed to find xdf file metadata for file file_path: "{file_path.as_posix()}" in xdf_recording_file_metadta_df: {xdf_recording_file_metadta_df}\n\tfound_file_df_matches: {found_file_df_matches}')
+                print(f'WARN: failed to find xdf file metadata for file file_path: "{file_path.as_posix()}" in xdf_recording_file_metadta_df: {xdf_recording_file_metadata_df}\n\tfound_file_df_matches: {found_file_df_matches}')
 
         if ref_dt is not None:
             file_reference_datetimes[file_path] = ref_dt
@@ -381,10 +383,51 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         # Create merged datasource based on stream type
         datasource = None
 
+        ## Load the XDF raw if needed
+        lab_obj: Optional[LabRecorderXDF] = None
+        raws_dict = {}
+
+        if enable_raw_xdf_processing:
+            logger.info(f'enable_raw_xdf_processing is True so this stream will be processed as MNE raw...')
+            xdf_path_for_raw = stream_file_pairs[0][1]
+            logger.info(f'\ttrying to load raw XDF file load for stream_name: "{stream_name}" with xdf_path: "{xdf_path_for_raw}"...')
+            try:
+                lab_obj = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_path_for_raw, should_load_full_file_data=True)
+            except ValueError as e:
+                if 'datetime' in str(e).lower() or 'UTC' in str(e):
+                    logger.warning(f'\tSkipping raw XDF file load for "{stream_name}" with xdf_path: {xdf_path_for_raw}: LabRecorderXDF load failed (UTC/datetime issue): {e}')
+                else:
+                    raise
+
+            if lab_obj is not None:
+                raws_dict = lab_obj.datasets_dict or {}
+                logger.info(f'\traws_dict: {raws_dict}')
+
+
         if (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name):
             if has_valid_intervals and has_detailed_data:
                 motion_norm_dict = modality_channels_normalization_mode_dict.get('MOTION')
                 datasource = MotionTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict=motion_norm_dict)
+                
+                if enable_raw_xdf_processing and (lab_obj is not None):
+                    logger.info(f'\tMOTION Modality MNE raw processing...')
+                    if (lab_obj is not None):
+                        motion_raws = raws_dict.get(DataModalityType.MOTION.value, [])  # type: ignore[arg-type]  # xdf_files keys datasets_dict by enum .value at runtime
+                        raw = motion_raws[0] if motion_raws else None
+                        if raw is not None:
+                            try:
+                                from phopymnehelper.motion_data import MotionData
+
+                                is_moving_annots, is_moving_annots_df = MotionData.find_high_accel_periods(a_ds=datasource.detailed_df, total_change_threshold=0.5, should_set_bad_period_annotations=False, minimum_bad_duration=1e-3) # at least 1ms in duration to prevent tons of tiny intervals
+                                datasource.set_bad_intervals(bad_intervals_df=is_moving_annots_df, emit_changed=False)
+
+                            except Exception as spec_e:
+                                logger.warning(f'\t\tFailed to create bad period moving annotations for "{stream_name}": {spec_e}')
+                        else:
+                            logger.warning(f'\tNo MOTION raw found in XDF for stream "{stream_name}"; skipping spectrogram')
+
+
+
 
         elif (stream_type.upper() in ['RAW']) and (' eQuality' in stream_name):
             if has_valid_intervals and has_detailed_data:
@@ -401,21 +444,10 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                                                                         max_points_per_second=10.0, enable_downsampling=True,
                                                                         fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict,
                 )
-                if enable_raw_xdf_processing:
-                    logger.info(f'enable_raw_xdf_processing is True so this stream will be processed as MNE raw...')
-                    xdf_path_for_raw = stream_file_pairs[0][1]
-                    from phopymnehelper.xdf_files import LabRecorderXDF
-                    from phopymnehelper.SavedSessionsProcessor import DataModalityType
-                    lab_obj: Optional[LabRecorderXDF] = None
-                    try:
-                        lab_obj = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_path_for_raw, should_load_full_file_data=True)
-                    except ValueError as e:
-                        if 'datetime' in str(e).lower() or 'UTC' in str(e):
-                            logger.warning(f'Skipping spectrogram for "{stream_name}": LabRecorderXDF load failed (UTC/datetime issue): {e}')
-                        else:
-                            raise
-                    if lab_obj is not None:
-                        raws_dict = lab_obj.datasets_dict or {}
+                if enable_raw_xdf_processing and (lab_obj is not None):
+                    logger.info(f'\tEEG MNE raw processing...')
+                    if (lab_obj is not None):
+                        # raws_dict = lab_obj.datasets_dict or {}
                         eeg_raws = raws_dict.get(DataModalityType.EEG.value, [])  # type: ignore[arg-type]  # xdf_files keys datasets_dict by enum .value at runtime
                         raw = eeg_raws[0] if eeg_raws else None
                         if raw is not None:
