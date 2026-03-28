@@ -17,7 +17,7 @@ from phopymnehelper.helpers.dataframe_accessor_helpers import CommonDataFrameAcc
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin
-from phopymnehelper.motion_data import MotionDataFrame, BadMotionDataFrame
+from phopymnehelper.motion_data import BadMotionDataFrame
 
 from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
@@ -395,12 +395,10 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         overview; for already-added tracks, also replace the track's detail renderer reference if your UI caches it
         (e.g. call ``track_renderer.detail_renderer = datasource.get_detail_renderer()`` after this).
         """
-        is_timestamp_format: bool = bad_intervals_df.bad_motion_epochs_df.is_timestamp_format()
-
-        if is_timestamp_format and (bad_intervals_time_origin_unix is None):
-            t_unix: float = BadMotionDataFrame._detail_t_column_to_unix_numpy(self.detailed_df['t'])[0]
-            bad_intervals_time_origin_unix = t_unix
-
+        # is_timestamp_format: bool = bad_intervals_df.bad_motion_epochs_df.is_timestamp_format()
+        # if is_timestamp_format and (bad_intervals_time_origin_unix is None):
+        #     t_unix: float = BadMotionDataFrame._detail_t_column_to_unix_numpy(self.detailed_df['t'])[0]
+        #     bad_intervals_time_origin_unix = t_unix
         self._bad_intervals_unix_df = BadMotionDataFrame.normalize_motion_bad_intervals_df(bad_intervals_df, bad_intervals_time_origin_unix)
         self._bad_intervals_key_suffix = BadMotionDataFrame.motion_bad_intervals_key_suffix(self._bad_intervals_unix_df)
         if self._motion_plot_detail_renderer is not None:
