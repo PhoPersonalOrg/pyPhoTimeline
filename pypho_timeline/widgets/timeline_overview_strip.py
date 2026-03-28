@@ -14,11 +14,7 @@ from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsI
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.utils.datetime_helpers import create_am_pm_date_axis, datetime_to_unix_timestamp
 
-
-try:
-    from pyqtgraph.graphicsItems.LinearRegionItem import LinearRegionItem
-except ImportError:
-    LinearRegionItem = pg.LinearRegionItem
+from pypho_timeline.EXTERNAL.pyqtgraph_extensions.graphicsObjects.CustomLinearRegionItem import CustomLinearRegionItem
 
 
 def _scalar_to_plot_x(t: Any) -> float:
@@ -38,7 +34,7 @@ def _duration_to_seconds(d: Any) -> float:
 
 
 class TimelineOverviewStrip(pg.PlotWidget):
-    """Minimap: one horizontal band per primary track (overview intervals only) and a user-draggable ``LinearRegionItem`` for the viewport. The plot itself does not pan or zoom; plot x = Unix seconds when using the date axis."""
+    """Minimap: one horizontal band per primary track (overview intervals only) and a user-draggable ``CustomLinearRegionItem`` for the viewport. The plot itself does not pan or zoom; plot x = Unix seconds when using the date axis."""
 
     sigViewportChanged = QtCore.Signal(float, float)
 
@@ -50,7 +46,8 @@ class TimelineOverviewStrip(pg.PlotWidget):
         self._row_height_px = max(16, int(row_height_px))
         self._band_margin = float(band_margin)
         self._intervals_item: Optional[IntervalRectsItem] = None
-        self._viewport_region = LinearRegionItem(values=(0.0, 1.0), orientation='vertical', brush=QtGui.QColor(80, 140, 255, 70), hoverBrush=QtGui.QColor(80, 140, 255, 90), pen=pg.mkPen(color=(40, 90, 200), width=1), movable=True)
+        # self._viewport_region = CustomLinearRegionItem(values=(0.0, 1.0), orientation='vertical', brush=QtGui.QColor(80, 140, 255, 70), hoverBrush=QtGui.QColor(80, 140, 255, 90), pen=pg.mkPen(color=(40, 90, 200), width=1), movable=True)
+        self._viewport_region = CustomLinearRegionItem(values=(0.0, 1.0), orientation='vertical', pen=pg.mkPen(color=(40, 90, 200), width=1), brush=QtGui.QColor(80, 140, 255, 70), hoverBrush=QtGui.QColor(80, 140, 255, 90), hoverPen=pg.mkPen('#f00'), clipItem=self.getPlotItem()) # bound the LinearRegionItem to the plotted data
         self._viewport_region.setZValue(120)
         self.addItem(self._viewport_region)
         self._viewport_region.sigRegionChangeFinished.connect(self._on_viewport_region_change_finished)
