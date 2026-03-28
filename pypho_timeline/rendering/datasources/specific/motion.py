@@ -187,32 +187,32 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
             plot_data_item.setPos(0, (float(i)*single_channel_height)) ## position aligned with the channel
             graphics_objects.append(plot_data_item)
 
-        self._append_bad_interval_regions(plot_item=plot_item, interval=interval, graphics_objects=graphics_objects)
+        # self._append_bad_interval_regions(plot_item=plot_item, interval=interval, graphics_objects=graphics_objects)
         return graphics_objects
 
 
-    def _append_bad_interval_regions(self, plot_item: pg.PlotItem, interval: pd.DataFrame, graphics_objects: List[pg.GraphicsObject]) -> None:
-        if self.bad_intervals_unix_df is None or len(self.bad_intervals_unix_df) == 0:
-            return
-        if interval is None or len(interval) == 0 or 't_start' not in interval.columns or 't_duration' not in interval.columns:
-            return
-        _t_start_raw = interval['t_start'].iloc[0]
-        _t_dur = float(interval['t_duration'].iloc[0])
-        iv0 = float(datetime_to_unix_timestamp(_t_start_raw)) if isinstance(_t_start_raw, (datetime, pd.Timestamp)) else float(_t_start_raw)
-        iv1 = iv0 + _t_dur
-        brush_color = pg.mkColor('black')
-        brush_color.setAlphaF(self.bad_overlay_alpha)
-        brush = pg.mkBrush(brush_color)
-        for row in self.bad_intervals_unix_df.itertuples(index=False):
-            b0 = float(row.t_start)
-            b1 = b0 + float(row.t_duration)
-            x0 = max(b0, iv0)
-            x1 = min(b1, iv1)
-            if x1 <= x0:
-                continue
-            region = LinearRegionItem(values=(x0, x1), orientation='vertical', brush=brush, movable=False, pen=None)
-            plot_item.addItem(region)
-            graphics_objects.append(region)
+    # def _append_bad_interval_regions(self, plot_item: pg.PlotItem, interval: pd.DataFrame, graphics_objects: List[pg.GraphicsObject]) -> None:
+    #     if self.bad_intervals_unix_df is None or len(self.bad_intervals_unix_df) == 0:
+    #         return
+    #     if interval is None or len(interval) == 0 or 't_start' not in interval.columns or 't_duration' not in interval.columns:
+    #         return
+    #     _t_start_raw = interval['t_start'].iloc[0]
+    #     _t_dur = float(interval['t_duration'].iloc[0])
+    #     iv0 = float(datetime_to_unix_timestamp(_t_start_raw)) if isinstance(_t_start_raw, (datetime, pd.Timestamp)) else float(_t_start_raw)
+    #     iv1 = iv0 + _t_dur
+    #     brush_color = pg.mkColor('black')
+    #     brush_color.setAlphaF(self.bad_overlay_alpha)
+    #     brush = pg.mkBrush(brush_color)
+    #     for row in self.bad_intervals_unix_df.itertuples(index=False):
+    #         b0 = float(row.t_start)
+    #         b1 = b0 + float(row.t_duration)
+    #         x0 = max(b0, iv0)
+    #         x1 = min(b1, iv1)
+    #         if x1 <= x0:
+    #             continue
+    #         region = LinearRegionItem(values=(x0, x1), orientation='vertical', brush=brush, movable=False, pen=None)
+    #         plot_item.addItem(region)
+    #         graphics_objects.append(region)
     
 
     def clear_detail(self, plot_item: pg.PlotItem, graphics_objects: List[pg.GraphicsObject]) -> None:
@@ -395,10 +395,22 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         overview; for already-added tracks, also replace the track's detail renderer reference if your UI caches it
         (e.g. call ``track_renderer.detail_renderer = datasource.get_detail_renderer()`` after this).
         """
+        from phopymnehelper.helpers.dataframe_accessor_helpers import MaskedValidDataFrameAccessor
+        from phopymnehelper.motion_data import MotionData, MotionDataFrame, BadMotionDataFrame
+
         # is_timestamp_format: bool = bad_intervals_df.bad_motion_epochs_df.is_timestamp_format()
         # if is_timestamp_format and (bad_intervals_time_origin_unix is None):
         #     t_unix: float = BadMotionDataFrame._detail_t_column_to_unix_numpy(self.detailed_df['t'])[0]
         #     bad_intervals_time_origin_unix = t_unix
+
+        bad_intervals_df = bad_intervals_df.bad_motion_epochs_df.adding_unix_float_columns(inplace=False)
+        # self._bad_intervals_unix_df = self._bad_intervals_unix_df.masked_df.masking_by_intervals(mask_bad_intervals_df=bad_intervals_df, time_col_name='t', bool_mask_column_name='is_bad_motion',
+        #                                                             intervals_start_col_name='onset', intervals_end_col_name='onset_end')
+        # self._bad_intervals_unix_df.masked_df.add_masking_column(mask_col='is_valid', value_cols=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'])
+        # self._bad_intervals_unix_df
+        # masked_detailed_eeg_df: pd.DataFrame = detailed_eeg_df.masked_df.get_masked(copy=True)
+
+
         self._bad_intervals_unix_df = BadMotionDataFrame.normalize_motion_bad_intervals_df(bad_intervals_df, bad_intervals_time_origin_unix)
         self._bad_intervals_key_suffix = BadMotionDataFrame.motion_bad_intervals_key_suffix(self._bad_intervals_unix_df)
         if self._motion_plot_detail_renderer is not None:
@@ -408,18 +420,18 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
             self.source_data_changed_signal.emit()
 
 
-    def _post_slice_detailed_dataframe(self, result_df: pd.DataFrame, interval: pd.Series) -> pd.DataFrame:
-        if not self.exclude_bad_from_detail or len(self._bad_intervals_unix_df) == 0 or len(result_df) == 0:
-            return result_df
-        if 't' not in result_df.columns:
-            return result_df
-        t_unix = BadMotionDataFrame._detail_t_column_to_unix_numpy(result_df['t'])
-        bad = np.zeros(len(result_df), dtype=bool)
-        for row in self._bad_intervals_unix_df.itertuples(index=False):
-            b0 = float(row.t_start)
-            b1 = b0 + float(row.t_duration)
-            bad |= (t_unix >= b0) & (t_unix < b1)
-        return result_df.loc[~bad].copy()
+    # def _post_slice_detailed_dataframe(self, result_df: pd.DataFrame, interval: pd.Series) -> pd.DataFrame:
+    #     if not self.exclude_bad_from_detail or len(self._bad_intervals_unix_df) == 0 or len(result_df) == 0:
+    #         return result_df
+    #     if 't' not in result_df.columns:
+    #         return result_df
+    #     t_unix = BadMotionDataFrame._detail_t_column_to_unix_numpy(result_df['t'])
+    #     bad = np.zeros(len(result_df), dtype=bool)
+    #     for row in self._bad_intervals_unix_df.itertuples(index=False):
+    #         b0 = float(row.t_start)
+    #         b1 = b0 + float(row.t_duration)
+    #         bad |= (t_unix >= b0) & (t_unix < b1)
+    #     return result_df.loc[~bad].copy()
     
 
     def get_detail_renderer(self):
