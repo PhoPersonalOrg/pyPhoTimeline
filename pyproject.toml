@@ -1,6 +1,6 @@
 [project]
 name = "py-pho-timeline"
-version = "0.4.3"
+version = "0.4.4"
 description = "A library for creating time-synchronized timeline widgets with docked tracks"
 readme = "README.md"
 requires-python = ">=3.10,<3.11"
@@ -24,6 +24,7 @@ dependencies = [
     "phopylslhelper>=1.0.0",
     "phopymnehelper",
     "dotenv>=0.9.9",
+    "polars[all]>=1.39.3",
 ]
 
 [tool.uv.sources]

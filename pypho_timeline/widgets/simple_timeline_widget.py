@@ -619,21 +619,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             
             # Hide x-axis labels for all tracks except the bottom-most one
             if hide_other_track_x_axes:
-                if len(self.ui.matplotlib_view_widgets) > 1:
-                    # Get all plot items
-                    all_plot_items = []
-                    for widget_name, widget in self.ui.matplotlib_view_widgets.items():
-                        plot_item_widget = widget.getRootPlotItem()
-                        if plot_item_widget is not None:
-                            all_plot_items.append((widget_name, plot_item_widget))
-                    
-                    # Hide x-axis for all except the last one (bottom-most)
-                    if len(all_plot_items) > 1:
-                        # Hide x-axis for all tracks except the last one
-                        for widget_name, plot_item_widget in all_plot_items[:-1]:
-                            plot_item_widget.hideAxis('bottom')
-                        # Ensure the last track shows its x-axis
-                        all_plot_items[-1][1].showAxis('bottom')
+                self.hide_extra_xaxis_labels_and_axes()
             
             return video_widget, root_graphics, plot_item, dock
 
@@ -811,6 +797,34 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                 table_widget.on_window_changed(float(start_t), float(end_t))
             
         return table_widget
+
+
+
+    def hide_extra_xaxis_labels_and_axes(self, enable_hide_extra_track_x_axes: bool=True):
+        """ Hide x-axis labels for all tracks except the bottom-most one
+        """
+        # Hide x-axis labels for all tracks except the bottom-most one
+        if len(self.ui.matplotlib_view_widgets) > 1:
+            # Get all plot items
+            all_plot_items = []
+            for widget_name, widget in self.ui.matplotlib_view_widgets.items():
+                plot_item = widget.getRootPlotItem()
+                if plot_item is not None:
+                    all_plot_items.append((widget_name, plot_item))
+            
+            # Hide x-axis for all except the last one (bottom-most)
+            if len(all_plot_items) > 1:
+                # Hide x-axis for all tracks except the last one
+                if enable_hide_extra_track_x_axes:
+                    for widget_name, plot_item in all_plot_items[:-3]:
+                        plot_item.hideAxis('bottom')
+                    # Ensure the last track shows its x-axis
+                    all_plot_items[-1][1].showAxis('bottom')
+                else:
+                    ## show all
+                    for widget_name, plot_item in all_plot_items:
+                        plot_item.showAxis('bottom')
+
 
 
 # Re-export stream-to-datasources processing for backward compatibility
