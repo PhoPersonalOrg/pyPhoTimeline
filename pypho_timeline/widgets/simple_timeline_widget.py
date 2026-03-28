@@ -80,13 +80,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         return plots
     
 
-    def __init__(self, total_start_time: Union[float, datetime, pd.Timestamp] = 0.0, 
-                 total_end_time: Union[float, datetime, pd.Timestamp] = 100.0, 
-                 window_duration: Union[float, timedelta] = 10.0, 
-                 window_start_time: Union[float, datetime, pd.Timestamp] = 30.0, 
-                 add_example_tracks=False, 
-                 reference_datetime: Optional[datetime] = None, 
-                 parent=None):
+    def __init__(self, total_start_time: Union[float, datetime, pd.Timestamp] = 0.0, total_end_time: Union[float, datetime, pd.Timestamp] = 100.0, window_duration: Union[float, timedelta] = 10.0, window_start_time: Union[float, datetime, pd.Timestamp] = 30.0, add_example_tracks=False, reference_datetime: Optional[datetime] = None, parent=None):
         super().__init__(parent=parent)
         
         # Store whether to add example tracks
@@ -231,6 +225,9 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         return float(t)
 
 
+    # ==================================================================================================================================================================================================================================================================================== #
+    # Jump Prev/Next Interval                                                                                                                                                                                                                                                              #
+    # ==================================================================================================================================================================================================================================================================================== #
     def _collect_primary_interval_starts_unique(self) -> Tuple[np.ndarray, List[Any]]:
         """Sorted unique interval start keys (float) and one original scalar per key from primary tracks."""
         pairs: List[Tuple[float, Any]] = []
@@ -285,6 +282,9 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             self.simulate_window_scroll(next_t)
 
 
+    # ==================================================================================================================================================================================================================================================================================== #
+    # Split Docks Horizontally/Multiple Viewport Functionality                                                                                                                                                                                                                             #
+    # ==================================================================================================================================================================================================================================================================================== #
     def _set_track_dock_group(self, track_name: str, dock_group_name: str):
         """Assign a single group name to an existing track dock."""
         track_dock = self.ui.dynamic_docked_widget_container.find_display_dock(track_name)
