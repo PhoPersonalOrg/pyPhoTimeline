@@ -767,7 +767,7 @@ class TimelineBuilder:
                     spec_results = [getattr(d, "_spectrogram_result") for d in ds_group if getattr(d, "_spectrogram_result", None) is not None]
                     if len(spec_results) == len(intervals_dfs):
                         merged = EEGSpectrogramTrackDatasource.from_multiple_sources(intervals_dfs=intervals_dfs, spectrogram_results=spec_results, custom_datasource_name=name,
-                            freq_min=getattr(first, "_freq_min", 1.0), freq_max=getattr(first, "_freq_max", 40.0))
+                            freq_min=getattr(first, "_freq_min", 1.0), freq_max=getattr(first, "_freq_max", 40.0), group_config=getattr(first, "_group_config", None), channel_group_presets=getattr(first, "_channel_group_presets", None))
                         merged_datasources.append(merged)
                     else:
                         merged_datasources.append(first)

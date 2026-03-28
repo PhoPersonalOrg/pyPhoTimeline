@@ -24,7 +24,7 @@ from pypho_timeline.mixins.crosshairs_tracing_mixin import CrosshairsTracingMixi
 from pypho_timeline.widgets.custom_graphics_layout_widget import CustomViewBox, CustomGraphicsLayoutWidget
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 
-
+from pypho_timeline.EXTERNAL.pyqtgraph_extensions.mixins.DraggableGraphicsWidgetMixin import MouseInteractionCriteria, DraggableGraphicsWidgetMixin
 
 @metadata_attributes(short_name=None, tags=['pyqtgraph'], input_requires=[], output_provides=[], uses=[], used_by=[], creation_date='2024-12-31 03:42', related_items=['MatplotlibTimeSynchronizedWidget'])
 class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportableMixin, PlottingBackendSpecifyingMixin, TimeSynchronizedPlotterBase):
@@ -136,27 +136,27 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         self.setup()
         
 
-        # #TODO 2026-03-05 08:52: - [ ] Build the mouse criteria to determine which drags are allowed (hopefully allowing left-click drag)
-        # #### This code came from `pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.GraphicsObjects.CustomLinearRegionItem.CustomLinearRegionItem`, get the rest there when needed.
-        # ## Setup the mouse action critiera for the background rectangle (excluding the two end-position lines, which are set below):
-        # if self.params.plotAreaMouseInteractionCriteria is None:
-        #     # Original/Default Conditions
-        #     self.params.plotAreaMouseInteractionCriteria = MouseInteractionCriteria(drag=lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.LeftButton),
-        #                                                                 hover=lambda an_evt: (an_evt.acceptDrags(QtCore.Qt.MouseButton.LeftButton)),
-        #                                                                 click=lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.RightButton) ## allow right-clicking
-        #     )
+        #TODO 2026-03-05 08:52: - [ ] Build the mouse criteria to determine which drags are allowed (hopefully allowing left-click drag)
+        #### This code came from `pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.GraphicsObjects.CustomLinearRegionItem.CustomLinearRegionItem`, get the rest there when needed.
+        ## Setup the mouse action critiera for the background rectangle (excluding the two end-position lines, which are set below):
+        if self.params.plotAreaMouseInteractionCriteria is None:
+            # Original/Default Conditions
+            self.params.plotAreaMouseInteractionCriteria = MouseInteractionCriteria(drag=lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.LeftButton),
+                                                                        hover=lambda an_evt: (an_evt.acceptDrags(QtCore.Qt.MouseButton.LeftButton)),
+                                                                        click=lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.RightButton) ## allow right-clicking
+            )
             
-        #     # Actually override drag:
-        #     def _override_accept_either_mouse_button_drags(an_evt):
-        #         can_accept = an_evt.acceptDrags(QtCore.Qt.MouseButton.LeftButton)
-        #         can_accept = can_accept and an_evt.acceptDrags(QtCore.Qt.MouseButton.MiddleButton)
-        #         return can_accept
-        #     self.params.plotAreaMouseInteractionCriteria.hover = _override_accept_either_mouse_button_drags
+            # Actually override drag:
+            def _override_accept_either_mouse_button_drags(an_evt):
+                can_accept = an_evt.acceptDrags(QtCore.Qt.MouseButton.LeftButton)
+                can_accept = can_accept and an_evt.acceptDrags(QtCore.Qt.MouseButton.MiddleButton)
+                return can_accept
+            self.params.plotAreaMouseInteractionCriteria.hover = _override_accept_either_mouse_button_drags
             
-        #     self.params.plotAreaMouseInteractionCriteria.drag = lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.LeftButton) or (an_evt.button() == QtCore.Qt.MouseButton.MiddleButton)
+            self.params.plotAreaMouseInteractionCriteria.drag = lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.LeftButton) or (an_evt.button() == QtCore.Qt.MouseButton.MiddleButton)
             
             
-        # self._custom_area_mouse_action_criteria = self.params.plotAreaMouseInteractionCriteria
+        self._custom_area_mouse_action_criteria = self.params.plotAreaMouseInteractionCriteria
 
 
         self.buildUI()
@@ -655,8 +655,33 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                 detail_renderer = self._track_renderer
                 track_renderer = None
             
+            desired_connections = {}
+            is_eeg_spectrogram_panel = False
+            if track_renderer is not None:
+                _eeg_spec_ds_type = None
+                try:
+                    from pypho_timeline.rendering.datasources.specific.eeg import EEGSpectrogramTrackDatasource as _eeg_spec_ds_type
+                except ImportError:
+                    pass
+                if _eeg_spec_ds_type is not None and isinstance(track_renderer.datasource, _eeg_spec_ds_type):
+                    from pypho_timeline.widgets.track_options_panels import EEGSpectrogramTrackOptionsPanel
+                    self.options_panel = EEGSpectrogramTrackOptionsPanel(track_renderer=track_renderer)
+                    desired_connections['options_panel.optionsChanged'] = (self.options_panel.optionsChanged, self.TrackOptionsPanelOwningMixin_optionsChanged)
+                    desired_connections['options_panel.onOptionsAccepted'] = (self.options_panel.onOptionsAccepted, self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
+                    desired_connections['options_panel.onOptionsRejected'] = (self.options_panel.onOptionsRejected, self.TrackOptionsPanelOwningMixin_onOptionsRejected)
+                    if hasattr(track_renderer, 'on_options_changed'):
+                        desired_connections['on_options_changed'] = (self.optionsChanged, track_renderer.on_options_changed)
+                    if hasattr(track_renderer, 'on_options_accepted'):
+                        desired_connections['on_options_accepted'] = (self.onOptionsAccepted, track_renderer.on_options_accepted)
+                    if hasattr(track_renderer, 'on_options_rejected'):
+                        desired_connections['on_options_rejected'] = (self.onOptionsRejected, track_renderer.on_options_rejected)
+                    self.ui.connections['spectrogram_options_applied'] = self.options_panel.spectrogramOptionsApplied.connect(track_renderer.apply_eeg_spectrogram_options_from_datasource)
+                    if hasattr(track_renderer, 'set_options_panel'):
+                        track_renderer.set_options_panel(self.options_panel)
+                    is_eeg_spectrogram_panel = True
+
             # Check if detail renderer has channel_names (channel-based renderer)
-            if hasattr(detail_renderer, 'channel_names') and detail_renderer.channel_names is not None:
+            if not is_eeg_spectrogram_panel and hasattr(detail_renderer, 'channel_names') and detail_renderer.channel_names is not None:
                 # Create channel visibility panel for tracks with channels
                 from pypho_timeline.widgets.track_options_panels import TrackChannelVisibilityOptionsPanel
                 
@@ -708,7 +733,7 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                     if hasattr(track_renderer, 'set_options_panel'):
                         track_renderer.set_options_panel(self.options_panel)
 
-            else:
+            elif not is_eeg_spectrogram_panel:
                 # Create basic options panel for tracks without channels
                 from pypho_timeline.widgets.track_options_panels import OptionsPanel
                 self.options_panel = OptionsPanel()

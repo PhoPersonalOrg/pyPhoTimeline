@@ -10,6 +10,7 @@ logger = get_rendering_logger(__name__)
 
 TRACK_OPTIONS_CONFIG_VERSION = 1
 TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY = "channel_visibility"
+TRACK_OPTIONS_KIND_EEG_SPECTROGRAM = "eeg_spectrogram"
 
 # Base Options Panel _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
 class OptionsPanel(QtWidgets.QWidget):
@@ -280,6 +281,221 @@ class TrackChannelVisibilityOptionsPanel(OptionsPanel):
             self.set_visibility_state({k: bool(v) for k, v in vis.items()}, emit_signals=False)
 
 
+class EEGSpectrogramTrackOptionsPanel(OptionsPanel):
+    """Options panel for EEG spectrogram tracks: frequency range, preset group, per-channel inclusion in average."""
+
+    spectrogramOptionsApplied = QtCore.Signal()
+
+
+    def __init__(self, track_renderer: Any, parent=None):
+        self._track_renderer = track_renderer
+        self._ds: Any = track_renderer.datasource
+        self._freq_min_spin: Optional[QtWidgets.QDoubleSpinBox] = None
+        self._freq_max_spin: Optional[QtWidgets.QDoubleSpinBox] = None
+        self._preset_combo: Optional[QtWidgets.QComboBox] = None
+        self._channels_layout: Optional[QtWidgets.QVBoxLayout] = None
+        self._ch_checkboxes: Dict[str, QtWidgets.QCheckBox] = {}
+        super().__init__(parent)
+
+
+    def _get_panel_title(self) -> str:
+        return "EEG spectrogram"
+
+
+    def _build_content_widget(self) -> QtWidgets.QWidget:
+        root = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(root)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(6)
+        freq_row = QtWidgets.QHBoxLayout()
+        freq_row.addWidget(QtWidgets.QLabel("Freq min (Hz):"))
+        self._freq_min_spin = QtWidgets.QDoubleSpinBox()
+        self._freq_min_spin.setRange(0.5, 200.0)
+        self._freq_min_spin.setSingleStep(0.5)
+        self._freq_min_spin.setValue(float(self._ds.spectrogram_freq_min))
+        self._freq_min_spin.valueChanged.connect(self._on_freq_or_channels_applied)
+        freq_row.addWidget(self._freq_min_spin)
+        freq_row.addWidget(QtWidgets.QLabel("max:"))
+        self._freq_max_spin = QtWidgets.QDoubleSpinBox()
+        self._freq_max_spin.setRange(0.5, 200.0)
+        self._freq_max_spin.setSingleStep(0.5)
+        self._freq_max_spin.setValue(float(self._ds.spectrogram_freq_max))
+        self._freq_max_spin.valueChanged.connect(self._on_freq_or_channels_applied)
+        freq_row.addWidget(self._freq_max_spin)
+        freq_row.addStretch()
+        layout.addLayout(freq_row)
+        presets = self._ds.channel_group_presets
+        if presets is not None and len(presets) > 1:
+            preset_row = QtWidgets.QHBoxLayout()
+            preset_row.addWidget(QtWidgets.QLabel("Group preset:"))
+            self._preset_combo = QtWidgets.QComboBox()
+            self._preset_combo.addItem("(All channels)")
+            for p in presets:
+                self._preset_combo.addItem(p.name)
+            self._preset_combo.currentIndexChanged.connect(self._on_preset_index_changed)
+            preset_row.addWidget(self._preset_combo, stretch=1)
+            layout.addLayout(preset_row)
+        layout.addWidget(QtWidgets.QLabel("Channels in average:"))
+        ch_host = QtWidgets.QWidget()
+        self._channels_layout = QtWidgets.QVBoxLayout(ch_host)
+        self._channels_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(ch_host)
+        self._rebuild_channel_checkboxes()
+        self._sync_preset_combo_index()
+        layout.addStretch()
+        return root
+
+
+    def _sync_preset_combo_index(self) -> None:
+        if self._preset_combo is None:
+            return
+        presets = self._ds.channel_group_presets
+        if not presets:
+            return
+        gc = self._ds.group_config
+        self._preset_combo.blockSignals(True)
+        if gc is None:
+            self._preset_combo.setCurrentIndex(0)
+        else:
+            names = [p.name for p in presets]
+            idx = 1 + names.index(gc.name) if gc.name in names else 0
+            self._preset_combo.setCurrentIndex(idx)
+        self._preset_combo.blockSignals(False)
+
+
+    def _base_channel_names_for_ui(self) -> List[str]:
+        avail = set(self._ds.get_spectrogram_ch_names())
+        gc = self._ds.group_config
+        if gc is not None:
+            return [ch for ch in gc.channels if ch in avail]
+        return sorted(avail)
+
+
+    def _rebuild_channel_checkboxes(self) -> None:
+        if self._channels_layout is None:
+            return
+        while self._channels_layout.count():
+            item = self._channels_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        self._ch_checkboxes.clear()
+        names = self._base_channel_names_for_ui()
+        gc = self._ds.group_config
+        if gc is None and not names:
+            return
+        active_set = set(names) if gc is None else set(gc.channels) & set(names)
+        for ch in names:
+            cb = QtWidgets.QCheckBox(ch)
+            cb.setChecked(ch in active_set)
+            cb.stateChanged.connect(lambda _st, c=ch: self._on_channel_checkbox_changed(c))
+            self._ch_checkboxes[ch] = cb
+            self._channels_layout.addWidget(cb)
+
+
+    @pyqtExceptionPrintingSlot()
+    def _on_preset_index_changed(self, index: int) -> None:
+        presets = self._ds.channel_group_presets
+        if presets is None or index < 0 or index > len(presets):
+            return
+        if index == 0:
+            self._ds.set_group_config(None)
+        else:
+            self._ds.set_group_config(presets[index - 1])
+        self._rebuild_channel_checkboxes()
+        self._apply_all_to_datasource()
+
+
+    @pyqtExceptionPrintingSlot()
+    def _on_channel_checkbox_changed(self, channel_name: str) -> None:
+        from pypho_timeline.rendering.datasources.specific.eeg import SpectrogramChannelGroupConfig as _SpectrogramChannelGroupConfig
+        cb = self._ch_checkboxes.get(channel_name)
+        if cb is None:
+            return
+        checked = [ch for ch, cbox in self._ch_checkboxes.items() if cbox.isChecked()]
+        if not checked:
+            cb.blockSignals(True)
+            cb.setChecked(True)
+            cb.blockSignals(False)
+            return
+        avail = set(self._ds.get_spectrogram_ch_names())
+        all_avail = sorted(avail)
+        gc = self._ds.group_config
+        if gc is None and set(checked) == set(all_avail) and len(all_avail) > 0:
+            self._ds.set_group_config(None)
+        else:
+            name = gc.name if gc is not None else "Custom"
+            self._ds.set_group_config(_SpectrogramChannelGroupConfig(name=name, channels=checked))
+        self._apply_all_to_datasource()
+        self._sync_preset_combo_index()
+
+
+    @pyqtExceptionPrintingSlot()
+    def _on_freq_or_channels_applied(self) -> None:
+        if self._freq_min_spin is None or self._freq_max_spin is None:
+            return
+        lo, hi = float(self._freq_min_spin.value()), float(self._freq_max_spin.value())
+        if lo > hi:
+            self._freq_min_spin.blockSignals(True)
+            self._freq_max_spin.blockSignals(True)
+            self._freq_min_spin.setValue(hi)
+            self._freq_max_spin.setValue(lo)
+            lo, hi = float(self._freq_min_spin.value()), float(self._freq_max_spin.value())
+            self._freq_min_spin.blockSignals(False)
+            self._freq_max_spin.blockSignals(False)
+        self._apply_all_to_datasource()
+
+
+    def _apply_all_to_datasource(self) -> None:
+        if self._freq_min_spin is None or self._freq_max_spin is None:
+            return
+        self._ds.set_spectrogram_display(float(self._freq_min_spin.value()), float(self._freq_max_spin.value()))
+        self.spectrogramOptionsApplied.emit()
+        self.optionsChanged.emit()
+
+
+    def track_options_kind(self) -> Optional[str]:
+        return TRACK_OPTIONS_KIND_EEG_SPECTROGRAM
+
+
+    def dump_track_options_state(self) -> Optional[Dict[str, Any]]:
+        gc = self._ds.group_config
+        return {"kind": TRACK_OPTIONS_KIND_EEG_SPECTROGRAM, "freq_min": float(self._ds.spectrogram_freq_min), "freq_max": float(self._ds.spectrogram_freq_max),
+                "group_name": (gc.name if gc else None), "channels": (list(gc.channels) if gc else None)}
+
+
+    def apply_track_options_state(self, data: Dict[str, Any]) -> None:
+        from pypho_timeline.rendering.datasources.specific.eeg import SpectrogramChannelGroupConfig as _SpectrogramChannelGroupConfig
+        if data.get("kind") != TRACK_OPTIONS_KIND_EEG_SPECTROGRAM:
+            return
+        fmin = data.get("freq_min")
+        fmax = data.get("freq_max")
+        if fmin is not None and fmax is not None:
+            self._ds.set_spectrogram_display(float(fmin), float(fmax))
+            if self._freq_min_spin is not None:
+                self._freq_min_spin.blockSignals(True)
+                self._freq_max_spin.blockSignals(True)
+                self._freq_min_spin.setValue(float(fmin))
+                self._freq_max_spin.setValue(float(fmax))
+                self._freq_min_spin.blockSignals(False)
+                self._freq_max_spin.blockSignals(False)
+        gname = data.get("group_name")
+        chans = data.get("channels")
+        presets = self._ds.channel_group_presets
+        if chans is None and gname is None:
+            self._ds.set_group_config(None)
+        elif isinstance(chans, list) and chans:
+            self._ds.set_group_config(_SpectrogramChannelGroupConfig(name=str(gname) if gname else "Custom", channels=[str(c) for c in chans]))
+        elif gname and presets:
+            match = next((p for p in presets if p.name == gname), None)
+            if match is not None:
+                self._ds.set_group_config(match)
+        self._sync_preset_combo_index()
+        self._rebuild_channel_checkboxes()
+        self.spectrogramOptionsApplied.emit()
+        self.optionsChanged.emit()
+
+
 def build_track_options_document(track_renderers: Dict[str, Any]) -> Dict[str, Any]:
     """Build a versioned document from each renderer's ``channel_visibility`` (omit non-channel tracks)."""
     tracks: Dict[str, Any] = {}
@@ -407,9 +623,11 @@ class TrackOptionsPanelOwningMixin:
 __all__ = [
     "OptionsPanel",
     "TrackChannelVisibilityOptionsPanel",
+    "EEGSpectrogramTrackOptionsPanel",
     "TrackOptionsPanelOwningMixin",
     "TRACK_OPTIONS_CONFIG_VERSION",
     "TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY",
+    "TRACK_OPTIONS_KIND_EEG_SPECTROGRAM",
     "build_track_options_document",
     "apply_track_options_document",
 ]

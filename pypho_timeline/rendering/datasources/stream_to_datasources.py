@@ -479,14 +479,14 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                                 spec_result = EEGComputations.raw_spectogram_working(raw, nperseg=1024, noverlap=512)
                                 _effective_groups = spectrogram_channel_groups if spectrogram_channel_groups is None else (spectrogram_channel_groups if len(spectrogram_channel_groups) > 0 else None)
                                 if _effective_groups is None:
-                                    spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}")
+                                    spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}", channel_group_presets=(spectrogram_channel_groups if spectrogram_channel_groups is not None and len(spectrogram_channel_groups) > 0 else None))
                                     all_streams_datasources[f"EEG_Spectrogram_{stream_name}"] = spec_datasource
                                     all_streams[f"EEG_Spectrogram_{stream_name}"] = merged_intervals_df
                                     logger.info(f'Created EEG Spectrogram datasource for "{stream_name}"')
                                 else:
                                     for group_cfg in _effective_groups:
                                         group_key = f"EEG_Spectrogram_{stream_name}_{group_cfg.name}"
-                                        spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=group_key, group_config=group_cfg)
+                                        spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=group_key, group_config=group_cfg, channel_group_presets=_effective_groups)
                                         all_streams_datasources[group_key] = spec_datasource
                                         all_streams[group_key] = merged_intervals_df
                                     logger.info(f'Created {len(_effective_groups)} EEG Spectrogram group datasources for "{stream_name}"')

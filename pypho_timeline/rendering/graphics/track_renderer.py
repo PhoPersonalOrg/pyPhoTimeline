@@ -854,6 +854,12 @@ class TrackRenderer(QtCore.QObject):
         
         # Trigger re-render
         self._trigger_visibility_render()
+
+
+    def apply_eeg_spectrogram_options_from_datasource(self) -> None:
+        """Refresh the detail renderer from the datasource and re-render visible intervals (EEG spectrogram options panel)."""
+        self.detail_renderer = self.datasource.get_detail_renderer()
+        self._trigger_visibility_render()
     
     
     def set_options_panel(self, options_panel):
