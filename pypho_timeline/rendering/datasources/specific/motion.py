@@ -224,15 +224,15 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         """
         if graphics_objects is None:
             return
-        conn = getattr(plot_item, '_motion_label_conn', None)
+        conn = getattr(plot_item, '_channel_label_conn', None)
         if conn is not None:
             try:
                 conn.disconnect()
             except Exception:
                 pass
-            del plot_item._motion_label_conn
-        if getattr(plot_item, '_motion_label_items', None) is not None:
-            del plot_item._motion_label_items
+            del plot_item._channel_label_conn
+        if getattr(plot_item, '_channel_label_items', None) is not None:
+            del plot_item._channel_label_items
 
         for obj in graphics_objects:
             if obj is None:

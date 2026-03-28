@@ -326,16 +326,32 @@ class ChannelNormalizationModeNormalizingMixin:
 
         active_channel_names: List[str] = self.visible_channel_names
 
-        has_channel_items: bool = (len(self.channel_graphics_items) == len(active_channel_names))
-        plot_item_has_channel_items: bool = hasattr(plot_item, '_motion_label_items') and (getattr(plot_item, '_motion_label_items', None) is not None) and (len(plot_item._motion_label_items) == len(active_channel_names))
+        has_channel_items: bool = (len(self.channel_label_items) == len(active_channel_names))
+        plot_item_has_channel_items: bool = hasattr(plot_item, '_channel_label_items') and (getattr(plot_item, '_channel_label_items', None) is not None) and (len(plot_item._channel_label_items) == len(active_channel_names))
         if has_channel_items and plot_item_has_channel_items and (not force_recreate):
-            ## update existing?
             return self.channel_graphics_items, self.channel_label_items
 
-        # self.channel_graphics_items = []
-        # self.channel_label_items: List[Tuple[pg.TextItem, float]] = []
-        
-        # found_channel_names: List[str] = self.channel_names
+        conn = getattr(plot_item, '_channel_label_conn', None)
+        if conn is not None:
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
+            del plot_item._channel_label_conn
+        if getattr(plot_item, '_channel_label_items', None) is not None:
+            del plot_item._channel_label_items
+        for obj in self.channel_graphics_items:
+            if obj is None:
+                continue
+            try:
+                plot_item.removeItem(obj)
+                if hasattr(obj, 'setParentItem'):
+                    obj.setParentItem(None)
+            except (AttributeError, RuntimeError):
+                pass
+        self.channel_graphics_items.clear()
+        self.channel_label_items.clear()
+
         found_channel_names: List[str] = active_channel_names
 
         # Filter channels based on visibility if channel_visibility is set
@@ -349,7 +365,7 @@ class ChannelNormalizationModeNormalizingMixin:
         vb = plot_item.getViewBox()
         
 
-        def _update_motion_label_positions() -> None:
+        def _update_channel_label_positions() -> None:
             left_x = vb.viewRange()[0][0]
             for label_item, y_mid in self.channel_label_items:
                 label_item.setPos(left_x, y_mid)
@@ -373,10 +389,10 @@ class ChannelNormalizationModeNormalizingMixin:
             plot_item.addItem(label_item)
             self.channel_graphics_items.append(label_item)
 
-        _update_motion_label_positions()
-        plot_item._motion_label_items = self.channel_label_items
-        plot_item._on_update_motion_label_positions = _update_motion_label_positions
-        plot_item._motion_label_conn = vb.sigRangeChanged.connect(plot_item._on_update_motion_label_positions)
+        _update_channel_label_positions()
+        plot_item._channel_label_items = self.channel_label_items
+        plot_item._on_update_channel_label_positions = _update_channel_label_positions
+        plot_item._channel_label_conn = vb.sigRangeChanged.connect(plot_item._on_update_channel_label_positions)
 
         return self.channel_graphics_items, self.channel_label_items
 

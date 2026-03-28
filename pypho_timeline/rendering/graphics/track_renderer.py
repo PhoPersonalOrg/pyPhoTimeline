@@ -800,6 +800,34 @@ class TrackRenderer(QtCore.QObject):
 
 
 
+    def apply_channel_visibility_bulk(self, visibility: Dict[str, bool]) -> bool:
+        """Apply multiple channel visibility updates and re-render at most once.
+
+        Args:
+            visibility: Map of channel name to visible flag; keys not in ``channel_visibility`` are skipped.
+
+        Returns:
+            True if any value changed and a re-render was triggered.
+        """
+        if not self.channel_visibility or not visibility:
+            return False
+        changed = False
+        for channel_name, is_visible in visibility.items():
+            if channel_name not in self.channel_visibility:
+                continue
+            v = bool(is_visible)
+            if self.channel_visibility[channel_name] != v:
+                self.channel_visibility[channel_name] = v
+                changed = True
+        if not changed:
+            return False
+        logger.info(f"TrackRenderer[{self.track_id}] apply_channel_visibility_bulk updated visibility")
+        if self._options_panel is not None:
+            self._options_panel.set_visibility_state(self.channel_visibility.copy(), emit_signals=False)
+        self._trigger_visibility_render()
+        return True
+
+
     def update_channel_visibility(self, channel_name: str, is_visible: bool):
         """Update visibility state for a channel and re-render visible intervals.
         

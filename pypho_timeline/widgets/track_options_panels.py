@@ -1,10 +1,15 @@
 """Track Options Panels - Options panels for track configuration."""
 from typing import Any, List, Dict, Optional
+
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 from qtpy import QtCore, QtWidgets
+
 from pypho_timeline.utils.logging_util import get_rendering_logger
 
 logger = get_rendering_logger(__name__)
+
+TRACK_OPTIONS_CONFIG_VERSION = 1
+TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY = "channel_visibility"
 
 # Base Options Panel _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
 class OptionsPanel(QtWidgets.QWidget):
@@ -90,6 +95,21 @@ class OptionsPanel(QtWidgets.QWidget):
         layout.setSpacing(3)
         layout.addStretch()  # Empty by default
         return widget
+
+
+    def track_options_kind(self) -> Optional[str]:
+        """Return a stable kind string for serialized track options, or None if none."""
+        return None
+
+
+    def dump_track_options_state(self) -> Optional[Dict[str, Any]]:
+        """Return a per-track options payload dict for this panel, or None."""
+        return None
+
+
+    def apply_track_options_state(self, data: Dict[str, Any]) -> None:
+        """Apply a payload from :meth:`dump_track_options_state` (default: no-op)."""
+        pass
 
 
     # Options Panel Implementation _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
@@ -244,6 +264,60 @@ class TrackChannelVisibilityOptionsPanel(OptionsPanel):
         return self._visibility_state.get(channel_name, True)
 
 
+    def track_options_kind(self) -> Optional[str]:
+        return TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY
+
+
+    def dump_track_options_state(self) -> Optional[Dict[str, Any]]:
+        return {"kind": TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY, "channel_visibility": self.get_visibility_state()}
+
+
+    def apply_track_options_state(self, data: Dict[str, Any]) -> None:
+        if data.get("kind") != TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY:
+            return
+        vis = data.get("channel_visibility")
+        if isinstance(vis, dict):
+            self.set_visibility_state({k: bool(v) for k, v in vis.items()}, emit_signals=False)
+
+
+def build_track_options_document(track_renderers: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a versioned document from each renderer's ``channel_visibility`` (omit non-channel tracks)."""
+    tracks: Dict[str, Any] = {}
+    for name, renderer in track_renderers.items():
+        cv = getattr(renderer, "channel_visibility", None) or {}
+        if not cv:
+            continue
+        tracks[name] = {"kind": TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY, "channel_visibility": {k: bool(v) for k, v in cv.items()}}
+    return {"version": TRACK_OPTIONS_CONFIG_VERSION, "tracks": tracks}
+
+
+def apply_track_options_document(doc: Dict[str, Any], track_renderers: Dict[str, Any]) -> None:
+    """Apply a document from :func:`build_track_options_document`; unknown tracks and kinds are skipped."""
+    if not isinstance(doc, dict):
+        logger.warning("apply_track_options_document: expected dict root")
+        return
+    ver = doc.get("version")
+    if ver is not None and ver != TRACK_OPTIONS_CONFIG_VERSION:
+        logger.info("apply_track_options_document: version %r != %s, applying compatible entries only", ver, TRACK_OPTIONS_CONFIG_VERSION)
+    tracks = doc.get("tracks")
+    if not isinstance(tracks, dict):
+        return
+    for track_name, entry in tracks.items():
+        renderer = track_renderers.get(track_name)
+        if renderer is None:
+            logger.debug("apply_track_options_document: skip unknown track %r", track_name)
+            continue
+        if not isinstance(entry, dict):
+            continue
+        kind = entry.get("kind")
+        if kind == TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY:
+            vis = entry.get("channel_visibility")
+            if isinstance(vis, dict):
+                renderer.apply_channel_visibility_bulk({k: bool(v) for k, v in vis.items()})
+        else:
+            logger.debug("apply_track_options_document: skip unknown kind %r for track %r", kind, track_name)
+
+
 # Track Options Panel Owning Mixin _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
 class TrackOptionsPanelOwningMixin:
     """Implementors own an options panel which allows them to customize their configuration.
@@ -330,5 +404,13 @@ class TrackOptionsPanelOwningMixin:
 
 
 
-__all__ = ['OptionsPanel', 'TrackChannelVisibilityOptionsPanel', 'TrackOptionsPanelOwningMixin']
+__all__ = [
+    "OptionsPanel",
+    "TrackChannelVisibilityOptionsPanel",
+    "TrackOptionsPanelOwningMixin",
+    "TRACK_OPTIONS_CONFIG_VERSION",
+    "TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY",
+    "build_track_options_document",
+    "apply_track_options_document",
+]
 

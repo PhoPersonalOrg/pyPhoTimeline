@@ -5,6 +5,7 @@ This module provides a simple example timeline widget that demonstrates pyPhoTim
 along with utility functions for processing stream data.
 """
 
+import json
 import numpy as np
 import pandas as pd
 from typing import Tuple, List, Dict, Optional, Union, Any
@@ -25,6 +26,8 @@ from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData, RenderPlots
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
+
+from pypho_timeline.widgets.track_options_panels import apply_track_options_document, build_track_options_document
 
 # Create a simple time window object (mimicking spikes_window)
 class SimpleTimeWindow:
@@ -190,6 +193,16 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         self.ui.split_all_tracks_button.setToolTip("Create an independent compare column for every track.")
         self.ui.split_all_tracks_button.clicked.connect(self._on_split_all_tracks_clicked)
         self.ui.controls_layout.addWidget(self.ui.split_all_tracks_button)
+        self.ui.save_track_options_button = QtWidgets.QPushButton("Save track options…")
+        self.ui.save_track_options_button.setToolTip("Save channel visibility and related per-track options to a JSON file.")
+        self.ui.save_track_options_button.setAutoDefault(False)
+        self.ui.save_track_options_button.clicked.connect(self._on_save_track_options_clicked)
+        self.ui.controls_layout.addWidget(self.ui.save_track_options_button)
+        self.ui.load_track_options_button = QtWidgets.QPushButton("Load track options…")
+        self.ui.load_track_options_button.setToolTip("Restore per-track options from a JSON file (matching track names).")
+        self.ui.load_track_options_button.setAutoDefault(False)
+        self.ui.load_track_options_button.clicked.connect(self._on_load_track_options_clicked)
+        self.ui.controls_layout.addWidget(self.ui.load_track_options_button)
         self.ui.layout.addLayout(self.ui.controls_layout)
         
         # Create the dock area container
@@ -214,6 +227,44 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
     def _on_split_all_tracks_clicked(self):
         """Split every primary track into the compare column."""
         self.add_compare_column_for_all_tracks()
+
+
+    def get_track_options_config(self) -> Dict[str, Any]:
+        """Return a versioned dict of per-track options (e.g. channel visibility), suitable for JSON."""
+        return build_track_options_document(self.track_renderers)
+
+
+    def set_track_options_config(self, config: Dict[str, Any]) -> None:
+        """Apply options from :meth:`get_track_options_config` or a loaded JSON document."""
+        apply_track_options_document(config, self.track_renderers)
+
+
+    def save_track_options_config_to_path(self, path: Union[str, Path]) -> None:
+        """Write :meth:`get_track_options_config` to ``path`` as UTF-8 JSON."""
+        p = Path(path)
+        p.write_text(json.dumps(self.get_track_options_config(), indent=2), encoding="utf-8")
+
+
+    def load_track_options_config_from_path(self, path: Union[str, Path]) -> None:
+        """Load JSON from ``path`` and apply via :meth:`set_track_options_config`."""
+        p = Path(path)
+        self.set_track_options_config(json.loads(p.read_text(encoding="utf-8")))
+
+
+    def _on_save_track_options_clicked(self):
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save track options", "", "JSON (*.json);;All files (*.*)")
+        if path:
+            self.save_track_options_config_to_path(path)
+
+
+    def _on_load_track_options_clicked(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Load track options", "", "JSON (*.json);;All files (*.*)")
+        if not path:
+            return
+        try:
+            self.load_track_options_config_from_path(path)
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(self, "Load track options", str(ex))
 
 
     def _scalar_to_sort_float(self, t: Any) -> float:

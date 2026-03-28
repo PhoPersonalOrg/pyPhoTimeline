@@ -146,6 +146,7 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         assert found_all_channel_names
 
         channel_graphics_items, channel_label_items = self.add_channel_renderables_if_needed(plot_item=plot_item)
+        graphics_objects = list(channel_graphics_items)
 
         # Filter channels based on visibility if channel_visibility is set
         if hasattr(self, 'channel_visibility') and self.channel_visibility:
@@ -177,7 +178,7 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
                 t_values = np.linspace(interval_t_start_unix, interval_t_end_unix, num=len(t_values), endpoint=True)
 
         if len(t_values) == 0:
-            return []
+            return graphics_objects
 
         nPlots: int = len(found_channel_names)
         single_channel_height: float = 1.0 / float(nPlots)
@@ -211,7 +212,16 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         """
         if graphics_objects is None:
             return
-        
+        conn = getattr(plot_item, '_channel_label_conn', None)
+        if conn is not None:
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
+            del plot_item._channel_label_conn
+        if getattr(plot_item, '_channel_label_items', None) is not None:
+            del plot_item._channel_label_items
+
         for obj in graphics_objects:
             if obj is None:
                 continue
