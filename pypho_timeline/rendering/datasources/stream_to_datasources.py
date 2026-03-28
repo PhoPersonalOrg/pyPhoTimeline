@@ -55,6 +55,23 @@ modality_channels_normalization_mode_dict = {
 }
 
 
+def default_dock_named_color_scheme_key(name: str) -> str:
+    """Return a ``NamedColorScheme`` member name (``blue`` | ``green`` | ``red`` | ``grey``) for dock title bar styling from ``custom_datasource_name`` prefix. Prefix order matters (first match wins)."""
+    if name.startswith('EEG_Spectrogram_'):
+        return 'teal'
+    if name.startswith('MOTION_'):
+        return 'green'
+    if name.startswith('EEGQ_'):
+        return 'purple'
+    if name.startswith('EEG_'):
+        return 'blue'
+    if name.startswith('LOG_'):
+        return 'black'
+    if name.startswith('UNKNOWN_'):
+        return 'red'
+    return 'red'
+
+
 @function_attributes(short_name=None, tags=['OLDER', 'single_xdf_file', 'multi-streams'], input_requires=[], output_provides=[], uses=[], used_by=[], creation_date='2026-03-02 03:06', related_items=['perform_process_all_streams_multi_xdf'])
 def perform_process_single_xdf_file_all_streams(streams):
     """ previous main function, and still used for a *single* XDF file with multiple streams - processes streams to build datasources, and thus tracks.
@@ -502,6 +519,7 @@ __all__ = [
     'modality_channels_dict',
     'modality_sfreq_dict',
     'modality_channels_normalization_mode_dict',
+    'default_dock_named_color_scheme_key',
     'merge_streams_by_name',
     'perform_process_single_xdf_file_all_streams',
     'perform_process_all_streams_multi_xdf',

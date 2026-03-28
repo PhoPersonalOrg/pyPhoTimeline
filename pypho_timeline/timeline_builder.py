@@ -1318,9 +1318,9 @@ class TimelineBuilder:
         for datasource in datasources:
             # Get detail renderer
             a_detail_renderer = datasource.get_detail_renderer()
-            display_config = None
+            _scheme_key = default_dock_named_color_scheme_key(datasource.custom_datasource_name)
+            display_config = CustomCyclicColorsDockDisplayConfig(named_color_scheme=NamedColorScheme[_scheme_key], showCloseButton=True, showCollapseButton=True, showGroupButton=False, corner_radius='3px')
             if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
-                display_config = FigureWidgetDockDisplayConfig(showCloseButton=True, showCollapseButton=False, showGroupButton=False)
                 setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonIcon=QtWidgets.QStyle.StandardPixmap.SP_FileDialogListView, buttonToolTip='Show table')})
             track_widget, a_root_graphics, a_plot_item, a_dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
                 name=datasource.custom_datasource_name,
@@ -1329,7 +1329,7 @@ class TimelineBuilder:
                 display_config=display_config,
                 sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA
             )
-            if display_config is not None and getattr(datasource, 'detailed_df', None) is not None:
+            if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
                 def _on_show_table(dock, button_id, tl=timeline, ds=datasource):
                     if button_id != 'show_table':
                         return
