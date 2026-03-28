@@ -16,11 +16,11 @@ import pyxdf
 from qtpy import QtWidgets
 from pypho_timeline.widgets import SimpleTimelineWidget
 from pypho_timeline.widgets.TimelineWindow.MainTimelineWindow import MainTimelineWindow
-from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf
+from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf, default_dock_named_color_scheme_key
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockButtonConfig
-from pypho_timeline.docking.dock_display_configs import FigureWidgetDockDisplayConfig
+from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, NamedColorScheme
 from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler, get_rendering_logger
 from pypho_timeline.widgets import LogWidget
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, get_earliest_reference_datetime, datetime_to_float, float_to_datetime
@@ -1343,18 +1343,8 @@ class TimelineBuilder:
                 a_dock.sigCustomButtonClicked.connect(_on_show_table)
             
             assert a_detail_renderer is not None, f"Detail renderer is None for datasource: {datasource.custom_datasource_name}"
-            track_widget.set_track_renderer(a_detail_renderer)
-            
-            # Explicitly set the optionsPanel attribute
-            track_widget.optionsPanel = track_widget.getOptionsPanel()
-            
-            # Try to force dock to update button visibility
-            a_dock.updateWidgetsHaveOptionsPanel()
-            a_dock.update()  # May refresh the title bar
-            
-            # Or if available:
-            if hasattr(a_dock, 'updateTitleBar') or hasattr(a_dock, 'refresh'):
-                a_dock.updateTitleBar()  # or refresh()
+            #TODO 2026-03-28 06:30: - [ ] note `track_widget.set_track_renderer(a_detail_renderer)` was removed
+            # track_widget.set_track_renderer(a_detail_renderer)
             
             # Set the plot to show the full time range
             # Handle datetime objects directly
@@ -1390,9 +1380,19 @@ class TimelineBuilder:
             a_plot_item.setLabel('left', datasource.custom_datasource_name)
             a_plot_item.hideAxis('left')  # Hide Y-axis for cleaner look
             
-            # Add the track to the plot
+            # Add the track to the plot (installs TrackRenderer on track_widget; options panel must be created after this)
             a_track_name: str = datasource.custom_datasource_name
             timeline.add_track(datasource, name=a_track_name, plot_item=a_plot_item)
+
+            # Explicitly set the optionsPanel attribute:
+            track_widget.optionsPanel = track_widget.getOptionsPanel()
+            # Or if available:
+            a_dock.updateWidgetsHaveOptionsPanel()
+            a_dock.update()
+
+            # Or if available:
+            if hasattr(a_dock, 'updateTitleBar') or hasattr(a_dock, 'refresh'):
+                a_dock.updateTitleBar()
         ## END for datasource in datasources...
         
         # Hide x-axis labels for all tracks except the bottom-most one
