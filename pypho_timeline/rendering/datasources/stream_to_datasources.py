@@ -418,7 +418,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                             try:
                                 from phopymnehelper.motion_data import MotionData
 
-                                is_moving_annots, is_moving_annots_df = MotionData.find_high_accel_periods(a_ds=datasource.detailed_df, total_change_threshold=0.5, should_set_bad_period_annotations=False, minimum_bad_duration=1e-3) # at least 1ms in duration to prevent tons of tiny intervals
+                                is_moving_annots, is_moving_annots_df = MotionData.find_high_accel_periods(a_ds=datasource.detailed_df, total_change_threshold=0.5, should_set_bad_period_annotations=False, minimum_bad_duration=0.050) # at least 50ms in duration to prevent tons of tiny intervals
                                 datasource.set_bad_intervals(bad_intervals_df=is_moving_annots_df, emit_changed=False)
 
                             except Exception as spec_e:
