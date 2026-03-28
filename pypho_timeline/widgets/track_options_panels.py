@@ -180,9 +180,7 @@ class TrackChannelVisibilityOptionsPanel(OptionsPanel):
             checkbox = QtWidgets.QCheckBox(channel_name)
             checkbox.setChecked(self._visibility_state.get(channel_name, True))
             # Use a lambda that captures channel_name correctly
-            checkbox.stateChanged.connect(
-                lambda state, ch=channel_name: self._on_checkbox_changed(ch, state == QtCore.Qt.CheckState.Checked)
-            )
+            checkbox.stateChanged.connect(lambda state, ch=channel_name: self._on_checkbox_changed(ch, state))
             self._checkboxes[channel_name] = checkbox
             scroll_layout.addWidget(checkbox)
         
@@ -191,14 +189,14 @@ class TrackChannelVisibilityOptionsPanel(OptionsPanel):
         
         return scroll_widget
     
-    def _on_checkbox_changed(self, channel_name: str, check_state):
+    def _on_checkbox_changed(self, channel_name: str, state):
         """Handle checkbox state change.
         
         Args:
             channel_name: Name of the channel
-            check_state: Qt check state (QtCore.Qt.CheckState.Checked or Unchecked)
+            state: Value from QCheckBox.stateChanged (compare to QtCore.Qt.CheckState.Checked)
         """
-        is_visible = (check_state == QtCore.Qt.CheckState.Checked)
+        is_visible = state == QtCore.Qt.CheckState.Checked
         self._visibility_state[channel_name] = is_visible
         self.channelVisibilityChanged.emit(channel_name, is_visible)
         self.optionsChanged.emit()  # Also emit base signal

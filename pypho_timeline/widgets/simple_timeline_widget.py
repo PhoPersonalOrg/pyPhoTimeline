@@ -624,6 +624,9 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             return video_widget, root_graphics, plot_item, dock
 
 
+    # ==================================================================================================================================================================================================================================================================================== #
+    # Timeline Overview Strip Widget                                                                                                                                                                                                                                                       #
+    # ==================================================================================================================================================================================================================================================================================== #
     def add_timeline_overview_strip(self, position: str = 'top', row_height_px: int = 20):
         """Add an overview strip: stacked interval previews per primary track and a viewport region.
 

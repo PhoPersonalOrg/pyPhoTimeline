@@ -1,4 +1,4 @@
-"""Read-only stacked overview strip: interval preview per track + viewport region."""
+"""Stacked overview strip: interval preview per track; plot view is non-interactive, viewport region is draggable."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def _duration_to_seconds(d: Any) -> float:
 
 
 class TimelineOverviewStrip(pg.PlotWidget):
-    """Minimap: one horizontal band per primary track (overview intervals only) and a movable ``LinearRegionItem`` for the viewport (plot x = Unix seconds when using date axis)."""
+    """Minimap: one horizontal band per primary track (overview intervals only) and a user-draggable ``LinearRegionItem`` for the viewport. The plot itself does not pan or zoom; plot x = Unix seconds when using the date axis."""
 
     sigViewportChanged = QtCore.Signal(float, float)
 
@@ -50,9 +50,10 @@ class TimelineOverviewStrip(pg.PlotWidget):
         self._row_height_px = max(16, int(row_height_px))
         self._band_margin = float(band_margin)
         self._intervals_item: Optional[IntervalRectsItem] = None
-        self._viewport_region = LinearRegionItem(values=(0.0, 1.0), orientation='vertical', brush=QtGui.QColor(80, 140, 255, 70), hoverBrush=QtGui.QColor(80, 140, 255, 90), pen=pg.mkPen(color=(40, 90, 200), width=1), movable=False)
+        self._viewport_region = LinearRegionItem(values=(0.0, 1.0), orientation='vertical', brush=QtGui.QColor(80, 140, 255, 70), hoverBrush=QtGui.QColor(80, 140, 255, 90), pen=pg.mkPen(color=(40, 90, 200), width=1), movable=True)
         self._viewport_region.setZValue(120)
         self.addItem(self._viewport_region)
+        self._viewport_region.sigRegionChangeFinished.connect(self._on_viewport_region_change_finished)
         pi = self.getPlotItem()
         pi.setMenuEnabled(False)
         pi.hideButtons()
@@ -92,7 +93,7 @@ class TimelineOverviewStrip(pg.PlotWidget):
 
 
     def set_viewport(self, x_start: float, x_end: float) -> None:
-        """Move the read-only viewport region (plot x coordinates)."""
+        """Set the viewport region from the main timeline (plot x); does not emit ``sigViewportChanged`` (signals blocked during ``setRegion``)."""
         x0, x1 = (float(x_start), float(x_end)) if x_start <= x_end else (float(x_end), float(x_start))
         self._viewport_region.blockSignals(True)
         self._viewport_region.setRegion([x0, x1])
