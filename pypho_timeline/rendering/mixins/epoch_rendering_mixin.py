@@ -204,6 +204,15 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
         """The rendered_epoch_names property."""
         return [a_name for a_name in self.rendered_epochs.keys() if ((a_name != 'name') and (a_name != 'context'))]
 
+
+    def _perform_add_render_item(self, plot_item, rect_item):
+        plot_item.addItem(rect_item)
+
+
+    def _perform_remove_render_item(self, plot_item, rect_item):
+        plot_item.removeItem(rect_item)
+
+
     @pyqtExceptionPrintingSlot()
     def EpochRenderingMixin_on_init(self):
         """Perform any parameters setting/checking during init."""
