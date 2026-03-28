@@ -13,9 +13,11 @@ from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 # from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
 # from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 import pyqtgraph as pg
+from phopymnehelper.helpers.dataframe_accessor_helpers import CommonDataFrameAccessorMixin
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin
+from phopymnehelper.motion_data import MotionDataFrame, BadMotionDataFrame
 
 from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
@@ -26,43 +28,6 @@ except ImportError:
     LinearRegionItem = pg.LinearRegionItem
 
 
-def _motion_bad_cell_to_unix_seconds(x: Any) -> float:
-    if isinstance(x, (datetime, pd.Timestamp)):
-        return float(datetime_to_unix_timestamp(x))
-    return float(x)
-
-
-def normalize_motion_bad_intervals_df(bad_df: Optional[pd.DataFrame], time_origin_unix: Optional[float] = None) -> pd.DataFrame:
-    """Build a DataFrame with float Unix ``t_start`` and ``t_duration`` for motion bad/exclusion intervals.
-
-    Accepts either timeline-style columns ``t_start``/``t_duration`` (Unix seconds or datetimes), or MNE-style
-    ``onset``/``duration`` (seconds relative to recording start) plus ``time_origin_unix`` (recording start, Unix s).
-    """
-    if bad_df is None or len(bad_df) == 0:
-        return pd.DataFrame(columns=['t_start', 't_duration'])
-    df = bad_df.copy()
-    if 't_start' in df.columns and 't_duration' in df.columns:
-        t_st = df['t_start'].map(_motion_bad_cell_to_unix_seconds)
-        t_du = df['t_duration'].astype(float)
-        return pd.DataFrame({'t_start': t_st, 't_duration': t_du}).reset_index(drop=True)
-    if 'onset' in df.columns and 'duration' in df.columns:
-        if time_origin_unix is None:
-            raise ValueError("bad_intervals_df uses MNE columns 'onset' and 'duration'; pass bad_intervals_time_origin_unix (recording start as Unix seconds).")
-        return pd.DataFrame({'t_start': time_origin_unix + df['onset'].astype(float), 't_duration': df['duration'].astype(float)}).reset_index(drop=True)
-    raise ValueError("bad_intervals_df must have columns ('t_start', 't_duration') or ('onset', 'duration').")
-
-
-def motion_bad_intervals_key_suffix(bad_unix_df: pd.DataFrame) -> str:
-    if bad_unix_df is None or len(bad_unix_df) == 0:
-        return ''
-    rows = sorted((round(float(r.t_start), 6), round(float(r.t_duration), 6)) for r in bad_unix_df.itertuples(index=False))
-    return hashlib.md5(repr(rows).encode('utf-8')).hexdigest()[:12]
-
-
-def _detail_t_column_to_unix_numpy(t_col: pd.Series) -> np.ndarray:
-    if pd.api.types.is_datetime64_any_dtype(t_col):
-        return np.asarray(datetime_to_unix_timestamp(t_col.tolist()), dtype=np.float64)
-    return np.asarray(t_col.to_numpy(dtype=np.float64, copy=False), dtype=np.float64)
 
 
 # ==================================================================================================================================================================================================================================================================================== #
@@ -418,8 +383,8 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         self.arbitrary_bounds = arbitrary_bounds
         self.exclude_bad_from_detail = bool(exclude_bad_from_detail)
         self.bad_overlay_alpha = float(bad_overlay_alpha)
-        self._bad_intervals_unix_df: pd.DataFrame = normalize_motion_bad_intervals_df(bad_intervals_df, bad_intervals_time_origin_unix)
-        self._bad_intervals_key_suffix: str = motion_bad_intervals_key_suffix(self._bad_intervals_unix_df)
+        self._bad_intervals_unix_df: pd.DataFrame = BadMotionDataFrame.normalize_motion_bad_intervals_df(bad_intervals_df, bad_intervals_time_origin_unix)
+        self._bad_intervals_key_suffix: str = BadMotionDataFrame.motion_bad_intervals_key_suffix(self._bad_intervals_unix_df)
         self._motion_plot_detail_renderer: Optional[MotionPlotDetailRenderer] = None
 
 
@@ -430,8 +395,14 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
         overview; for already-added tracks, also replace the track's detail renderer reference if your UI caches it
         (e.g. call ``track_renderer.detail_renderer = datasource.get_detail_renderer()`` after this).
         """
-        self._bad_intervals_unix_df = normalize_motion_bad_intervals_df(bad_intervals_df, bad_intervals_time_origin_unix)
-        self._bad_intervals_key_suffix = motion_bad_intervals_key_suffix(self._bad_intervals_unix_df)
+        is_timestamp_format: bool = bad_intervals_df.bad_motion_epochs_df.is_timestamp_format()
+
+        if is_timestamp_format and (bad_intervals_time_origin_unix is None):
+            t_unix: float = BadMotionDataFrame._detail_t_column_to_unix_numpy(self.detailed_df['t'])[0]
+            bad_intervals_time_origin_unix = t_unix
+
+        self._bad_intervals_unix_df = BadMotionDataFrame.normalize_motion_bad_intervals_df(bad_intervals_df, bad_intervals_time_origin_unix)
+        self._bad_intervals_key_suffix = BadMotionDataFrame.motion_bad_intervals_key_suffix(self._bad_intervals_unix_df)
         if self._motion_plot_detail_renderer is not None:
             self._motion_plot_detail_renderer.bad_intervals_unix_df = self._bad_intervals_unix_df
             self._motion_plot_detail_renderer.bad_overlay_alpha = self.bad_overlay_alpha
@@ -444,7 +415,7 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
             return result_df
         if 't' not in result_df.columns:
             return result_df
-        t_unix = _detail_t_column_to_unix_numpy(result_df['t'])
+        t_unix = BadMotionDataFrame._detail_t_column_to_unix_numpy(result_df['t'])
         bad = np.zeros(len(result_df), dtype=bool)
         for row in self._bad_intervals_unix_df.itertuples(index=False):
             b0 = float(row.t_start)
