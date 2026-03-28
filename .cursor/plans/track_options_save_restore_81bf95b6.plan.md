@@ -49,7 +49,7 @@ flowchart LR
 
 1. `**[pypho_timeline/rendering/graphics/track_renderer.py](c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\rendering\graphics\track_renderer.py)`** (small, required for performance)
   - Add `apply_channel_visibility_bulk(self, visibility: Dict[str, bool]) -> bool` (or similar name): for each key in `visibility` that exists in `self.channel_visibility`, apply; skip unknown keys; if any value changed, sync `_options_panel` if set, then `_trigger_visibility_render()` once; return whether a rerender was triggered.
-2. `**[pypho_timeline/widgets/track_options_panels.py](c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\widgets\track_options_panels.py)**`
+2. `**[pypho_timeline/widgets/track_options_panels.py](c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\widgets\track_options_panels.py)`**
   - Define constants: e.g. `TRACK_OPTIONS_CONFIG_VERSION = 1`, `TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY = "channel_visibility"`.
   - On `OptionsPanel`: optional hooks for future panels — e.g. `track_options_kind() -> Optional[str]` default `None`, `dump_track_options_state() -> Optional[Dict[str, Any]]` default `None`, `apply_track_options_state(data: Dict[str, Any]) -> None` default no-op.
   - On `TrackChannelVisibilityOptionsPanel`: implement hooks using existing `get_visibility_state` / `set_visibility_state` (for symmetry and future UI-driven export of panel-only fields).

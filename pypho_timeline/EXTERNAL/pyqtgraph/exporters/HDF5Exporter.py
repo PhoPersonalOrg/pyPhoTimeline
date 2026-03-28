@@ -2,10 +2,10 @@ import importlib.util
 
 import numpy
 
-from pyphoplacecellanalysis.External.pyqtgraph import PlotItem
-from pyphoplacecellanalysis.External.pyqtgraph.parametertree import Parameter
-from pyphoplacecellanalysis.External.pyqtgraph.Qt import QtCore
-from pyphoplacecellanalysis.External.pyqtgraph.exporters.Exporter import Exporter
+from pypho_timeline.EXTERNAL.pyqtgraph import PlotItem
+from pypho_timeline.EXTERNAL.pyqtgraph.parametertree import Parameter
+from pypho_timeline.EXTERNAL.pyqtgraph.Qt import QtCore
+from pypho_timeline.EXTERNAL.pyqtgraph.exporters.Exporter import Exporter
 
 HAVE_HDF5 = importlib.util.find_spec("h5py") is not None
 

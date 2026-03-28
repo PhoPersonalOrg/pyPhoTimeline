@@ -30,7 +30,7 @@ __all__ = ['CustomRectBoundedTextItem', 'SelectableTextItem']
         
 class SelectableTextItem(SelectableItemMixin, pg.TextItem):
     """ 
-    from pyphoplacecellanalysis.External.pyqtgraph_extensions.graphicsItems.TextItem.SelectableTextItem import SelectableTextItem
+    from pypho_timeline.EXTERNAL.pyqtgraph_extensions.graphicsItems.TextItem.SelectableTextItem import SelectableTextItem
     
     
     """

@@ -6,7 +6,7 @@ from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QApplication, QVBoxLayout, QWidget
 # import pyqtgraph as pg
 import pypho_timeline.EXTERNAL.pyqtgraph as pg
-from pyphoplacecellanalysis.External.pyqtgraph_extensions.mixins.SelectableItemMixin import SelectableItemMixin
+from pypho_timeline.EXTERNAL.pyqtgraph_extensions.mixins.SelectableItemMixin import SelectableItemMixin
 
 __all__ = ['CustomRectBoundedTextItem']
 
@@ -66,7 +66,7 @@ class CustomRectBoundedTextItem(pg.TextItem):
     
     Usage:
     
-        from pyphoplacecellanalysis.External.pyqtgraph_extensions.graphicsItems.TextItem.AlignableTextItem import CustomRectBoundedTextItem
+        from pypho_timeline.EXTERNAL.pyqtgraph_extensions.graphicsItems.TextItem.AlignableTextItem import CustomRectBoundedTextItem
     """
     def __init__(self, rect: QtCore.QRectF, text: str="", parent=None, **kwds): # , movable=False, position=0.5, anchors=None, 
         self._original_text = text ## full text

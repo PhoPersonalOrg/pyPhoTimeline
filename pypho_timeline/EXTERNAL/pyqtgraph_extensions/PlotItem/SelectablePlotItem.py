@@ -13,7 +13,7 @@ class SelectablePlotItem(pg.PlotItem):
     """ A PlotItem subclass that can be selected/deselected via left-click
     
     
-    from pyphoplacecellanalysis.External.pyqtgraph_extensions.PlotItem.SelectablePlotItem import SelectablePlotItem
+    from pypho_timeline.EXTERNAL.pyqtgraph_extensions.PlotItem.SelectablePlotItem import SelectablePlotItem
         
     # curr_plot: pg.PlotItem = root_render_widget.addPlot(row=(curr_row + plots_start_row_idx), col=curr_col, title=formatted_title) # pg.PlotItem
     # SelectablePlotItem version:

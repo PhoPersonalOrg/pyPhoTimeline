@@ -8,7 +8,7 @@ class JoystickButton(QtWidgets.QPushButton):
     """ 
     
     pyphoplacecellanalysis.External.pyqtgraph.widgets.JoystickButton.JoystickButton
-    from pyphoplacecellanalysis.External.pyqtgraph.widgets.JoystickButton import JoystickButton
+    from pypho_timeline.EXTERNAL.pyqtgraph.widgets.JoystickButton import JoystickButton
     
     """
     sigStateChanged = QtCore.Signal(object, object)  ## self, state

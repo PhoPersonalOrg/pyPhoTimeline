@@ -10,8 +10,8 @@ __all__ = ['SelectableItemMixin']
 
 class SelectableItemMixin:
     """ 
-    from pyphoplacecellanalysis.External.pyqtgraph_extensions.mixins.SelectableItemMixin import SelectableItemMixin
-    
+    from pypho_timeline.EXTERNAL.pyqtgraph_extensions.mixins.SelectableItemMixin import SelectableItemMixin
+    from pypho_timeline.EXTERNAL.pyqtgraph_extensions.mixins.SelectableItemMixin import SelectableItemMixin
     """
     sigSelectedChanged = pyqtSignal(object, bool) ## emitted when mouse is clicked. Check for event.isAccepted() to see whether the event has already been acted on.
     

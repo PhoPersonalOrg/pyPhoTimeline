@@ -19,6 +19,46 @@ from .Qt import QtCore, QtGui, QtWidgets
 from .Qt import exec_ as exec
 from .Qt import mkQApp
 
+if 'linux' in sys.platform:
+    useOpenGL = False
+elif 'darwin' in sys.platform:
+    useOpenGL = False
+else:
+    useOpenGL = False
+
+CONFIG_OPTIONS = {
+    'useOpenGL': useOpenGL,
+    'leftButtonPan': True,
+    'foreground': 'd',
+    'background': 'k',
+    'antialias': False,
+    'editorCommand': None,
+    'exitCleanup': True,
+    'enableExperimental': False,
+    'crashWarning': False,
+    'mouseRateLimit': 100,
+    'imageAxisOrder': 'col-major',
+    'useCupy': False,
+    'useNumba': False,
+}
+
+
+def setConfigOption(opt, value):
+    if opt not in CONFIG_OPTIONS:
+        raise KeyError('Unknown configuration option "%s"' % opt)
+    if opt == 'imageAxisOrder' and value not in ('row-major', 'col-major'):
+        raise ValueError('imageAxisOrder must be either "row-major" or "col-major"')
+    CONFIG_OPTIONS[opt] = value
+
+
+def setConfigOptions(**opts):
+    for k, v in opts.items():
+        setConfigOption(k, v)
+
+
+def getConfigOption(opt):
+    return CONFIG_OPTIONS[opt]
+
 ## Import almost everything to make it available from a single namespace
 ## don't import the more complex systems--canvas, parametertree, flowchart, dockarea
 ## these must be imported separately.

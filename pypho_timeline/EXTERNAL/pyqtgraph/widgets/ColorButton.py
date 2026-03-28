@@ -4,7 +4,10 @@ from .. import functions as functions
 # import pypho_timeline.EXTERNAL.pyqtgraph as pg
 from qtpy import QtCore, QtGui, QtWidgets # for QColor
 from qtpy.QtGui import QColor, QBrush, QPen
-from pyphoplacecellanalysis.External.pyqt_color_picker.colorPickerDialog import ColorPickerDialog
+try:
+    from pyphoplacecellanalysis.External.pyqt_color_picker.colorPickerDialog import ColorPickerDialog
+except (ImportError, ModuleNotFoundError):
+    ColorPickerDialog = None
 
 __all__ = ['ColorButton']
 
@@ -29,10 +32,14 @@ class ColorButton(QtWidgets.QPushButton):
         QtWidgets.QPushButton.__init__(self, parent)
         self.padding = (padding, padding, -padding, -padding) if isinstance(padding, (int, float)) else padding
         self.setColor(color)
-        # self.colorDialog = QtWidgets.QColorDialog()
-        self.colorDialog = ColorPickerDialog()
-        # self.colorDialog.setOption(QtWidgets.QColorDialog.ColorDialogOption.ShowAlphaChannel, True)
-        # self.colorDialog.setOption(QtWidgets.QColorDialog.ColorDialogOption.DontUseNativeDialog, True)
+        if ColorPickerDialog is not None:
+            self.colorDialog = ColorPickerDialog()
+        else:
+            self.colorDialog = QtWidgets.QColorDialog()
+            try:
+                self.colorDialog.setOption(QtWidgets.QColorDialog.ColorDialogOption.ShowAlphaChannel, True)
+            except AttributeError:
+                self.colorDialog.setOption(QtWidgets.QColorDialog.ShowAlphaChannel, True)
         self.colorDialog.currentColorChanged.connect(self.dialogColorChanged)
         self.colorDialog.rejected.connect(self.colorRejected)
         self.colorDialog.colorSelected.connect(self.colorSelected)

@@ -13,7 +13,7 @@ from pyphocorehelpers.function_helpers import function_attributes
 class TrapezoidOverlay(QWidget):
     """ a callout that illustrates a specific dock item is a subset of the above (parent) dock item
 
-    from pyphoplacecellanalysis.External.pyqtgraph_extensions.trapezoid_callout import TrapezoidOverlay, SpacerDock
+    from pypho_timeline.EXTERNAL.pyqtgraph_extensions.trapezoid_callout import TrapezoidOverlay, SpacerDock
 
 
         ## Customization
@@ -279,7 +279,7 @@ class TrapezoidOverlay(QWidget):
     @classmethod
     def add_overview_indicator_trapazoids_to_timeline(cls, active_2d_plot):
         """
-        from pyphoplacecellanalysis.External.pyqtgraph_extensions.trapezoid_callout import TrapezoidOverlay, SpacerDock
+        from pypho_timeline.EXTERNAL.pyqtgraph_extensions.trapezoid_callout import TrapezoidOverlay, SpacerDock
         
         _out_overlays: Dict[Tuple, TrapezoidOverlay] = TrapezoidOverlay.add_overview_indicator_trapazoids_to_timeline(active_2d_plot=active_2d_plot)
         
