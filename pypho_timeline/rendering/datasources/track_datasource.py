@@ -22,6 +22,7 @@ from pypho_timeline.rendering.datasources.interval_datasource import IntervalsDa
 import pyqtgraph as pg
 from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime
 from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
+from phopymnehelper.helpers.dataframe_accessor_helpers import MaskedValidDataFrameAccessor
 
 logger = get_rendering_logger(__name__)
 
@@ -641,7 +642,8 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
 
     def _post_slice_detailed_dataframe(self, result_df: pd.DataFrame, interval: pd.Series) -> pd.DataFrame:
         """Hook for subclasses to filter rows after interval slice and before downsampling."""
-        return result_df
+        return result_df.masked_df.get_masked(copy=True)
+        # return result_df
     
 
     def get_detail_renderer(self):

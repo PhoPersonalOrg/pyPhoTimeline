@@ -4,10 +4,10 @@ overview: Centralize a prefix-to-color-scheme mapping in `stream_to_datasources.
 todos:
   - id: add-scheme-helper
     content: Add default_dock_named_color_scheme_key(name) + __all__ export in stream_to_datasources.py
-    status: pending
+    status: completed
   - id: wire-timeline-builder
     content: Use helper + CustomCyclicColorsDockDisplayConfig in _add_tracks_to_timeline; keep LOG custom_button_configs
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -41,8 +41,8 @@ So changing “default dock color by modality” **requires** updating `_add_tra
 
 - Import `CustomCyclicColorsDockDisplayConfig` and `NamedColorScheme` from `dock_display_configs`, and the new helper from `stream_to_datasources`.
 - For **every** track, build:
-  `display_config = CustomCyclicColorsDockDisplayConfig(named_color_scheme=NamedColorScheme[default_dock_named_color_scheme_key(datasource.custom_datasource_name)], showCloseButton=True, showCollapseButton=False, showGroupButton=False)`  
-  (Omit `showTimelineSyncModeButton` unless you want to differ from current `FigureWidgetDockDisplayConfig` behavior; default on the base config is already `True`.)
+`display_config = CustomCyclicColorsDockDisplayConfig(named_color_scheme=NamedColorScheme[default_dock_named_color_scheme_key(datasource.custom_datasource_name)], showCloseButton=True, showCollapseButton=False, showGroupButton=False)`  
+(Omit `showTimelineSyncModeButton` unless you want to differ from current `FigureWidgetDockDisplayConfig` behavior; default on the base config is already `True`.)
 - Preserve LOG-specific behavior: when `custom_datasource_name.startswith('LOG_')` and `detailed_df` is present, still `setattr(display_config, 'custom_button_configs', {...})` and keep the existing `sigCustomButtonClicked` wiring.
 - Optionally set `corner_radius='3px'` on the config to match `FigureWidgetDockDisplayConfig`’s post-init (`fontSize` already defaults to `10px` on the base embed config).
 

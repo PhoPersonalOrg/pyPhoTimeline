@@ -240,19 +240,30 @@ class TrackRenderingMixin(EpochRenderingMixin):
         _, view_range, _ = evt
         x_range, y_range = view_range
         if len(x_range) == 2:
-            # Defer the update to avoid blocking the signal handler
+            # Defer the update to avoid blocking the signal handler. Read x-range from the ViewBox
+            # when the timer runs — not from evt — so programmatic jumps (interval prev/next) are not
+            # overwritten by a stale closure after setXRange updated the plot.
             def deferred_update():
                 if getattr(self, '_applying_window_from_signal', False):
                     return
-                self.track_renderers[track_name].update_viewport(x_range[0], x_range[1])
+                tr = self.track_renderers.get(track_name, None)
+                if tr is None:
+                    return
+                vb = tr.plot_item.getViewBox() if tr.plot_item is not None else None
+                if vb is None:
+                    return
+                vr = vb.viewRange()
+                if len(vr) < 1 or len(vr[0]) != 2:
+                    return
+                x0, x1 = float(vr[0][0]), float(vr[0][1])
+                if x0 > x1:
+                    x0, x1 = x1, x0
+                tr.update_viewport(x0, x1)
                 if self.get_track_window_sync_group(track_name) != 'primary':
                     return
                 apply_fn = getattr(self, 'apply_active_window_from_plot_x', None)
                 if apply_fn is None:
                     return
-                x0, x1 = float(x_range[0]), float(x_range[1])
-                if x0 > x1:
-                    x0, x1 = x1, x0
                 la0 = getattr(self, '_last_applied_plot_window_x0', None)
                 la1 = getattr(self, '_last_applied_plot_window_x1', None)
                 eps = max(1e-6, (x1 - x0) * 1e-12)
