@@ -25,6 +25,8 @@ dependencies = [
     "phopymnehelper",
     "dotenv>=0.9.9",
     "polars[all]>=1.39.3",
+    "autoreject>=0.4.3",
+    "h5py>=3.14.0",
 ]
 
 [tool.uv.sources]
