@@ -208,6 +208,16 @@ buttonIconTimelineSyncMode = {
 
 buttonIcon_ShowTable = {'main': QtWidgets.QStyle.StandardPixmap.SP_FileDialogListView}
 
+_COLLAPSED_CONTENT_STRETCH = 1
+
+
+def _qsplitter_orientation_is_vertical(splitter: QtWidgets.QSplitter) -> bool:
+    o = splitter.orientation()
+    orient_enum = getattr(QtCore.Qt, 'Orientation', None)
+    if orient_enum is not None:
+        return o == orient_enum.Vertical
+    return o == QtCore.Qt.Vertical
+
 
 class Dock(QtWidgets.QWidget, DockDrop):
     """ 
@@ -456,21 +466,34 @@ class Dock(QtWidgets.QWidget, DockDrop):
         """
         Hide the contents (everything except the title bar) for this Dock.
         """
-        print(f'hideContents()')
+        if self.contentsHidden:
+            return
+        sx, sy = self._stretch
+        self._stretch_before_content_toggle = (sx, sy)
         self.widgetArea.hide()
         self.contentsHidden = True
+        c = self._container
+        cw = _COLLAPSED_CONTENT_STRETCH
+        if isinstance(c, QtWidgets.QSplitter):
+            if _qsplitter_orientation_is_vertical(c):
+                self.setStretch(sx, cw)
+            else:
+                self.setStretch(cw, sy)
+        else:
+            self.setStretch(sx, cw)
         self.updateStyle()
-        print(f'\tdone.')
-        
+
     def showContents(self):
         """
         Show the contents (everything except the title bar) for this Dock.
         """
-        print(f'showContents()')
+        if not self.contentsHidden:
+            return
         self.widgetArea.show()
         self.contentsHidden = False
+        sx, sy = getattr(self, '_stretch_before_content_toggle', self._stretch)
+        self.setStretch(sx, sy)
         self.updateStyle()
-        print(f'\tdone.')
         
 
 
