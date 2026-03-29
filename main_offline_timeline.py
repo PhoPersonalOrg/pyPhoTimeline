@@ -1,11 +1,12 @@
 """main_offline_timeline.py -- Offline timeline from XDF files.
 
 This script creates a PyQt timeline window from one or more XDF files:
-  1. Loads streams from the given XDF file paths (optionally filtered by
-     stream_allowlist / stream_blocklist).
-  2. Builds a :class:`~pypho_timeline.widgets.simple_timeline_widget.SimpleTimelineWidget`
+  1. Discovers XDF paths via :func:`~pypho_timeline.xdf_session_discovery.discover_xdf_files_for_timeline`
+     from the configured database directories.
+  2. Loads streams (optionally filtered by stream_allowlist / stream_blocklist).
+  3. Builds a :class:`~pypho_timeline.widgets.simple_timeline_widget.SimpleTimelineWidget`
      via :class:`~pypho_timeline.timeline_builder.TimelineBuilder`.
-  3. Shows the timeline; scroll/zoom to inspect data.
+  4. Shows the timeline; scroll/zoom to inspect data.
 
 Usage::
 
@@ -30,11 +31,9 @@ from typing import Dict, List, Tuple, Any
 from matplotlib import pyplot as plt
 
 import numpy as np
-import pandas as pd
 
 from mne import set_log_level
 
-from phopymnehelper.historical_data import HistoricalData
 from phopymnehelper.SavedSessionsProcessor import SavedSessionsProcessor, SessionModality, DataModalityType
 
 from qtpy import QtCore, QtGui, QtWidgets
@@ -49,6 +48,7 @@ set_log_level("WARNING")
 
 
 from pypho_timeline.timeline_builder import TimelineBuilder
+from pypho_timeline.xdf_session_discovery import discover_xdf_files_for_timeline
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -129,44 +129,12 @@ def main() -> int:
     lab_recorder_output_path = db_root_path.joinpath('UnparsedData/LabRecorderStudies/sub-P001')
     assert lab_recorder_output_path.exists()
 
-
-
-    # modern_found_EEG_recording_files = HistoricalData.get_recording_files(recordings_dir=lab_recorder_output_path, recordings_extensions=['.xdf'])
-    modern_found_EEG_recording_files = HistoricalData.get_recording_files(recordings_dir=[lab_recorder_output_path, pho_log_to_LSL_recordings_path], recordings_extensions=['.xdf']) ## both sources
-    # modern_found_EEG_recording_files
-
-    most_recent_modern_found_EEG_recording_files: List[Path] = modern_found_EEG_recording_files[:n_most_recent_sessions_to_preprocess]
-    # most_recent_modern_found_EEG_recording_files
-
-
-    # active_EEG_recording_files = modern_found_EEG_recording_files
-    active_EEG_recording_files = most_recent_modern_found_EEG_recording_files
-
-    print(f'processing len(active_EEG_recording_files): {len(active_EEG_recording_files)} recording files...')
-    most_recent_modern_found_EEG_recording_file_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=active_EEG_recording_files) ## 8m for 65 files
-    # most_recent_modern_found_EEG_recording_file_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=most_recent_modern_found_EEG_recording_files) ## 5m for 35 files !! SLOWER: 9.2min for 35 files
-    most_recent_modern_found_EEG_recording_file_df
-
-
-    # modern_found_EEG_recording_file_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=modern_found_EEG_recording_files)
-    # modern_found_EEG_recording_file_df
-
-    ## OUTPUTS: modern_found_EEG_recording_file_df, modern_found_EEG_recording_files
-
-    ## INPUTS: most_recent_modern_found_EEG_recording_file_df
-
     xdf_file_cache_filename: str = f"{get_now_time_str()}_found_xdf_files.csv"
     xdf_file_cache_filepath: Path = xdf_to_rerun_rrd_parent_export_path.joinpath(xdf_file_cache_filename).resolve()
-
     print(f'exporting xdf .csv to xdf_file_cache_filepath: "{xdf_file_cache_filepath}..."')
-    most_recent_modern_found_EEG_recording_file_df.to_csv(xdf_file_cache_filepath)
-
-
-    most_recent_modern_found_EEG_recording_file_df['src_file'].to_list()
-    final_xdf_paths: List[Path] = [Path(v) for v in most_recent_modern_found_EEG_recording_file_df['src_file'].to_list()]
-    final_xdf_paths
-
-    ## OUTPUTS: final_xdf_paths
+    discovery = discover_xdf_files_for_timeline(xdf_discovery_dirs=[lab_recorder_output_path, pho_log_to_LSL_recordings_path], n_most_recent=n_most_recent_sessions_to_preprocess, csv_export_path=xdf_file_cache_filepath)
+    final_xdf_paths: List[Path] = discovery.xdf_paths
+    print(f'processing len(active_EEG_recording_files): {len(final_xdf_paths)} recording files...')
 
 
     # ==================================================================================================================================================================================================================================================================================== #
