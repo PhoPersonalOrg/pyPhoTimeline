@@ -25,11 +25,7 @@ from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_hand
 from pypho_timeline.widgets import LogWidget
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, get_earliest_reference_datetime, datetime_to_float, float_to_datetime
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
-
-try:
-    from phopymnehelper.historical_data import HistoricalData
-except ImportError:
-    HistoricalData = None
+from pypho_timeline.xdf_session_discovery import discover_xdf_files_for_timeline
 
 
 logger = None # get_rendering_logger(__name__)
@@ -138,9 +134,6 @@ class TimelineBuilder:
         # Add Qt handler for widget display
         add_qt_log_handler(logger, self.log_widget, log_level=logging.DEBUG)
 
-        # Show the widget
-        self.log_widget.show()
-
         if self.log_to_console or self.log_to_file:
             logger.info(f"Logging configured for TimelineBuilder - console: {self.log_to_console}, file: {self.log_to_file} ({self.log_file})")
 
@@ -164,18 +157,20 @@ class TimelineBuilder:
             self._current_main_window._log_widget.append_log(message, level, level_name)
 
 
+    def _embed_log_widget_in_timeline(self, timeline: SimpleTimelineWidget) -> None:
+        if self.log_widget is None:
+            return
+        dock_area = timeline.ui.dynamic_docked_widget_container
+        if dock_area.find_display_dock('log_widget') is not None:
+            self.log_widget.show()
+            return
+        self.log_widget.hide()
+        _, _dock = dock_area.add_display_dock(identifier='log_widget', widget=self.log_widget, dockSize=(800, 200), dockAddLocationOpts=['bottom'])
+        self.log_widget.show()
+
+
     def _build_discovered_xdf_paths(self, xdf_discovery_dirs: List[Path], n_most_recent: Optional[int]) -> List[Path]:
-        if HistoricalData is None:
-            raise ImportError("HistoricalData is not available. Refresh from directories requires phopymnehelper.")
-        if len(xdf_discovery_dirs) == 0:
-            return []
-        discovered_xdf_files = HistoricalData.get_recording_files(recordings_dir=xdf_discovery_dirs, recordings_extensions=['.xdf'])
-        if n_most_recent is not None:
-            discovered_xdf_files = discovered_xdf_files[:n_most_recent]
-        if len(discovered_xdf_files) == 0:
-            return []
-        discovered_xdf_df = HistoricalData.build_file_comparison_df(recording_files=discovered_xdf_files)
-        return [Path(v) for v in discovered_xdf_df['src_file'].to_list()]
+        return discover_xdf_files_for_timeline(xdf_discovery_dirs=xdf_discovery_dirs, n_most_recent=n_most_recent).xdf_paths
 
 
     def _collect_new_datasources_for_xdf_path(self, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> List[TrackDatasource]:
@@ -804,6 +799,88 @@ class TimelineBuilder:
         )
     
 
+    def _overview_row_t_end(self, overview_df: pd.DataFrame, j: int, is_datetime: bool) -> Optional[Any]:
+        ts = overview_df['t_start'].iloc[j]
+        if 't_end' in overview_df.columns:
+            te = overview_df['t_end'].iloc[j]
+            if te is None or (isinstance(te, float) and np.isnan(te)):
+                return None
+            if is_datetime:
+                out = pd.Timestamp(te)
+                return out.tz_localize('UTC') if out.tzinfo is None else out
+            return float(te)
+        if 't_duration' not in overview_df.columns:
+            return None
+        dur = overview_df['t_duration'].iloc[j]
+        if is_datetime:
+            t0 = pd.Timestamp(ts)
+            if t0.tzinfo is None:
+                t0 = t0.tz_localize('UTC')
+            if isinstance(dur, (timedelta, pd.Timedelta)):
+                return t0 + pd.Timedelta(dur)
+            if dur is None or (isinstance(dur, float) and np.isnan(dur)):
+                return None
+            return t0 + timedelta(seconds=float(dur))
+        if dur is None or (isinstance(dur, float) and np.isnan(dur)):
+            return None
+        if isinstance(dur, (timedelta, pd.Timedelta)):
+            return float(ts) + float(pd.Timedelta(dur).total_seconds())
+        return float(ts) + float(dur)
+
+
+
+    def _max_overview_interval_end(self, datasources: List[TrackDatasource], is_datetime: bool) -> Optional[Any]:
+        vals: List[Any] = []
+        for ds in datasources:
+            try:
+                ov = ds.get_overview_intervals()
+            except Exception:
+                continue
+            if ov is None or ov.empty or 't_start' not in ov.columns:
+                continue
+            for j in range(len(ov)):
+                te = self._overview_row_t_end(ov, j, is_datetime=is_datetime)
+                if te is not None:
+                    vals.append(te)
+        if not vals:
+            return None
+        if is_datetime:
+            return max(vals, key=lambda x: pd.Timestamp(x))
+        return max(vals)
+
+
+
+    def _end_aligned_window_start(self, datasources: List[TrackDatasource], total_start_time: Any, total_end_time: Any, window_duration: float, is_datetime: bool) -> Any:
+        anchor = self._max_overview_interval_end(datasources, is_datetime)
+        if is_datetime:
+            total_start_time = pd.Timestamp(total_start_time)
+            total_end_time = pd.Timestamp(total_end_time)
+            if anchor is None:
+                anchor = total_end_time
+            else:
+                anchor = pd.Timestamp(anchor)
+                if anchor.tzinfo is None:
+                    anchor = anchor.tz_localize('UTC')
+            effective_end = min(anchor, total_end_time)
+            span_sec = (total_end_time - total_start_time).total_seconds()
+            if window_duration >= span_sec:
+                return total_start_time
+            desired = effective_end - timedelta(seconds=float(window_duration))
+            latest = total_end_time - timedelta(seconds=float(window_duration))
+            return max(total_start_time, min(desired, latest))
+        if anchor is None:
+            anchor = float(total_end_time)
+        total_start_time = float(total_start_time)
+        total_end_time = float(total_end_time)
+        effective_end = min(float(anchor), total_end_time)
+        span = total_end_time - total_start_time
+        if window_duration >= span:
+            return total_start_time
+        desired = effective_end - float(window_duration)
+        latest = total_end_time - float(window_duration)
+        return max(total_start_time, min(desired, latest))
+
+
     # @function_attributes(short_name=None, tags=['MAIN'], input_requires=[], output_provides=[], uses=['self._add_tracks_to_timeline'], used_by=['self.build_from_eeg_raw_and_stream_info', 'self.build_from_streams', 'self.build_from_video', 'self.build_from_xdf_files'], creation_date='2026-02-03 19:53', related_items=[])
     def build_from_datasources(self, datasources: List[TrackDatasource], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), reference_datetime: Optional[datetime] = None,
                 use_absolute_datetime_track_mode: bool = True, enable_calendar_widget_track: bool = False, enable_log_table_widget: bool = False, **kwargs,
@@ -813,7 +890,7 @@ class TimelineBuilder:
         Args:
             datasources: List of TrackDatasource instances
             window_duration: Duration of the time window (default: auto-calculated from data)
-            window_start_time: Start time of the window (default: auto-calculated from data)
+            window_start_time: Start time of the window. If omitted, the window is placed so its end aligns with the latest ``t_end`` from :meth:`get_overview_intervals` across datasources (capped by the global data end), clamped within the global range; if no overview intervals exist, uses ``total_end_time`` as the anchor.
             add_example_tracks: Whether to add example tracks (default: False)
             window_title: Custom window title (default: "pyPhoTimeline")
             window_size: Window size as (width, height) tuple (default: (1000, 800))
@@ -850,9 +927,9 @@ class TimelineBuilder:
                 window_duration = duration_delta.total_seconds()
                 window_duration = max(window_duration, 10.0)
             
-            # Calculate window start time if not provided
+            # Calculate window start time if not provided (end-aligned to last overview interval)
             if window_start_time is None:
-                window_start_time = total_start_time
+                window_start_time = self._end_aligned_window_start(datasources, total_start_time, total_end_time, float(window_duration), is_datetime=True)
 
             elif isinstance(window_start_time, (int, float)):
                 # Convert relative float to absolute datetime
@@ -870,9 +947,9 @@ class TimelineBuilder:
                 window_duration = total_end_time - total_start_time
                 window_duration = max(window_duration, 10.0)
             
-            # Calculate window start time if not provided
+            # Calculate window start time if not provided (end-aligned to last overview interval)
             if window_start_time is None:
-                window_start_time = total_start_time
+                window_start_time = self._end_aligned_window_start(datasources, total_start_time, total_end_time, float(window_duration), is_datetime=False)
         
         # Set reference_datetime appropriately
         if is_datetime:
@@ -912,20 +989,13 @@ class TimelineBuilder:
         ## Add the calendar widget
         if enable_calendar_widget_track:
             a_cal_nav = timeline.add_calendar_navigator()
-        
+
+        self._embed_log_widget_in_timeline(timeline)
+
         ## add the table widget:
         if enable_log_table_widget:
             if "LOG_TextLogger" in timeline.track_datasources:
                 table_widget = timeline.add_dataframe_table_track("Text Log", timeline.track_datasources["LOG_TextLogger"].df) # timeline.add_dataframe_table_track()
-
-            # Dock log widget at bottom if it exists
-            if self.log_widget is not None:
-                # Hide standalone window before adding to dock (so it doesn't show as separate window)
-                self.log_widget.hide()
-                # Add to dock - the dock will automatically show the widget
-                _, dock = timeline.ui.dynamic_docked_widget_container.add_display_dock(identifier='log_widget', widget=self.log_widget, dockSize=(800, 200), dockAddLocationOpts=['right'])
-                # Explicitly show the widget to ensure it's visible in the dock
-                self.log_widget.show()
         
         logger.info("\nTimeline widget created with tracks:")
         for ds in datasources:
@@ -933,6 +1003,10 @@ class TimelineBuilder:
         
         logger.info("\nScroll on the timeline to see loaded intervals for each stream.")
         logger.info("Close the window to exit.\n")
+
+        ## hide the extra/redundant xaxis labels
+        timeline.hide_extra_xaxis_labels_and_axes()
+
         
         return timeline
     

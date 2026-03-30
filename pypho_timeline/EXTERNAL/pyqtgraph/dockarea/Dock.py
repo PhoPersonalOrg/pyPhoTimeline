@@ -465,6 +465,7 @@ class Dock(QtWidgets.QWidget, DockDrop):
     def hideContents(self):
         """
         Hide the contents (everything except the title bar) for this Dock.
+        Collapsed stretch axis: top title bar frees vertical space in a VContainer (shrink wy) or horizontal in an HContainer (shrink wx). Left (vertical) title bar frees horizontal space (shrink wx) in both cases so column width can drop in nested layouts.
         """
         if self.contentsHidden:
             return
@@ -474,7 +475,9 @@ class Dock(QtWidgets.QWidget, DockDrop):
         self.contentsHidden = True
         c = self._container
         cw = _COLLAPSED_CONTENT_STRETCH
-        if isinstance(c, QtWidgets.QSplitter):
+        if self.orientation == 'vertical':
+            self.setStretch(cw, sy)
+        elif isinstance(c, QtWidgets.QSplitter):
             if _qsplitter_orientation_is_vertical(c):
                 self.setStretch(sx, cw)
             else:
@@ -524,7 +527,10 @@ class Dock(QtWidgets.QWidget, DockDrop):
             return
 
         if o == 'auto' and (self.autoOrient):
-            if self.container().type() == 'tab':
+            # Collapsed geometry is tall+narrow; aspect ratio would wrongly force horizontal title.
+            if self.contentsHidden and self.orientation in ('vertical', 'horizontal'):
+                o = self.orientation
+            elif self.container().type() == 'tab':
                 o = 'horizontal'
             elif self.width() > self.height()*1.5:
                 o = 'vertical'

@@ -870,7 +870,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             if len(all_plot_items) > 1:
                 # Hide x-axis for all tracks except the last one
                 if enable_hide_extra_track_x_axes:
-                    for widget_name, plot_item in all_plot_items[:-3]:
+                    # for widget_name, plot_item in all_plot_items[:-3]: ## bottom 3 tracks
+                    for widget_name, plot_item in all_plot_items[:-1]:
                         plot_item.hideAxis('bottom')
                     # Ensure the last track shows its x-axis
                     all_plot_items[-1][1].showAxis('bottom')

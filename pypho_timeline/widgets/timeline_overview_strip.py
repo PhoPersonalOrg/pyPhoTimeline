@@ -15,6 +15,7 @@ from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEv
 from pypho_timeline.utils.datetime_helpers import create_am_pm_date_axis, datetime_to_unix_timestamp
 
 from pypho_timeline.EXTERNAL.pyqtgraph_extensions.graphicsObjects.CustomLinearRegionItem import CustomLinearRegionItem
+from pypho_timeline.EXTERNAL.pyqtgraph_extensions.mixins.DraggableGraphicsWidgetMixin import MouseInteractionCriteria
 
 
 def _scalar_to_plot_x(t: Any) -> float:
@@ -46,10 +47,11 @@ class TimelineOverviewStrip(pg.PlotWidget):
         self._row_height_px = max(16, int(row_height_px))
         self._band_margin = float(band_margin)
         self._intervals_item: Optional[IntervalRectsItem] = None
-        # self._viewport_region = CustomLinearRegionItem(values=(0.0, 1.0), orientation='vertical', brush=QtGui.QColor(80, 140, 255, 70), hoverBrush=QtGui.QColor(80, 140, 255, 90), pen=pg.mkPen(color=(40, 90, 200), width=1), movable=True)
-        self._viewport_region = CustomLinearRegionItem(values=(0.0, 1.0), orientation='vertical', pen=pg.mkPen(color=(40, 90, 200), width=1), brush=QtGui.QColor(80, 140, 255, 70), hoverBrush=QtGui.QColor(80, 140, 255, 90), hoverPen=pg.mkPen('#f00'), clipItem=self.getPlotItem()) # bound the LinearRegionItem to the plotted data
+        end_lines_crit = MouseInteractionCriteria(drag=lambda ev: ev.button() == QtCore.Qt.MouseButton.LeftButton, hover=lambda ev: ev.acceptDrags(QtCore.Qt.MouseButton.LeftButton), click=lambda ev: ev.button() == QtCore.Qt.MouseButton.RightButton)
+        self._viewport_region = CustomLinearRegionItem(values=(0.0, 1.0), orientation='vertical', pen=pg.mkPen(color=(40, 90, 200), width=1), brush=QtGui.QColor(80, 140, 255, 70), hoverBrush=QtGui.QColor(80, 140, 255, 90), hoverPen=pg.mkPen('#f00'), clipItem=self.getPlotItem(), movable=True, removable=False, endLinesMouseInteractionCriteria=end_lines_crit)
+        self._viewport_region.setObjectName('scroll_window_region')
         self._viewport_region.setZValue(120)
-        self.addItem(self._viewport_region)
+        self.addItem(self._viewport_region, ignoreBounds=True)
         self._viewport_region.sigRegionChangeFinished.connect(self._on_viewport_region_change_finished)
         pi = self.getPlotItem()
         pi.setMenuEnabled(False)
@@ -58,6 +60,7 @@ class TimelineOverviewStrip(pg.PlotWidget):
         vb = self.getViewBox()
         vb.setMouseEnabled(False, False)
         vb.enableAutoRange(axis='xy', enable=False)
+        # vb.setAutoPan(x=False, y=False)
         self.setBackground('w')
         self.showAxis('left', True)
 
@@ -130,6 +133,9 @@ class TimelineOverviewStrip(pg.PlotWidget):
                 tuples.extend(Render2DEventRectanglesHelper._build_interval_tuple_list_from_dataframe(prep))
             except Exception:
                 continue
+
+        # END for row_i, name in enumerate(primary_track_names)...
+
         n = len(primary_track_names)
         if n == 0:
             self.setMinimumHeight(self._row_height_px + 24)
