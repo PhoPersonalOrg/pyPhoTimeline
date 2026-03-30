@@ -4,9 +4,6 @@
             "path": "."
         },
         {
-            "path": "../stream_viewer"
-        },
-        {
             "path": "../PhoPyMNEHelper"
         },
         {
@@ -14,12 +11,6 @@
         },
         {
             "path": "../PhoOfflineEEGAnalysis"
-        },
-        {
-            "path": "../phopyqthelper"
-        },
-        {
-            "path": "../python_xdf_streamer"
         }
     ],
 	"settings": {

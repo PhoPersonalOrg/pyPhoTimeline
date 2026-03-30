@@ -57,11 +57,11 @@ except ImportError:
     LogTextDataFramePlotDetailRenderer = None
 
 try:
-    from phopymnehelper.EEG_data import EEGComputations
-    EEG_COMPUTATIONS_AVAILABLE = True
+    from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
+    EEG_SPECTROGRAM_AVAILABLE = True
 except ImportError:
-    EEGComputations = None
-    EEG_COMPUTATIONS_AVAILABLE = False
+    compute_raw_eeg_spectrogram = None
+    EEG_SPECTROGRAM_AVAILABLE = False
 
 # Import VideoTrackDatasource for video-only timeline building
 try:
@@ -1199,9 +1199,9 @@ class TimelineBuilder:
                     logger.info(f"  Created EEG datasource for '{stream_name}' with {len(eeg_channels)} channels")
 
                 # Create EEGSpectrogramTrackDatasource (same intervals, detail = spectrogram image)
-                if EEGSpectrogramTrackDatasource is not None and EEG_COMPUTATIONS_AVAILABLE and EEGComputations is not None:
+                if EEGSpectrogramTrackDatasource is not None and EEG_SPECTROGRAM_AVAILABLE and compute_raw_eeg_spectrogram is not None:
                     try:
-                        spec_result = EEGComputations.raw_spectogram_working(raw, nperseg=1024, noverlap=512)
+                        spec_result = compute_raw_eeg_spectrogram(raw)
                         spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=base_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}")
                         datasources.append(spec_datasource)
                         logger.info(f"  Created EEG Spectrogram datasource for '{stream_name}'")

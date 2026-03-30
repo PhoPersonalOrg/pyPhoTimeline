@@ -470,13 +470,14 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                         if raw is not None:
                             try:
                                 from phopymnehelper.EEG_data import EEGComputations
+                                from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
                                 bad_ch_result = EEGComputations.time_independent_bad_channels(raw)
                                 bad_channels = bad_ch_result.get('all_bad_channels', [])
                                 if bad_channels:
                                     logger.info(f'Bad channels detected for "{stream_name}": {bad_channels}')
                                     datasource.exclude_bad_channels(bad_channels)
 
-                                spec_result = EEGComputations.raw_spectogram_working(raw, nperseg=1024, noverlap=512)
+                                spec_result = compute_raw_eeg_spectrogram(raw)
                                 _effective_groups = spectrogram_channel_groups if spectrogram_channel_groups is None else (spectrogram_channel_groups if len(spectrogram_channel_groups) > 0 else None)
                                 if _effective_groups is None:
                                     spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}", channel_group_presets=(spectrogram_channel_groups if spectrogram_channel_groups is not None and len(spectrogram_channel_groups) > 0 else None))
@@ -491,7 +492,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                                         all_streams[group_key] = merged_intervals_df
                                     logger.info(f'Created {len(_effective_groups)} EEG Spectrogram group datasources for "{stream_name}"')
                             except ImportError:
-                                logger.warning(f'EEGComputations not available; skipping spectrogram for "{stream_name}"')
+                                logger.warning(f'phopymnehelper EEG/spectrogram helpers not available; skipping spectrogram for "{stream_name}"')
                             except Exception as spec_e:
                                 logger.warning(f'Failed to create spectrogram for "{stream_name}": {spec_e}')
                         else:
