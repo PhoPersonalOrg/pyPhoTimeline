@@ -427,13 +427,13 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         if (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name):
             if has_valid_intervals and has_detailed_data:
                 motion_norm_dict = modality_channels_normalization_mode_dict.get('MOTION')
-                datasource = MotionTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict=motion_norm_dict)
+                motion_raw_datasets = raws_dict.get(DataModalityType.MOTION.value, []) if raws_dict else None
+                datasource = MotionTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict=motion_norm_dict, lab_obj=lab_obj, raw_datasets=motion_raw_datasets)
                 
                 if enable_raw_xdf_processing and (lab_obj is not None):
                     logger.info(f'\tMOTION Modality MNE raw processing...')
                     if (lab_obj is not None):
-                        motion_raws = raws_dict.get(DataModalityType.MOTION.value, [])  # type: ignore[arg-type]  # xdf_files keys datasets_dict by enum .value at runtime
-                        raw = motion_raws[0] if motion_raws else None
+                        raw = motion_raw_datasets[0] if motion_raw_datasets else None
                         if raw is not None:
                             try:
                                 from phopymnehelper.motion_data import MotionData

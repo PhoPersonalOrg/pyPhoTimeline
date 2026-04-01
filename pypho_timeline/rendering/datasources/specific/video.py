@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import platform
 import shutil
@@ -6,11 +8,11 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple, Optional, Callable, Union, Any
+from typing import Dict, List, Tuple, Optional, Callable, Union, Any, TYPE_CHECKING
 from qtpy import QtCore
 from qtpy.QtWidgets import QMessageBox, QWidget
 import pyqtgraph as pg
-from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
+from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, RawProvidingTrackDatasource, DetailRenderer
 # from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 
 try:
@@ -24,6 +26,10 @@ from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
         
 from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
+
+if TYPE_CHECKING:
+    import mne
+    from phopymnehelper.xdf_files import LabRecorderXDF
 
 
 try:
@@ -546,11 +552,11 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
 # VideoTrackDatasource                                                                                                                                                                                                                                                                   #
 # ==================================================================================================================================================================================================================================================================================== #
 
-class VideoTrackDatasource(IntervalProvidingTrackDatasource):
+class VideoTrackDatasource(RawProvidingTrackDatasource):
     """TrackDatasource for video data.
-    
-    Inherits from IntervalProvidingTrackDatasource and implements video-specific
-    detail rendering for displaying video intervals with async detail loading.
+
+    Extends RawProvidingTrackDatasource for video-specific detail rendering and async thumbnail loading.
+    Optional LabRecorderXDF / MNE Raw hooks are available via the parent class when aligned with an XDF session.
 
     Usage:
 
@@ -579,10 +585,11 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
     # def video_metadata_df(self, value):
     #     self._video_metadata_df = value
     
-    def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, video_paths: Optional[List[Union[Path, str]]] = None, 
-            custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False, parent: Optional[QtCore.QObject] = None):
+    def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, video_paths: Optional[List[Union[Path, str]]] = None,
+            custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False,
+            lab_obj: Optional[LabRecorderXDF] = None, raw_datasets: Optional[List[mne.io.Raw]] = None, parent: Optional[QtCore.QObject] = None):
         """Initialize with video intervals.
-        
+
         Args:
             video_intervals_df: DataFrame with columns ['t_start', 't_duration', 'video_file_path'] (optional, if provided, other args ignored)
             video_folder_path: Path to folder containing videos (will be parsed using VideoMetadataParser)
@@ -593,6 +600,8 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
             frames_per_second: Target frame rate for thumbnail extraction (default: 10.0)
             thumbnail_size: Optional (width, height) tuple for resizing frames (default: (128, 128))
             use_vispy_renderer: If True, use high-performance vispy renderer instead of pyqtgraph (default: False)
+            lab_obj: Optional LabRecorderXDF handle for the loaded XDF session (optional)
+            raw_datasets: Optional list of MNE Raw objects for this track's modality (optional)
         """
         # Determine which input method to use
         if video_intervals_df is not None:
@@ -663,7 +672,7 @@ class VideoTrackDatasource(IntervalProvidingTrackDatasource):
         
         if custom_datasource_name is None:
             custom_datasource_name = "VideoTrack"
-        super().__init__(intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name, parent=parent)
+        super().__init__(intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name, lab_obj=lab_obj, raw_datasets=raw_datasets, parent=parent)
 
         self.video_folder_path = video_folder_path
         
