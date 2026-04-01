@@ -469,18 +469,18 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                     if (lab_obj is not None):
                         # raws_dict = lab_obj.datasets_dict or {}
                         eeg_raws = raws_dict.get(DataModalityType.EEG.value, [])  # type: ignore[arg-type]  # xdf_files keys datasets_dict by enum .value at runtime
-                        raw = eeg_raws[0] if eeg_raws else None
-                        if raw is not None:
+                        eeg_raw = eeg_raws[0] if eeg_raws else None
+                        if eeg_raw is not None:
                             try:
                                 from phopymnehelper.EEG_data import EEGComputations
                                 from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
-                                bad_ch_result = EEGComputations.time_independent_bad_channels(raw)
+                                bad_ch_result = EEGComputations.time_independent_bad_channels(eeg_raw)
                                 bad_channels = bad_ch_result.get('all_bad_channels', [])
                                 if bad_channels:
                                     logger.info(f'Bad channels detected for "{stream_name}": {bad_channels}')
                                     datasource.exclude_bad_channels(bad_channels)
 
-                                spec_result = compute_raw_eeg_spectrogram(raw)
+                                spec_result = compute_raw_eeg_spectrogram(eeg_raw)
                                 _effective_groups = spectrogram_channel_groups if spectrogram_channel_groups is None else (spectrogram_channel_groups if len(spectrogram_channel_groups) > 0 else None)
                                 if _effective_groups is None:
                                     spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}", channel_group_presets=(spectrogram_channel_groups if spectrogram_channel_groups is not None and len(spectrogram_channel_groups) > 0 else None))
