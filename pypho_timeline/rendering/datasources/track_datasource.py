@@ -792,7 +792,7 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
     """
     def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None, detail_renderer: Optional[IntervalPlotDetailRenderer]=None,
             max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True, 
-            lab_obj: Optional[LabRecorderXDF] = None, raws_dict: Optional[Dict[str, mne.io.Raw]] = None,
+            lab_obj: Optional[LabRecorderXDF] = None, raw_datasets: Optional[List[mne.io.Raw]] = None,
             parent: Optional[QtCore.QObject] = None,
         ):
         """Initialize with position data and intervals.
@@ -804,13 +804,15 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
             detail_renderer: Custom detail renderer (optional)
             max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
             enable_downsampling: Whether to enable downsampling. Default: True
+            lab_obj: Optional LabRecorderXDF handle for the loaded XDF session.
+            raw_datasets: Optional list of MNE Raw objects for this track's modality.
         """
         if custom_datasource_name is None:
             custom_datasource_name = "GenericRawProvidingTrack"
         super().__init__(intervals_df, detailed_df=detailed_df, custom_datasource_name=custom_datasource_name, detail_renderer=detail_renderer,
                             max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, parent=parent)        
         self._lab_xdf_obj = lab_obj
-        self._raws_dict = raws_dict
+        self._raw_datasets = raw_datasets
 
 
     @property
@@ -823,18 +825,18 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
 
 
     @property
-    def raws_dict(self) -> Dict[str, mne.io.Raw]:
-        """The raws_dict property."""
-        return self._raws_dict
-    @raws_dict.setter
-    def raws_dict(self, value: Dict[str, mne.io.Raw]):
-        self._raws_dict = value
+    def raw_datasets(self) -> Optional[List[mne.io.Raw]]:
+        """Optional list of MNE Raw objects attached to this datasource."""
+        return self._raw_datasets
+    @raw_datasets.setter
+    def raw_datasets(self, value: Optional[List[mne.io.Raw]]):
+        self._raw_datasets = value
 
     
     @classmethod
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: Optional[List[pd.DataFrame]] = None, custom_datasource_name: Optional[str] = None, detail_renderer: Optional['DetailRenderer'] = None,
                             max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True,
-                            lab_obj: Optional[LabRecorderXDF] = None, raws_dict: Optional[Dict[str, mne.io.Raw]] = None, **kwargs) -> 'IntervalProvidingTrackDatasource':
+                            lab_obj: Optional[LabRecorderXDF] = None, raw_datasets: Optional[List[mne.io.Raw]] = None, **kwargs) -> 'IntervalProvidingTrackDatasource':
         """Create an IntervalProvidingTrackDatasource by merging data from multiple sources.
         
         Args:
@@ -869,7 +871,7 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
             detail_renderer=detail_renderer,
             max_points_per_second=max_points_per_second,
             enable_downsampling=enable_downsampling,
-            lab_obj=lab_obj, raws_dict=raws_dict, **kwargs
+            lab_obj=lab_obj, raw_datasets=raw_datasets, **kwargs
         )
 
 

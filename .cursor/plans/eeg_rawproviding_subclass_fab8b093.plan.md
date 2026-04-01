@@ -4,13 +4,13 @@ overview: Make `EEGTrackDatasource` and `EEGSpectrogramTrackDatasource` inherit 
 todos:
   - id: eeg-base-init
     content: Switch EEGTrackDatasource / EEGSpectrogramTrackDatasource to RawProvidingTrackDatasource; forward lab_obj, raws_dict in __init__ and from_multiple_sources
-    status: pending
+    status: completed
   - id: stream-wire
     content: (Optional) Pass lab_obj and raws_dict from perform_process_all_streams_multi_xdf into EEG + spectrogram datasource constructors
-    status: pending
+    status: completed
   - id: verify
     content: Run analyzer/lint on eeg.py and stream_to_datasources.py if modified
-    status: pending
+    status: completed
 isProject: false
 ---
 
