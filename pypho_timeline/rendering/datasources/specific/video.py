@@ -11,7 +11,7 @@ from qtpy import QtCore
 from qtpy.QtWidgets import QMessageBox, QWidget
 import pyqtgraph as pg
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
-from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
+# from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 
 try:
     import cv2
