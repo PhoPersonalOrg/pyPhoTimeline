@@ -1,5 +1,6 @@
 """TrackRenderer - Manages overview rectangles and detail overlays for timeline tracks."""
 import numpy as np
+from pathlib import Path
 from typing import Dict, List, Optional, Set, Any
 import logging
 from datetime import datetime
@@ -307,9 +308,60 @@ class TrackRenderer(QtCore.QObject):
                 
                 detail_render_callback = detail_render_callback_fn
             
+            extra_menu_callbacks_dict = {}
+            if VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource):
+                from pypho_timeline.rendering.datasources.specific.video import VideoThumbnailDetailRenderer, VlcLaunchableVideoThumbnailImageItem
+
+                def show_in_vlc_callback_fn(rect_index: int, click_t: float):
+                    """ captures: self """
+                    if self._overview_df is None or rect_index < 0 or rect_index >= len(self._overview_df):
+                        logger.warning(f"TrackRenderer[{self.track_id}] show_in_vlc - invalid rect_index={rect_index} overview len={len(self._overview_df) if self._overview_df is not None else 0}")
+                        return
+                    row = self._overview_df.iloc[rect_index]
+                    if 'video_file_path' not in self._overview_df.columns:
+                        return
+                    vp = row.get('video_file_path')
+                    if vp is None or str(vp).strip() == '' or (isinstance(vp, float) and np.isnan(vp)):
+                        return
+                    t_start_sec = VideoThumbnailDetailRenderer.scalar_interval_t_start_to_unix_seconds(row['t_start'])
+                    t_duration_sec = VideoThumbnailDetailRenderer.scalar_interval_t_duration_seconds(row['t_duration'])
+                    offset_seconds = float(click_t) - t_start_sec
+                    if offset_seconds < 0:
+                        offset_seconds = 0.0
+                    if offset_seconds > t_duration_sec:
+                        offset_seconds = t_duration_sec
+                    parent_w = VlcLaunchableVideoThumbnailImageItem.message_box_parent_for_plot_item(self.plot_item)
+                    VlcLaunchableVideoThumbnailImageItem.launch_video_player_vlc(Path(str(vp)), offset_seconds, parent_w)
+
+
+                def _on_show_in_vlc(self):
+                    """Captures: show_in_vlc_callback_fn
+                        Handle the 'Show in VLC...' context menu action.
+                    """
+                    assert self._show_in_vlc_callback is not None
+                    if not hasattr(self, '_context_menu_event_pos'):
+                        logger.debug("IntervalRectsItem._on_show_in_vlc - no stored context menu position")
+                        return
+                    rect_index = self._get_rect_at_position(self._context_menu_event_pos)
+                    if rect_index is None or rect_index >= len(self.data):
+                        logger.debug("IntervalRectsItem._on_show_in_vlc - no rectangle at click position")
+                        return
+                    click_t = float(self._context_menu_event_pos.x())
+                    try:
+                        self._show_in_vlc_callback(rect_index, click_t)
+                    except Exception as e:
+                        logger.error(f"IntervalRectsItem._on_show_in_vlc - error in show_in_vlc_callback: {e}", exc_info=True)
+
+
+
+
+                extra_menu_callbacks_dict["Show in VLC..."] = show_in_vlc_callback_fn
+
+
             # Build the interval rects item
             self.overview_rects_item = Render2DEventRectanglesHelper.build_IntervalRectsItem_from_interval_datasource(
-                self.datasource, format_label_fn=format_label_fn, detail_render_callback=detail_render_callback
+                self.datasource, format_label_fn=format_label_fn, detail_render_callback=detail_render_callback,
+                extra_menu_callbacks_dict = {"Show in VLC...": show_in_vlc_callback },
             )
             
             # Remove old overview if exists

@@ -1,9 +1,14 @@
+import os
+import platform
+import shutil
+import subprocess
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 from qtpy import QtCore
+from qtpy.QtWidgets import QMessageBox, QWidget
 import pyqtgraph as pg
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
@@ -219,6 +224,85 @@ def video_metadata_to_intervals_df(video_df: pd.DataFrame, reference_timestamp: 
     return intervals_df
 
 
+class VlcLaunchableVideoThumbnailImageItem(pg.ImageItem):
+    @staticmethod
+    def find_vlc_executable() -> Optional[Path]:
+        vlc_path = shutil.which('vlc')
+        if vlc_path:
+            return Path(vlc_path)
+        system = platform.system()
+        if system == "Windows":
+            common_paths = [Path("C:/Program Files/VideoLAN/VLC/vlc.exe"), Path("C:/Program Files (x86)/VideoLAN/VLC/vlc.exe"), Path(os.path.expanduser("~/AppData/Local/Programs/VLC/vlc.exe"))]
+        elif system == "Darwin":
+            common_paths = [Path("/Applications/VLC.app/Contents/MacOS/VLC"), Path("/usr/local/bin/vlc")]
+        else:
+            common_paths = [Path("/usr/bin/vlc"), Path("/usr/local/bin/vlc")]
+        for path in common_paths:
+            if path.exists():
+                return path
+        return None
+
+
+    @staticmethod
+    def message_box_parent_for_plot_item(plot_item: pg.PlotItem) -> Optional[QWidget]:
+        scene = plot_item.scene()
+        if scene is None or len(scene.views()) == 0:
+            return None
+        return scene.views()[0].window()
+
+
+    @staticmethod
+    def launch_video_player_vlc(video_path: Path, start_offset_seconds: float, parent_widget: Optional[QWidget] = None) -> None:
+        if not video_path or not str(video_path).strip():
+            QMessageBox.warning(parent_widget, "Video Launch Error", "No video file path found for this interval.")
+            return
+        video_path = Path(video_path)
+        if not video_path.exists():
+            QMessageBox.warning(parent_widget, "Video Launch Error", f"Video file not found:\n{video_path}")
+            return
+        vlc_exe = VlcLaunchableVideoThumbnailImageItem.find_vlc_executable()
+        if vlc_exe is None:
+            QMessageBox.warning(parent_widget, "VLC Not Found", "VLC media player was not found on your system.\n\nPlease install VLC from https://www.videolan.org/\nor ensure it is in your system PATH.")
+            return
+        try:
+            cmd = [str(vlc_exe), "--start-time", str(int(start_offset_seconds)), str(video_path)]
+            if platform.system() == "Windows":
+                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                subprocess.Popen(cmd, creationflags=creationflags, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        except Exception as e:
+            QMessageBox.critical(parent_widget, "Video Launch Error", f"Failed to launch VLC:\n{str(e)}")
+
+
+    def __init__(self, image: np.ndarray, plot_item: pg.PlotItem, video_path: Path, t_start_sec: float, t_duration_sec: float):
+        super().__init__(image)
+        self._plot_item = plot_item
+        self._video_path = Path(video_path)
+        self._t_start_sec = float(t_start_sec)
+        self._t_duration_sec = float(max(0.0, t_duration_sec))
+        self.setAcceptedMouseButtons(QtCore.Qt.MouseButton.LeftButton)
+        self.setAcceptHoverEvents(True)
+        self.setZValue(20)
+
+
+    def mouseDoubleClickEvent(self, event):
+        vb = self._plot_item.getViewBox()
+        if vb is None:
+            super().mouseDoubleClickEvent(event)
+            return
+        view_pt = vb.mapSceneToView(event.scenePos())
+        click_ts = float(view_pt.x())
+        offset_seconds = click_ts - self._t_start_sec
+        if offset_seconds < 0:
+            offset_seconds = 0.0
+        if offset_seconds > self._t_duration_sec:
+            offset_seconds = self._t_duration_sec
+        parent_w = VlcLaunchableVideoThumbnailImageItem.message_box_parent_for_plot_item(self._plot_item)
+        VlcLaunchableVideoThumbnailImageItem.launch_video_player_vlc(self._video_path, offset_seconds, parent_w)
+        event.accept()
+
+
 # ==================================================================================================================================================================================================================================================================================== #
 # VideoThumbnailDetailRenderer - Renders video frames as thumbnails.                                                                                                                                                                                                                              #
 # ==================================================================================================================================================================================================================================================================================== #
@@ -245,7 +329,29 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         self.thumbnail_height = thumbnail_height
         self.spacing = spacing
         self.thumbnail_size = thumbnail_size
-    
+
+
+    @staticmethod
+    def scalar_interval_t_start_to_unix_seconds(t_start: Any) -> float:
+        if isinstance(t_start, (datetime, pd.Timestamp)):
+            u = datetime_to_unix_timestamp(t_start)
+            return float(u[0]) if isinstance(u, list) else float(u)
+        if isinstance(t_start, np.datetime64):
+            u = datetime_to_unix_timestamp(pd.Timestamp(t_start))
+            return float(u[0]) if isinstance(u, list) else float(u)
+        return float(t_start)
+
+
+    @staticmethod
+    def scalar_interval_t_duration_seconds(t_duration: Any) -> float:
+        if t_duration is None or (isinstance(t_duration, float) and np.isnan(t_duration)):
+            return 1.0
+        if isinstance(t_duration, timedelta):
+            return float(t_duration.total_seconds())
+        if isinstance(t_duration, pd.Timedelta):
+            return float(t_duration.total_seconds())
+        return float(t_duration)
+
 
     def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render video frames as thumbnails.
@@ -303,7 +409,11 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         y_height = interval['series_height'].iloc[0] if len(interval) > 0 and 'series_height' in interval.columns else self.thumbnail_height
         y_center = y_offset + y_height / 2.0
         y_bottom = y_center - self.thumbnail_height / 2.0
-        
+        video_path_raw = interval['video_file_path'].iloc[0] if len(interval) > 0 and 'video_file_path' in interval.columns else None
+        use_vlc_item = bool(video_path_raw is not None and str(video_path_raw).strip() != '' and not (isinstance(video_path_raw, float) and np.isnan(video_path_raw)))
+        t_start_sec = self.scalar_interval_t_start_to_unix_seconds(t_start) if use_vlc_item else 0.0
+        t_duration_sec = self.scalar_interval_t_duration_seconds(t_duration) if use_vlc_item else 1.0
+        vlc_path = Path(str(video_path_raw)) if use_vlc_item else None
         # Render each frame
         for i, frame in enumerate(frames):
             if frame is None:
@@ -317,9 +427,10 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             if img_data is None:
                 continue
             
-            # Create ImageItem
-            img_item = pg.ImageItem(img_data)
-            
+            if use_vlc_item and vlc_path is not None:
+                img_item = VlcLaunchableVideoThumbnailImageItem(img_data, plot_item, vlc_path, t_start_sec, t_duration_sec)
+            else:
+                img_item = pg.ImageItem(img_data)
             # Set position and size
             img_item.setRect(QtCore.QRectF(
                 x_start, y_bottom, 
