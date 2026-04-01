@@ -122,7 +122,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
     clicked = QtCore.Signal()
     ## data must have fields: start_t, series_vertical_offset, duration_t, series_height, pen, brush
 
-    def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False, detail_render_callback=None):
+    def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False, detail_render_callback=None, extra_menu_callbacks_dict: Dict[str, Callable]=None):
         # menu creation is deferred because it is expensive and often
         # the user will never see the menu anyway.
         self.menu = None
@@ -145,6 +145,9 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
         self._current_hovered_item_tooltip_format_fn = format_tooltip_fn
         self._item_label_format_fn = format_label_fn
         self._detail_render_callback = detail_render_callback  # Callback for detailed rendering: (rect_index: int, rect_data: IntervalRectsItemData) -> None
+        if extra_menu_callbacks_dict is None:
+            extra_menu_callbacks_dict = {}
+        self._extra_menu_callbacks_dict = extra_menu_callbacks_dict
 
         self._labels = []
         self.rebuild_label_items()
@@ -569,6 +572,15 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
                 render_detailed.triggered.connect(self._on_render_detailed)
                 self.menu.addAction(render_detailed)
                 self.menu.render_detailed = render_detailed
+
+            ## extra actions
+            self.menu.extra_actions = {}
+            for menu_lbl, callback_fn in self._extra_menu_callbacks_dict.items():
+                an_action = QtGui.QAction(menu_lbl, self.menu)
+                an_action.triggered.connect(callback_fn)
+                self.menu.addAction(an_action)
+                self.menu.extra_actions[menu_lbl] = an_action
+
             
             green = QtGui.QAction("Turn green", self.menu)
             green.triggered.connect(self.setGreen)
@@ -640,6 +652,43 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
 
     def setAlpha(self, a):
         self.setOpacity(a/255.)
+
+
+    def _on_custom_menu_item_executed(self):
+        """Handle the general context menu event, extracting the identity of the clicked rect item (rect_idx) and the click time (click_t) to be passed to the context menu's action handler."""
+        if not hasattr(self, '_context_menu_event_pos'):
+            logger.debug("IntervalRectsItem._on_custom_menu_item_executed - no stored context menu position")
+            return
+        rect_index = self._on_custom_menu_item_executed(self._context_menu_event_pos)
+        if rect_index is None or rect_index >= len(self.data):
+            logger.debug("IntervalRectsItem._on_custom_menu_item_executed - no rectangle at click position")
+            return
+        click_t = float(self._context_menu_event_pos.x())
+        try:
+            ## TODO: perform the specific handler here:
+            # self._show_in_vlc_callback(rect_index, click_t)
+        except Exception as e:
+            logger.error(f"IntervalRectsItem._on_custom_menu_item_executed - error in show_in_vlc_callback: {e}", exc_info=True)
+
+
+
+
+    # def _on_show_in_vlc(self):
+    #     """Handle the 'Show in VLC...' context menu action."""
+    #     assert self._show_in_vlc_callback is not None
+    #     if not hasattr(self, '_context_menu_event_pos'):
+    #         logger.debug("IntervalRectsItem._on_show_in_vlc - no stored context menu position")
+    #         return
+    #     rect_index = self._get_rect_at_position(self._context_menu_event_pos)
+    #     if rect_index is None or rect_index >= len(self.data):
+    #         logger.debug("IntervalRectsItem._on_show_in_vlc - no rectangle at click position")
+    #         return
+    #     click_t = float(self._context_menu_event_pos.x())
+    #     try:
+    #         self._show_in_vlc_callback(rect_index, click_t)
+    #     except Exception as e:
+    #         logger.error(f"IntervalRectsItem._on_show_in_vlc - error in show_in_vlc_callback: {e}", exc_info=True)
+
 
 
     def _on_render_detailed(self):

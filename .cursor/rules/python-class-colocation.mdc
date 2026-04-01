@@ -1,0 +1,21 @@
+---
+description: Prefer methods on cohesive classes over scattered module-level functions in Python
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python structure: class-first organization
+
+When adding or refactoring Python in this project:
+
+- **Default:** Put logic that serves a single type or feature area **on the relevant class** as instance methods, **`@classmethod`**, or **`@staticmethod`** when it clearly belongs to that type’s namespace. Prefer one cohesive class over many small helpers at module scope.
+- **Module-level functions:** Use **only** when the function is **reused across multiple classes or files**, is a thin **public API** entrypoint (e.g. `main`), or is a **stdlib-style pure utility** with no natural owner.
+- **Avoid:** A module full of top-level `def ...` that are only called from one class—fold them into that class (`classmethod` / `staticmethod` if no `self` is needed).
+- If a single class would grow too large, prefer **splitting into another focused class** before leaving many unrelated functions at module scope.
+
+Examples:
+
+- **Bad:** `def _parse_video_row(...):` at top of `video.py` only used by one datasource class.
+- **Good:** `VideoDatasource._parse_row(...)` or `@classmethod` `from_row(...)` on the same class.
+
+Do not contradict other project rules (formatting, signatures, spacing between methods).
