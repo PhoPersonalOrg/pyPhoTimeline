@@ -421,6 +421,9 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                 logger.info(f'\traws_dict: {raws_dict}')
 
 
+        # ==================================================================================================================================================================================================================================================================================== #
+        # Handle Each Specific Stream Modality Type                                                                                                                                                                                                                                            #
+        # ==================================================================================================================================================================================================================================================================================== #
         if (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name):
             if has_valid_intervals and has_detailed_data:
                 motion_norm_dict = modality_channels_normalization_mode_dict.get('MOTION')
