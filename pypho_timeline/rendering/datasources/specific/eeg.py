@@ -2,9 +2,11 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 from qtpy import QtCore
-from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence
+from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence, TYPE_CHECKING
 from datetime import datetime
-from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, RawProvidingTrackDatasource
+from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, RawProvidingTrackDatasource
+if TYPE_CHECKING:
+    from phopymnehelper.xdf_files import LabRecorderXDF
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 from pypho_timeline.utils.logging_util import get_rendering_logger
@@ -324,11 +326,10 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGTrackDatasource                                                                                                                                                                                                                                                                   #
 # ==================================================================================================================================================================================================================================================================================== #
-class EEGTrackDatasource(IntervalProvidingTrackDatasource):
-    """Example TrackDatasource for eeg data.
-    
-    Inherits from IntervalProvidingTrackDatasource and implements eeg-specific
-    detail rendering for displaying eeg data with async detail loading.
+class EEGTrackDatasource(RawProvidingTrackDatasource):
+    """TrackDatasource for EEG data with optional LabRecorderXDF / MNE raws (via RawProvidingTrackDatasource).
+
+    Extends RawProvidingTrackDatasource for eeg-specific detail rendering and async detail loading.
 
     Usage:
 
@@ -341,7 +342,7 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
                  arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
                  normalize: bool = True, normalize_over_full_data: bool = True,
-                 normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, parent: Optional[QtCore.QObject] = None,
+                 normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, lab_obj: Optional['LabRecorderXDF'] = None, raws_dict: Optional[Any] = None, parent: Optional[QtCore.QObject] = None,
                  ):
         """Initialize with eeg data and intervals.
         
@@ -354,7 +355,7 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
         """
         if custom_datasource_name is None:
             custom_datasource_name = "EEGTrack"
-        super().__init__(intervals_df, detailed_df=eeg_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, parent=parent)
+        super().__init__(intervals_df, detailed_df=eeg_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, lab_obj=lab_obj, raws_dict=raws_dict, parent=parent)
 
         if (normalization_reference_df is None) and (self.detailed_df is not None):
             normalization_reference_df = self.detailed_df
@@ -429,7 +430,7 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
     @function_attributes(short_name=None, tags=['MAIN'], input_requires=[], output_provides=[], uses=[], used_by=[], creation_date='2026-03-02 04:23', related_items=[])
     @classmethod
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True,
-                                   fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None,
+                                   fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, lab_obj: Optional['LabRecorderXDF'] = None, raws_dict: Optional[Any] = None,
         **kwargs) -> 'EEGTrackDatasource':
         """Create an EEGTrackDatasource by merging data from multiple sources.
         
@@ -481,6 +482,8 @@ class EEGTrackDatasource(IntervalProvidingTrackDatasource):
             normalize_over_full_data=normalize_over_full_data,
             normalization_reference_df=normalization_reference_df,
             channel_names=channel_names,
+            lab_obj=lab_obj,
+            raws_dict=raws_dict,
         )
 
 
@@ -652,11 +655,11 @@ class EEGSpectrogramDetailRenderer(DetailRenderer):
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGSpectrogramTrackDatasource
 # ==================================================================================================================================================================================================================================================================================== #
-class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
-    """TrackDatasource that shares intervals with an EEG track and displays spectrogram detail (from EEGComputations.raw_spectogram_working)."""
+class EEGSpectrogramTrackDatasource(RawProvidingTrackDatasource):
+    """TrackDatasource that shares intervals with an EEG track and displays spectrogram detail (from EEGComputations.raw_spectogram_working). Optional lab/raw handles via RawProvidingTrackDatasource."""
 
     def __init__(self, intervals_df: pd.DataFrame, spectrogram_result: Dict, custom_datasource_name: Optional[str] = None, spectrogram_results: Optional[List[Dict]] = None,
-                 freq_min: float = 1.0, freq_max: float = 40.0, group_config: Optional[SpectrogramChannelGroupConfig] = None, channel_group_presets: Optional[List[SpectrogramChannelGroupConfig]] = None, parent: Optional[QtCore.QObject] = None):
+                 freq_min: float = 1.0, freq_max: float = 40.0, group_config: Optional[SpectrogramChannelGroupConfig] = None, channel_group_presets: Optional[List[SpectrogramChannelGroupConfig]] = None, lab_obj: Optional['LabRecorderXDF'] = None, raws_dict: Optional[Any] = None, parent: Optional[QtCore.QObject] = None):
         """Initialize with intervals and precomputed spectrogram result(s).
 
         Args:
@@ -668,7 +671,7 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
             group_config: Optional channel group config; when set, the renderer averages only over these channels.
             channel_group_presets: Optional list of preset groups (same shape as stream build ``spectrogram_channel_groups``) for the options panel preset combo.
         """
-        super().__init__(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name or "EEG_Spectrogram", max_points_per_second=None, enable_downsampling=False, parent=parent)
+        super().__init__(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name or "EEG_Spectrogram", max_points_per_second=None, enable_downsampling=False, lab_obj=lab_obj, raws_dict=raws_dict, parent=parent)
         self._spectrogram_result = spectrogram_result
         self._spectrogram_results = spectrogram_results
         self._freq_min = freq_min
@@ -750,7 +753,7 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
 
 
     @classmethod
-    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], spectrogram_results: List[Dict], custom_datasource_name: Optional[str] = None, freq_min: float = 1.0, freq_max: float = 40.0, group_config: Optional[SpectrogramChannelGroupConfig] = None, channel_group_presets: Optional[List[SpectrogramChannelGroupConfig]] = None) -> 'EEGSpectrogramTrackDatasource':
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], spectrogram_results: List[Dict], custom_datasource_name: Optional[str] = None, freq_min: float = 1.0, freq_max: float = 40.0, group_config: Optional[SpectrogramChannelGroupConfig] = None, channel_group_presets: Optional[List[SpectrogramChannelGroupConfig]] = None, lab_obj: Optional['LabRecorderXDF'] = None, raws_dict: Optional[Any] = None) -> 'EEGSpectrogramTrackDatasource':
         """Create one EEGSpectrogramTrackDatasource from multiple (intervals_df, spectrogram_result) pairs."""
         if not intervals_dfs or not spectrogram_results:
             raise ValueError("intervals_dfs and spectrogram_results must be non-empty")
@@ -758,7 +761,7 @@ class EEGSpectrogramTrackDatasource(IntervalProvidingTrackDatasource):
             raise ValueError("intervals_dfs and spectrogram_results must have the same length")
         merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start')
         first_result = spectrogram_results[0]
-        return cls(intervals_df=merged_intervals_df, spectrogram_result=first_result, custom_datasource_name=custom_datasource_name, spectrogram_results=spectrogram_results, freq_min=freq_min, freq_max=freq_max, group_config=group_config, channel_group_presets=channel_group_presets)
+        return cls(intervals_df=merged_intervals_df, spectrogram_result=first_result, custom_datasource_name=custom_datasource_name, spectrogram_results=spectrogram_results, freq_min=freq_min, freq_max=freq_max, group_config=group_config, channel_group_presets=channel_group_presets, lab_obj=lab_obj, raws_dict=raws_dict)
 
 
 __all__ = ['SpectrogramChannelGroupConfig', 'EMOTIV_EPOC_X_SPECTROGRAM_GROUPS', 'EEGPlotDetailRenderer', 'EEGTrackDatasource', 'EEGSpectrogramDetailRenderer', 'EEGSpectrogramTrackDatasource']
