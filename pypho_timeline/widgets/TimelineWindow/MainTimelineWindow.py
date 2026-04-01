@@ -46,6 +46,46 @@ class MainTimelineWindow(QMainWindow):
         _log_handler.log_record_received.connect(self._log_widget.append_log)
         get_rendering_logger(__name__).addHandler(_log_handler)
         self._qt_log_handler = _log_handler
+        if hasattr(self, "actionGoToEarliest"):
+            self.actionGoToEarliest.triggered.connect(self._on_go_to_earliest)
+        if hasattr(self, "actionGoToPrev"):
+            self.actionGoToPrev.triggered.connect(self._on_go_to_prev)
+        if hasattr(self, "actionGoToNext"):
+            self.actionGoToNext.triggered.connect(self._on_go_to_next)
+        if hasattr(self, "actionGoToLatest"):
+            self.actionGoToLatest.triggered.connect(self._on_go_to_latest)
+
+
+    def _on_go_to_earliest(self):
+        tw = self.timeline_widget
+        if tw is None:
+            return
+        if hasattr(tw, "simulate_window_scroll") and hasattr(tw, "total_data_start_time"):
+            tw.simulate_window_scroll(tw.total_data_start_time)
+
+
+    def _on_go_to_prev(self):
+        tw = self.timeline_widget
+        if tw is None:
+            return
+        if hasattr(tw, "jump_to_previous_interval"):
+            tw.jump_to_previous_interval()
+
+
+    def _on_go_to_next(self):
+        tw = self.timeline_widget
+        if tw is None:
+            return
+        if hasattr(tw, "jump_to_next_interval"):
+            tw.jump_to_next_interval()
+
+
+    def _on_go_to_latest(self):
+        tw = self.timeline_widget
+        if tw is None:
+            return
+        if hasattr(tw, "go_to_latest_window"):
+            tw.go_to_latest_window()
 
 
     def _on_log_toggle(self, checked: bool):

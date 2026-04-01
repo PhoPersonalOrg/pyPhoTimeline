@@ -145,8 +145,37 @@
      <height>22</height>
     </rect>
    </property>
+   <widget class="QMenu" name="menuGoTo">
+    <property name="title">
+     <string>Go to</string>
+    </property>
+    <addaction name="actionGoToEarliest"/>
+    <addaction name="actionGoToPrev"/>
+    <addaction name="actionGoToNext"/>
+    <addaction name="actionGoToLatest"/>
+   </widget>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionGoToEarliest">
+   <property name="text">
+    <string>Earliest</string>
+   </property>
+  </action>
+  <action name="actionGoToPrev">
+   <property name="text">
+    <string>Prev</string>
+   </property>
+  </action>
+  <action name="actionGoToNext">
+   <property name="text">
+    <string>Next</string>
+   </property>
+  </action>
+  <action name="actionGoToLatest">
+   <property name="text">
+    <string>Latest</string>
+   </property>
+  </action>
  </widget>
  <resources/>
  <connections/>
