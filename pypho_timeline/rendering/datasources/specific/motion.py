@@ -462,7 +462,10 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
 
 
     @classmethod
-    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None, bad_intervals_df: Optional[pd.DataFrame] = None, bad_intervals_time_origin_unix: Optional[float] = None, exclude_bad_from_detail: bool = True, bad_overlay_alpha: float = 0.9) -> 'MotionTrackDatasource':
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None,
+            max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True,
+            fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
+            bad_intervals_df: Optional[pd.DataFrame] = None, bad_intervals_time_origin_unix: Optional[float] = None, exclude_bad_from_detail: bool = True, bad_overlay_alpha: float = 0.9) -> 'MotionTrackDatasource':
         """Create a MotionTrackDatasource by merging data from multiple sources.
         
         Args:
