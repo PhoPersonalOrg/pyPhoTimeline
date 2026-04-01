@@ -4,11 +4,8 @@ import sys
 import os
 from typing import Callable, Optional, Any
 
-from PyQt5 import QtGui, QtWidgets, uic
-from PyQt5.QtWidgets import QMessageBox, QToolTip, QStackedWidget, QHBoxLayout, QVBoxLayout, QSplitter, QFormLayout, QLabel, QFrame, QPushButton, QTableWidget, QTableWidgetItem, QMainWindow
-from PyQt5.QtWidgets import QApplication, QFileSystemModel, QTreeView, QWidget, QHeaderView
-from PyQt5.QtGui import QPainter, QBrush, QPen, QColor, QFont, QIcon
-from PyQt5.QtCore import Qt, QPoint, QRect, QObject, QEvent, pyqtSignal, pyqtSlot, QSize, QDir
+from qtpy.uic import loadUi
+from qtpy.QtWidgets import QApplication, QMainWindow, QVBoxLayout
 
 ## IMPORTS:
 from pypho_timeline.widgets.log_widget import LogWidget, QtLogHandler
@@ -23,7 +20,7 @@ class MainTimelineWindow(QMainWindow):
         super().__init__(parent=parent) # Call the inherited classes __init__ method
         self._refresh_callback = refresh_callback
         self._timeline_builder = builder
-        self.ui = uic.loadUi(uiFile, self) # Load the .ui file
+        self.ui = loadUi(uiFile, self) # Load the .ui file
         self.initUI()
         if show_immediately:
             self.show() # Show the GUI
@@ -116,4 +113,4 @@ if __name__ == '__main__':
     app = QApplication([])
     widget = MainTimelineWindow()
     widget.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec() if hasattr(app, "exec") else app.exec_())
