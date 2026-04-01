@@ -64,3 +64,14 @@ uv-deps-switcher dev
 uv sync --all-extras
 source .venv/bin/activate
 ```
+
+
+
+## PyQt5
+```toml
+ - pyqt5==5.15.11
+ - pyqt5-qt5==5.15.2
+ - pyqt5-sip==12.17.2
+ - pyqt5singleton==0.1
+ - sip==6.15.0
+```

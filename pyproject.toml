@@ -12,7 +12,6 @@ dependencies = [
     "nptyping>=2.5.0",
     # External dependencies from other repos (should be installed separately)
     "pyphocorehelpers",
-    "pyqt5singleton>=0.1",
     "pyqtgraph>=0.13.7",
     "plotly>=6.5.0",
     "awkward>=2.8.11",
@@ -27,6 +26,8 @@ dependencies = [
     "polars[all]>=1.39.3",
     "autoreject>=0.4.3",
     "h5py>=3.14.0",
+    "pyqt6>=6.4.2",
+    "pyqt6-tools>=6.4.2.3.3",
 ]
 
 [tool.uv.sources]
