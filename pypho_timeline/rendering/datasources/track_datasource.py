@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from qtpy import QtCore
 
+import mne
 from pypho_timeline.rendering.datasources.interval_datasource import IntervalsDatasource
 import pyqtgraph as pg
 from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime
@@ -783,5 +784,94 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         )
 
 
-__all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource', 'IntervalProvidingTrackDatasource']
+class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
+    """A TrackDatasource that holds access to raw MNE objects 
+
+    Inherits from IntervalProvidingTrackDatasource and implements all required methods for
+    displaying position data with async detail loading.
+    """
+    def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None, detail_renderer: Optional[IntervalPlotDetailRenderer]=None,
+            max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True, 
+            lab_obj: Optional[LabRecorderXDF] = None, raws_dict: Optional[Dict[str, mne.io.Raw]] = None,
+            parent: Optional[QtCore.QObject] = None,
+        ):
+        """Initialize with position data and intervals.
+        
+        Args:
+            intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
+            detailed_df: DataFrame with columns ['t'] and data columns (optional)
+            custom_datasource_name: Custom name for this datasource (optional)
+            detail_renderer: Custom detail renderer (optional)
+            max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
+            enable_downsampling: Whether to enable downsampling. Default: True
+        """
+        if custom_datasource_name is None:
+            custom_datasource_name = "GenericRawProvidingTrack"
+        super().__init__(intervals_df, detailed_df=detailed_df, custom_datasource_name=custom_datasource_name, detail_renderer=detail_renderer,
+                            max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, parent=parent)        
+        self._lab_xdf_obj = lab_obj
+        self._raws_dict = raws_dict
+
+
+    @property
+    def lab_xdf_obj(self) -> Optional[LabRecorderXDF]:
+        """The lab_xdf_obj property."""
+        return self._lab_xdf_obj
+    @lab_xdf_obj.setter
+    def lab_xdf_obj(self, value: Optional[LabRecorderXDF]):
+        self._lab_xdf_obj = value
+
+
+    @property
+    def raws_dict(self) -> Dict[str, mne.io.Raw]:
+        """The raws_dict property."""
+        return self._raws_dict
+    @raws_dict.setter
+    def raws_dict(self, value: Dict[str, mne.io.Raw]):
+        self._raws_dict = value
+
+    
+    @classmethod
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: Optional[List[pd.DataFrame]] = None, custom_datasource_name: Optional[str] = None, detail_renderer: Optional['DetailRenderer'] = None,
+                            max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True,
+                            lab_obj: Optional[LabRecorderXDF] = None, raws_dict: Optional[Dict[str, mne.io.Raw]] = None, **kwargs) -> 'IntervalProvidingTrackDatasource':
+        """Create an IntervalProvidingTrackDatasource by merging data from multiple sources.
+        
+        Args:
+            intervals_dfs: List of interval DataFrames to merge (each with columns ['t_start', 't_duration'])
+            detailed_dfs: Optional list of detailed DataFrames to merge (each with column 't' and data columns)
+            custom_datasource_name: Custom name for this datasource (optional)
+            detail_renderer: Custom detail renderer (optional)
+            max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
+            enable_downsampling: Whether to enable downsampling. Default: True
+            
+        Returns:
+            IntervalProvidingTrackDatasource instance with merged data
+        """
+        if not intervals_dfs:
+            raise ValueError("intervals_dfs list cannot be empty")
+        
+        # Merge intervals
+        merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start')
+        
+        # Merge detailed data if provided
+        merged_detailed_df = None
+        if detailed_dfs:
+            filtered_detailed_dfs = [df for df in detailed_dfs if df is not None and len(df) > 0]
+            if filtered_detailed_dfs:
+                merged_detailed_df = pd.concat(filtered_detailed_dfs, ignore_index=True).sort_values('t')
+        
+        # Create instance with merged data
+        return cls(
+            intervals_df=merged_intervals_df,
+            detailed_df=merged_detailed_df,
+            custom_datasource_name=custom_datasource_name,
+            detail_renderer=detail_renderer,
+            max_points_per_second=max_points_per_second,
+            enable_downsampling=enable_downsampling,
+            lab_obj=lab_obj, raws_dict=raws_dict, **kwargs
+        )
+
+
+__all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource', 'IntervalProvidingTrackDatasource', 'RawProvidingTrackDatasource']
 
