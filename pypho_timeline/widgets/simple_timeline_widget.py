@@ -6,6 +6,7 @@ along with utility functions for processing stream data.
 """
 
 import json
+import logging
 import numpy as np
 import pandas as pd
 from typing import Tuple, List, Dict, Optional, Union, Any
@@ -28,6 +29,8 @@ from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPl
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
 
 from pypho_timeline.widgets.track_options_panels import apply_track_options_document, build_track_options_document
+
+logger = logging.getLogger(__name__)
 
 # Create a simple time window object (mimicking spikes_window)
 class SimpleTimeWindow:
@@ -416,7 +419,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         self._update_interval_jump_buttons_enabled()
 
 
-    def apply_active_window_from_plot_x(self, x0: float, x1: float):
+    def apply_active_window_from_plot_x(self, x0: float, x1: float, block_signals: bool=True):
         """Set the active window from pyqtgraph plot x (Unix seconds if ``reference_datetime`` is set, else data seconds). Updates ``spikes_window`` and emits ``window_scrolled``."""
         xa, xb = (float(x0), float(x1)) if x0 <= x1 else (float(x1), float(x0))
         if xb <= xa:
@@ -428,16 +431,20 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         else:
             new_start, new_end = xa, xb
             emit_start, emit_end = xa, xb
+
         self.active_window_start_time = new_start
         self.active_window_end_time = new_end
         self.spikes_window.update_window_start_end(new_start, new_end)
         self._last_applied_plot_window_x0 = float(emit_start)
         self._last_applied_plot_window_x1 = float(emit_end)
-        self._applying_window_from_signal = True
-        try:
-            self.window_scrolled.emit(float(emit_start), float(emit_end))
-        finally:
-            self._applying_window_from_signal = False
+        if not block_signals:
+            self._applying_window_from_signal = True
+            try:
+                self.window_scrolled.emit(float(emit_start), float(emit_end))
+            finally:
+                self._applying_window_from_signal = False
+
+        logger.debug("apply_active_window_from_plot_x: x0=%s x1=%s active=[%s, %s] emit=[%s, %s] block_signals=%s emitted=%s", x0, x1, new_start, new_end, emit_start, emit_end, block_signals, not block_signals)
         self._update_interval_jump_buttons_enabled()
 
 

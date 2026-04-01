@@ -77,8 +77,8 @@ DEMO_XDF_PATHS: List[Path] = [
 # n_most_recent_sessions_to_preprocess: int = None # None means all sessions
 # n_most_recent_sessions_to_preprocess: int = 100
 # n_most_recent_sessions_to_preprocess: int = 35
-n_most_recent_sessions_to_preprocess: int = 5
-# n_most_recent_sessions_to_preprocess: int = 15
+# n_most_recent_sessions_to_preprocess: int = 5
+n_most_recent_sessions_to_preprocess: int = 15
 # n_most_recent_sessions_to_preprocess = None
 
 # Optional: only include streams whose name matches any of these patterns (regex).

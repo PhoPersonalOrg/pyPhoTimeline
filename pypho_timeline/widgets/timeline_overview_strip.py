@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Callable, List, Optional, Tuple
 
@@ -16,6 +17,8 @@ from pypho_timeline.utils.datetime_helpers import create_am_pm_date_axis, dateti
 
 from pypho_timeline.EXTERNAL.pyqtgraph_extensions.graphicsObjects.CustomLinearRegionItem import CustomLinearRegionItem
 from pypho_timeline.EXTERNAL.pyqtgraph_extensions.mixins.DraggableGraphicsWidgetMixin import MouseInteractionCriteria
+
+logger = logging.getLogger(__name__)
 
 
 def _scalar_to_plot_x(t: Any) -> float:
@@ -35,9 +38,16 @@ def _duration_to_seconds(d: Any) -> float:
 
 
 class TimelineOverviewStrip(pg.PlotWidget):
-    """Minimap: one horizontal band per primary track (overview intervals only) and a user-draggable ``CustomLinearRegionItem`` for the viewport. The plot itself does not pan or zoom; plot x = Unix seconds when using the date axis."""
+    """Minimap: one horizontal band per primary track (overview intervals only) and a user-adjustable ``CustomLinearRegionItem`` for the viewport.
+
+    Interaction: left-drag the shaded band (or middle button with class defaults) to translate; left-drag the vertical edge handles to resize.
+
+    ``sigViewportChanged(x0, x1)`` is emitted when the user **finishes** a drag or resize (commit). ``sigViewportLiveChanged(x0, x1)`` is emitted **during** dragging for scrubbing-style updates. Embedders such as ``SimpleTimelineWidget`` should connect only ``sigViewportChanged`` to the main window unless they intentionally want live coupling (to avoid ``set_viewport`` feedback every frame).
+
+    The plot does not pan or zoom; plot x is Unix seconds when using the date axis."""
 
     sigViewportChanged = QtCore.Signal(float, float)
+    sigViewportLiveChanged = QtCore.Signal(float, float)
 
 
     def __init__(self, reference_datetime: Optional[datetime] = None, row_height_px: int = 20, band_margin: float = 0.12, parent: Optional[QtWidgets.QWidget] = None):
@@ -52,7 +62,8 @@ class TimelineOverviewStrip(pg.PlotWidget):
         self._viewport_region.setObjectName('scroll_window_region')
         self._viewport_region.setZValue(120)
         self.addItem(self._viewport_region, ignoreBounds=True)
-        self._viewport_region.sigRegionChangeFinished.connect(self._on_viewport_region_change_finished)
+        self._viewport_region.sigRegionChanged.connect(lambda _r: self._read_clamp_emit_viewport(True))
+        self._viewport_region.sigRegionChangeFinished.connect(lambda _r: self._read_clamp_emit_viewport(False))
         pi = self.getPlotItem()
         pi.setMenuEnabled(False)
         pi.hideButtons()
@@ -65,7 +76,7 @@ class TimelineOverviewStrip(pg.PlotWidget):
         self.showAxis('left', True)
 
 
-    def _on_viewport_region_change_finished(self):
+    def _read_clamp_emit_viewport(self, live: bool) -> None:
         r0, r1 = self._viewport_region.getRegion()
         x_lo, x_hi = (float(r0), float(r1)) if r0 <= r1 else (float(r1), float(r0))
         vb = self.getViewBox()
@@ -74,27 +85,38 @@ class TimelineOverviewStrip(pg.PlotWidget):
             xmin_lim, xmax_lim = xl[0], xl[1]
         except (KeyError, TypeError, IndexError):
             xmin_lim, xmax_lim = None, None
+        clamped = False
         if xmin_lim is not None and xmax_lim is not None and xmax_lim > xmin_lim:
             span = x_hi - x_lo
             if x_lo < xmin_lim:
                 x_lo = float(xmin_lim)
                 x_hi = x_lo + span
+                clamped = True
             if x_hi > xmax_lim:
                 x_hi = float(xmax_lim)
                 x_lo = x_hi - span
+                clamped = True
             if x_lo < xmin_lim:
                 x_lo = float(xmin_lim)
+                clamped = True
             if x_hi < x_lo:
                 x_hi = x_lo + 1e-9
+                clamped = True
             self._viewport_region.blockSignals(True)
             self._viewport_region.setRegion([x_lo, x_hi])
             self._viewport_region.blockSignals(False)
-        self.sigViewportChanged.emit(x_lo, x_hi)
+        mode = 'live' if live else 'committed'
+        logger.debug("_read_clamp_emit_viewport: mode=%s getRegion=(%s,%s) limits=(%s,%s) clamped=%s emit [%s, %s]", mode, r0, r1, xmin_lim, xmax_lim, clamped, x_lo, x_hi)
+        if live:
+            self.sigViewportLiveChanged.emit(x_lo, x_hi)
+        else:
+            self.sigViewportChanged.emit(x_lo, x_hi)
 
 
     def set_viewport(self, x_start: float, x_end: float) -> None:
-        """Set the viewport region from the main timeline (plot x); does not emit ``sigViewportChanged`` (signals blocked during ``setRegion``)."""
+        """Set the viewport region from the main timeline (plot x). Does not emit ``sigViewportChanged`` or ``sigViewportLiveChanged`` (signals blocked during ``setRegion``)."""
         x0, x1 = (float(x_start), float(x_end)) if x_start <= x_end else (float(x_end), float(x_start))
+        logger.debug("set_viewport: request [%s, %s] normalized [%s, %s] (signals blocked)", x_start, x_end, x0, x1)
         self._viewport_region.blockSignals(True)
         self._viewport_region.setRegion([x0, x1])
         self._viewport_region.blockSignals(False)
@@ -212,3 +234,29 @@ class TimelineOverviewStrip(pg.PlotWidget):
         item.setZValue(10)
         self.addItem(item)
         self._intervals_item = item
+
+
+if __name__ == '__main__':
+    app = QtWidgets.QApplication([])
+    strip = TimelineOverviewStrip()
+    strip.rebuild([], lambda _n: None, (0.0, 3600.0))
+    strip.set_viewport(500.0, 1500.0)
+    status = QtWidgets.QLabel('Drag the shaded band (translate) or left-drag edges (resize).')
+    status.setWordWrap(True)
+
+    def _on_live(x0: float, x1: float) -> None:
+        status.setText(f'Live: {x0:.2f} .. {x1:.2f}  (release for committed)')
+
+    def _on_finished(x0: float, x1: float) -> None:
+        status.setText(f'Committed: {x0:.2f} .. {x1:.2f}')
+
+    strip.sigViewportLiveChanged.connect(_on_live)
+    strip.sigViewportChanged.connect(_on_finished)
+    container = QtWidgets.QWidget()
+    layout = QtWidgets.QVBoxLayout(container)
+    layout.addWidget(strip)
+    layout.addWidget(status)
+    container.resize(720, 220)
+    container.show()
+    raise SystemExit(app.exec() if hasattr(app, 'exec') else app.exec_())
+
