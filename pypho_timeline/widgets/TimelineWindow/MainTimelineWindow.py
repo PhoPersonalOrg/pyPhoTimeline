@@ -57,8 +57,8 @@ class MainTimelineWindow(QMainWindow):
         tw = self.timeline_widget
         if tw is None:
             return
-        if hasattr(tw, "simulate_window_scroll") and hasattr(tw, "total_data_start_time"):
-            tw.simulate_window_scroll(tw.total_data_start_time)
+        if hasattr(tw, "go_to_earliest_window"):
+            tw.go_to_earliest_window()
 
 
     def _on_go_to_prev(self):

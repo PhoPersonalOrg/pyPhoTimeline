@@ -361,6 +361,28 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             self.simulate_window_scroll(new_start)
 
 
+    def go_to_earliest_window(self):
+        """Move the viewport so its start aligns with ``total_data_start_time`` when possible, preserving window duration; if the window would extend past ``total_data_end_time``, start is shifted earlier; start is clamped to ``total_data_start_time`` when needed (symmetric to ``go_to_latest_window``)."""
+        if isinstance(self.active_window_start_time, (datetime, pd.Timestamp)) and isinstance(self.active_window_end_time, (datetime, pd.Timestamp)):
+            duration = self.active_window_end_time - self.active_window_start_time
+            new_start = self.total_data_start_time
+            if new_start + duration > self.total_data_end_time:
+                new_start = self.total_data_end_time - duration
+            if new_start < self.total_data_start_time:
+                new_start = self.total_data_start_time
+            self.simulate_window_scroll(new_start)
+        else:
+            duration = float(self.active_window_end_time) - float(self.active_window_start_time)
+            new_start = float(self.total_data_start_time)
+            te = float(self.total_data_end_time)
+            if new_start + duration > te:
+                new_start = te - duration
+            ts = float(self.total_data_start_time)
+            if new_start < ts:
+                new_start = ts
+            self.simulate_window_scroll(new_start)
+
+
     # ==================================================================================================================================================================================================================================================================================== #
     # Split Docks Horizontally/Multiple Viewport Functionality                                                                                                                                                                                                                             #
     # ==================================================================================================================================================================================================================================================================================== #
