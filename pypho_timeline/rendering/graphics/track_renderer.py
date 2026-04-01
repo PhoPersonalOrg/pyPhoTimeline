@@ -16,10 +16,7 @@ from pypho_timeline.utils.logging_util import get_rendering_logger, _format_inte
 from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime, to_display_timezone
 
 # Import VideoTrackDatasource for type checking
-try:
-    from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
-except ImportError:
-    VideoTrackDatasource = None
+from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
 
 # Import vispy renderer
 try:
@@ -258,7 +255,7 @@ class TrackRenderer(QtCore.QObject):
             
             # Create format_label_fn for video tracks to display filename
             format_label_fn = None
-            if VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource):
+            if isinstance(self.datasource, VideoTrackDatasource):
                 def video_label_formatter(rect_index: int, rect_data_tuple) -> str:
                     """Format label for video track intervals - extracts filename from label field."""
                     if isinstance(rect_data_tuple, IntervalRectsItemData):
@@ -309,7 +306,7 @@ class TrackRenderer(QtCore.QObject):
                 detail_render_callback = detail_render_callback_fn
             
             extra_menu_callbacks_dict = {}
-            if VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource):
+            if isinstance(self.datasource, VideoTrackDatasource):
                 from pypho_timeline.rendering.datasources.specific.video import VideoThumbnailDetailRenderer, VlcLaunchableVideoThumbnailImageItem
 
                 def show_in_vlc_callback_fn(rect_index: int, click_t: float):
@@ -332,7 +329,6 @@ class TrackRenderer(QtCore.QObject):
                         offset_seconds = t_duration_sec
                     parent_w = VlcLaunchableVideoThumbnailImageItem.message_box_parent_for_plot_item(self.plot_item)
                     VlcLaunchableVideoThumbnailImageItem.launch_video_player_vlc(Path(str(vp)), offset_seconds, parent_w)
-
 
                 extra_menu_callbacks_dict["Show in VLC..."] = show_in_vlc_callback_fn
 
