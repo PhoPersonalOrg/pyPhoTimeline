@@ -714,6 +714,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             self._overview_rebuild_timer.timeout.connect(self._rebuild_timeline_overview_strip)
         if not hasattr(self, '_overview_connected_ds'):
             self._overview_connected_ds = {}
+
         self.window_scrolled.connect(strip.set_viewport)
         strip.sigViewportChanged.connect(self.apply_active_window_from_plot_x)
         self.sigTrackAdded.connect(self._schedule_timeline_overview_strip_rebuild)

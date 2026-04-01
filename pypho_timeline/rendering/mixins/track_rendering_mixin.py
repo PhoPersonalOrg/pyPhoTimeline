@@ -269,7 +269,8 @@ class TrackRenderingMixin(EpochRenderingMixin):
                 eps = max(1e-6, (x1 - x0) * 1e-12)
                 if la0 is not None and la1 is not None and abs(x0 - la0) < eps and abs(x1 - la1) < eps:
                     return
-                apply_fn(x0, x1)
+                # Emit window_scrolled so overview strip / calendar / tables sync; sigViewportChanged uses block_signals True.
+                apply_fn(x0, x1, False)
             QtCore.QTimer.singleShot(0, deferred_update)
     
     
