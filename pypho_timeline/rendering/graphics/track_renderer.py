@@ -334,34 +334,13 @@ class TrackRenderer(QtCore.QObject):
                     VlcLaunchableVideoThumbnailImageItem.launch_video_player_vlc(Path(str(vp)), offset_seconds, parent_w)
 
 
-                def _on_show_in_vlc(self):
-                    """Captures: show_in_vlc_callback_fn
-                        Handle the 'Show in VLC...' context menu action.
-                    """
-                    assert self._show_in_vlc_callback is not None
-                    if not hasattr(self, '_context_menu_event_pos'):
-                        logger.debug("IntervalRectsItem._on_show_in_vlc - no stored context menu position")
-                        return
-                    rect_index = self._get_rect_at_position(self._context_menu_event_pos)
-                    if rect_index is None or rect_index >= len(self.data):
-                        logger.debug("IntervalRectsItem._on_show_in_vlc - no rectangle at click position")
-                        return
-                    click_t = float(self._context_menu_event_pos.x())
-                    try:
-                        self._show_in_vlc_callback(rect_index, click_t)
-                    except Exception as e:
-                        logger.error(f"IntervalRectsItem._on_show_in_vlc - error in show_in_vlc_callback: {e}", exc_info=True)
-
-
-
-
                 extra_menu_callbacks_dict["Show in VLC..."] = show_in_vlc_callback_fn
 
 
             # Build the interval rects item
             self.overview_rects_item = Render2DEventRectanglesHelper.build_IntervalRectsItem_from_interval_datasource(
                 self.datasource, format_label_fn=format_label_fn, detail_render_callback=detail_render_callback,
-                extra_menu_callbacks_dict = {"Show in VLC...": show_in_vlc_callback },
+                extra_menu_callbacks_dict=extra_menu_callbacks_dict,
             )
             
             # Remove old overview if exists

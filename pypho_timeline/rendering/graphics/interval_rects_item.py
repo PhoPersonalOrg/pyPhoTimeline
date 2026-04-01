@@ -4,6 +4,7 @@ IntervalRectsItem - GraphicsObject for rendering time intervals as rectangles in
 Based on pyqtgraph's CandlestickItem example, adapted for pypho_timeline.
 """
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
+from functools import partial
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -122,7 +123,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
     clicked = QtCore.Signal()
     ## data must have fields: start_t, series_vertical_offset, duration_t, series_height, pen, brush
 
-    def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False, detail_render_callback=None, extra_menu_callbacks_dict: Dict[str, Callable]=None):
+    def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False, detail_render_callback=None, extra_menu_callbacks_dict: Optional[Dict[str, Callable[[int, float], Any]]] = None):
         # menu creation is deferred because it is expensive and often
         # the user will never see the menu anyway.
         self.menu = None
@@ -147,7 +148,8 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
         self._detail_render_callback = detail_render_callback  # Callback for detailed rendering: (rect_index: int, rect_data: IntervalRectsItemData) -> None
         if extra_menu_callbacks_dict is None:
             extra_menu_callbacks_dict = {}
-        self._extra_menu_callbacks_dict = extra_menu_callbacks_dict
+        _default_extra_menu_callbacks = {"Turn green": partial(self._recolor_all_intervals, 'g'), "Turn blue": partial(self._recolor_all_intervals, 'b')}
+        self._extra_menu_callbacks_dict = {**extra_menu_callbacks_dict, **_default_extra_menu_callbacks}
 
         self._labels = []
         self.rebuild_label_items()
@@ -577,21 +579,10 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             self.menu.extra_actions = {}
             for menu_lbl, callback_fn in self._extra_menu_callbacks_dict.items():
                 an_action = QtGui.QAction(menu_lbl, self.menu)
-                an_action.triggered.connect(callback_fn)
+                an_action.triggered.connect(partial(self._on_custom_menu_item_executed, callback_fn))
                 self.menu.addAction(an_action)
                 self.menu.extra_actions[menu_lbl] = an_action
 
-            
-            green = QtGui.QAction("Turn green", self.menu)
-            green.triggered.connect(self.setGreen)
-            self.menu.addAction(green)
-            self.menu.green = green
-            
-            blue = QtGui.QAction("Turn blue", self.menu)
-            blue.triggered.connect(self.setBlue)
-            self.menu.addAction(blue)
-            self.menu.green = blue
-            
             alpha = QtWidgets.QWidgetAction(self.menu)
             alphaSlider = QtWidgets.QSlider()
             alphaSlider.setOrientation(QtCore.Qt.Orientation.Horizontal)
@@ -604,9 +595,10 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             self.menu.alphaSlider = alphaSlider
         return self.menu
 
-    # Define context menu callbacks
-    def setGreen(self):
-        print(f'.setGreen()...')
+
+    def _recolor_all_intervals(self, color_key: str, rect_index: int, click_t: float) -> None:
+        override_pen = pg.mkPen(color_key)
+        override_brush = pg.mkBrush(color_key)
         for i, rect_data in enumerate(self.data):
             # Handle both tuples and IntervalRectsItemData objects
             if isinstance(rect_data, IntervalRectsItemData):
@@ -628,66 +620,25 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
         # inform Qt that this item must be redrawn.
         self.update()
 
-    def setBlue(self):
-        print(f'.setBlue()...')
-        for i, rect_data in enumerate(self.data):
-            # Handle both tuples and IntervalRectsItemData objects
-            if isinstance(rect_data, IntervalRectsItemData):
-                start_t = rect_data.start_t
-                series_vertical_offset = rect_data.series_vertical_offset
-                duration_t = rect_data.duration_t
-                series_height = rect_data.series_height
-                a_label = rect_data.label
-            else:
-                # Tuple unpacking (backward compatibility)
-                (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data
-                a_label = None
-            override_pen = pg.mkPen('b')
-            override_brush = pg.mkBrush('b')
-            self.data[i] = IntervalRectsItemData(start_t, series_vertical_offset, duration_t, series_height, override_pen, override_brush, label=a_label)
-
-        # Need to regenerate picture
-        self.generatePicture()
-        self.update()
 
     def setAlpha(self, a):
         self.setOpacity(a/255.)
 
 
-    def _on_custom_menu_item_executed(self):
-        """Handle the general context menu event, extracting the identity of the clicked rect item (rect_idx) and the click time (click_t) to be passed to the context menu's action handler."""
+    def _on_custom_menu_item_executed(self, callback_fn, checked=False):
+        """Resolve rect_idx and click_t from the stored context-menu position, then call callback_fn(rect_index, click_t). The checked arg absorbs QAction.triggered(bool)."""
         if not hasattr(self, '_context_menu_event_pos'):
             logger.debug("IntervalRectsItem._on_custom_menu_item_executed - no stored context menu position")
             return
-        rect_index = self._on_custom_menu_item_executed(self._context_menu_event_pos)
+        rect_index = self._get_rect_at_position(self._context_menu_event_pos)
         if rect_index is None or rect_index >= len(self.data):
             logger.debug("IntervalRectsItem._on_custom_menu_item_executed - no rectangle at click position")
             return
         click_t = float(self._context_menu_event_pos.x())
         try:
-            ## TODO: perform the specific handler here:
-            # self._show_in_vlc_callback(rect_index, click_t)
+            callback_fn(rect_index, click_t)
         except Exception as e:
-            logger.error(f"IntervalRectsItem._on_custom_menu_item_executed - error in show_in_vlc_callback: {e}", exc_info=True)
-
-
-
-
-    # def _on_show_in_vlc(self):
-    #     """Handle the 'Show in VLC...' context menu action."""
-    #     assert self._show_in_vlc_callback is not None
-    #     if not hasattr(self, '_context_menu_event_pos'):
-    #         logger.debug("IntervalRectsItem._on_show_in_vlc - no stored context menu position")
-    #         return
-    #     rect_index = self._get_rect_at_position(self._context_menu_event_pos)
-    #     if rect_index is None or rect_index >= len(self.data):
-    #         logger.debug("IntervalRectsItem._on_show_in_vlc - no rectangle at click position")
-    #         return
-    #     click_t = float(self._context_menu_event_pos.x())
-    #     try:
-    #         self._show_in_vlc_callback(rect_index, click_t)
-    #     except Exception as e:
-    #         logger.error(f"IntervalRectsItem._on_show_in_vlc - error in show_in_vlc_callback: {e}", exc_info=True)
+            logger.error(f"IntervalRectsItem._on_custom_menu_item_executed - error in extra menu callback: {e}", exc_info=True)
 
 
 
