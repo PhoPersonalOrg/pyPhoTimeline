@@ -336,6 +336,31 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             self.simulate_window_scroll(next_t)
 
 
+    def jump_to_previous_interval(self):
+        self._on_jump_prev_interval_clicked()
+
+
+    def jump_to_next_interval(self):
+        self._on_jump_next_interval_clicked()
+
+
+    def go_to_latest_window(self):
+        """Move the viewport so its end aligns with ``total_data_end_time``, preserving window duration; start is clamped to ``total_data_start_time``."""
+        if isinstance(self.active_window_start_time, (datetime, pd.Timestamp)) and isinstance(self.active_window_end_time, (datetime, pd.Timestamp)):
+            duration = self.active_window_end_time - self.active_window_start_time
+            new_start = self.total_data_end_time - duration
+            if new_start < self.total_data_start_time:
+                new_start = self.total_data_start_time
+            self.simulate_window_scroll(new_start)
+        else:
+            duration = float(self.active_window_end_time) - float(self.active_window_start_time)
+            new_start = float(self.total_data_end_time) - duration
+            ts = float(self.total_data_start_time)
+            if new_start < ts:
+                new_start = ts
+            self.simulate_window_scroll(new_start)
+
+
     # ==================================================================================================================================================================================================================================================================================== #
     # Split Docks Horizontally/Multiple Viewport Functionality                                                                                                                                                                                                                             #
     # ==================================================================================================================================================================================================================================================================================== #
@@ -716,7 +741,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             self._overview_connected_ds = {}
 
         self.window_scrolled.connect(strip.set_viewport)
-        strip.sigViewportChanged.connect(self.apply_active_window_from_plot_x)
+        strip.sigViewportChanged.connect(lambda x0, x1: self.apply_active_window_from_plot_x(x0, x1, False))
         self.sigTrackAdded.connect(self._schedule_timeline_overview_strip_rebuild)
         self.sigTrackRemoved.connect(self._schedule_timeline_overview_strip_rebuild)
         self._schedule_timeline_overview_strip_rebuild()

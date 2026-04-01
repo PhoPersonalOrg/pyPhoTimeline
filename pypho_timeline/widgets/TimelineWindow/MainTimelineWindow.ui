@@ -30,9 +30,8 @@
     <property name="bottomMargin">
      <number>0</number>
     </property>
-    
     <item>
-     <widget class="QWidget" name="contentWidget">
+     <widget class="QWidget" name="contentWidget" native="true">
       <property name="sizePolicy">
        <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
         <horstretch>0</horstretch>
@@ -84,6 +83,12 @@
         <height>36</height>
        </size>
       </property>
+      <property name="baseSize">
+       <size>
+        <width>0</width>
+        <height>36</height>
+       </size>
+      </property>
       <property name="frameShape">
        <enum>QFrame::StyledPanel</enum>
       </property>
@@ -115,6 +120,12 @@
        </item>
        <item>
         <widget class="QPushButton" name="logToggleButton">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>24</height>
+          </size>
+         </property>
          <property name="text">
           <string>Show Log</string>
          </property>
@@ -125,6 +136,12 @@
        </item>
        <item>
         <widget class="QPushButton" name="refreshFilesButton">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>24</height>
+          </size>
+         </property>
          <property name="text">
           <string>Refresh files</string>
          </property>
@@ -135,7 +152,6 @@
     </item>
    </layout>
   </widget>
-  
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
@@ -145,28 +161,57 @@
      <height>22</height>
     </rect>
    </property>
-   <widget class="QMenu" name="menuGoTo">
+   <widget class="QMenu" name="menuFile">
     <property name="title">
-     <string>Go to</string>
+     <string>File</string>
+    </property>
+   </widget>
+   <widget class="QMenu" name="menuGoto">
+    <property name="title">
+     <string>Goto</string>
     </property>
     <addaction name="actionGoToEarliest"/>
-    <addaction name="actionGoToPrev"/>
-    <addaction name="actionGoToNext"/>
+    <addaction name="actionPrev"/>
+    <addaction name="actionNext"/>
     <addaction name="actionGoToLatest"/>
    </widget>
+   <widget class="QMenu" name="menuWindow">
+    <property name="title">
+     <string>Window</string>
+    </property>
+   </widget>
+   <widget class="QMenu" name="menuAbout">
+    <property name="title">
+     <string>About</string>
+    </property>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuGoto"/>
+   <addaction name="menuWindow"/>
+   <addaction name="menuAbout"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
-  <action name="actionGoToEarliest">
-   <property name="text">
-    <string>Earliest</string>
-   </property>
-  </action>
   <action name="actionGoToPrev">
    <property name="text">
     <string>Prev</string>
    </property>
   </action>
   <action name="actionGoToNext">
+   <property name="text">
+    <string>Next</string>
+   </property>
+  </action>
+  <action name="actionGoToEarliest">
+   <property name="text">
+    <string>Earliest</string>
+   </property>
+  </action>
+  <action name="actionPrev">
+   <property name="text">
+    <string>Prev</string>
+   </property>
+  </action>
+  <action name="actionNext">
    <property name="text">
     <string>Next</string>
    </property>

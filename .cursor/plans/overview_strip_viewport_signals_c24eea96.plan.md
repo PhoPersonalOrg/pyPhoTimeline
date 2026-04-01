@@ -19,7 +19,7 @@ isProject: false
 ## Current behavior
 
 - `[timeline_overview_strip.py](C:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\widgets\timeline_overview_strip.py)` builds a `**CustomLinearRegionItem**` with `movable=True` and custom `**end_lines_crit**` so **left-button** drags resize the vertical edges (instead of the class default right-button on handles). The filled band uses the class default (**left / middle** translate). This is already “user-adjustable” in principle.
-- Only `**sigRegionChangeFinished`** is connected (line 55), so `**sigRegionChanged**` (continuous updates while dragging) is not surfaced at the widget level.
+- Only `**sigRegionChangeFinished`** is connected (line 55), so `**sigRegionChanged`** (continuous updates while dragging) is not surfaced at the widget level.
 - `[CustomLinearRegionItem](C:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\EXTERNAL\pyqtgraph_extensions\graphicsObjects\CustomLinearRegionItem.py)` and base `[LinearRegionItem](C:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\EXTERNAL\pyqtgraph\graphicsItems\LinearRegionItem.py)` emit `**sigRegionChanged**` during line/body moves and `**sigRegionChangeFinished**` when a gesture completes.
 
 ## Design choice: two signals (avoid feedback while dragging)
@@ -29,7 +29,7 @@ isProject: false
 If `**sigViewportChanged**` were fired on every `**sigRegionChanged**` during a drag, `**set_viewport**` could repeatedly reset the region while the user is still dragging, causing jitter or fighting the gesture. So:
 
 - Keep `**sigViewportChanged(float, float)**` for **committed** changes: connect to `**sigRegionChangeFinished`** only (current semantics; still runs clamp logic).
-- Add `**sigViewportLiveChanged(float, float)**` (name can be adjusted): connect to `**sigRegionChanged**`, same normalized/clamp path as today, for subscribers that want **scrubbing** updates without forcing that through the main timeline loop unless they choose to.
+- Add `**sigViewportLiveChanged(float, float)`** (name can be adjusted): connect to `**sigRegionChanged**`, same normalized/clamp path as today, for subscribers that want **scrubbing** updates without forcing that through the main timeline loop unless they choose to.
 
 Document in the class docstring that integrators like `SimpleTimelineWidget` should keep using `**sigViewportChanged`** only unless they explicitly want live coupling.
 
@@ -40,7 +40,7 @@ Document in the class docstring that integrators like `SimpleTimelineWidget` sho
 1. **Declare** `sigViewportLiveChanged = QtCore.Signal(float, float)` next to `sigViewportChanged`.
 2. **Refactor** the body of `_on_viewport_region_change_finished` into a private helper, e.g. `_read_clamp_emit_viewport(live: bool)`, that:
   - Reads `getRegion()`, normalizes `(x_lo, x_hi)`.
-  - Applies the same **ViewBox x limit** clamp and optional `**setRegion`** correction with `**blockSignals(True)**` on `_viewport_region` as today.
+  - Applies the same **ViewBox x limit** clamp and optional `**setRegion`** correction with `**blockSignals(True)`** on `_viewport_region` as today.
   - Emits `**sigViewportLiveChanged**` if `live` else `**sigViewportChanged**`.
 3. **Wire signals:**
   - `sigRegionChanged` → `_read_clamp_emit_viewport(live=True)` (thin slot or `functools.partial`).
@@ -54,7 +54,7 @@ At the bottom of the same file (after the class), add a minimal **Qt** entry poi
 - Create `QApplication`.
 - Instantiate `TimelineOverviewStrip()` (no `reference_datetime` needed for a trivial demo).
 - Call `**rebuild([], lambda _n: None, (0.0, 3600.0))`** so the strip has empty rows but a valid **x** range and limits (see existing `n == 0` branch in `rebuild`).
-- Connect `**sigViewportChanged`** and `**sigViewportLiveChanged**` to e.g. print or a `**QLabel**` / status text.
+- Connect `**sigViewportChanged`** and `**sigViewportLiveChanged`** to e.g. print or a `**QLabel**` / status text.
 - `**strip.show()**` and `**app.exec()**` (or `exec_()` depending on qtpy backend).
 
 No new dependencies; no changes required to `**simple_timeline_widget.py**` unless you later decide to subscribe to the live signal.
