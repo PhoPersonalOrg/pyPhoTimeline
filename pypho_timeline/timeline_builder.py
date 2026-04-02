@@ -1394,11 +1394,20 @@ class TimelineBuilder:
             timeline: SimpleTimelineWidget instance
             datasources: List of TrackDatasource instances to add
         """
+        def _is_eeg_spectrogram_datasource(ds: TrackDatasource) -> bool:
+            if EEGSpectrogramTrackDatasource is not None and isinstance(ds, EEGSpectrogramTrackDatasource):
+                return True
+            return ds.custom_datasource_name.startswith('EEG_Spectrogram_')
+
+        spec_names = [d.custom_datasource_name for d in datasources if _is_eeg_spectrogram_datasource(d)]
+        logger.info(f"[dock_group:eeg_spec] spectrogram datasource count={len(spec_names)} names={spec_names!r}")
+
         for datasource in datasources:
             # Get detail renderer
             a_detail_renderer = datasource.get_detail_renderer()
             _scheme_key = default_dock_named_color_scheme_key(datasource.custom_datasource_name)
-            display_config = CustomCyclicColorsDockDisplayConfig(named_color_scheme=NamedColorScheme[_scheme_key], showCloseButton=True, showCollapseButton=True, showGroupButton=False, corner_radius='3px')
+            _is_spec = _is_eeg_spectrogram_datasource(datasource)
+            display_config = CustomCyclicColorsDockDisplayConfig(named_color_scheme=NamedColorScheme[_scheme_key], showCloseButton=True, showCollapseButton=True, showGroupButton=_is_spec, corner_radius='3px')
 
             if getattr(display_config, 'custom_button_configs', None) is None:
                 setattr(display_config, 'custom_button_configs', {})
@@ -1423,7 +1432,8 @@ class TimelineBuilder:
                 dockSize=(500, 80),
                 dockAddLocationOpts=['bottom'],
                 display_config=display_config,
-                sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA
+                sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA,
+                dock_group_names=[SimpleTimelineWidget.EEG_SPECTROGRAM_DOCK_GROUP] if _is_spec else None
             )
             # if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
 
@@ -1506,7 +1516,23 @@ class TimelineBuilder:
             if hasattr(a_dock, 'updateTitleBar') or hasattr(a_dock, 'refresh'):
                 a_dock.updateTitleBar()
         ## END for datasource in datasources...
-        
+
+        if spec_names:
+            _dock_container = timeline.ui.dynamic_docked_widget_container
+            _spec_group_id = SimpleTimelineWidget.EEG_SPECTROGRAM_DOCK_GROUP
+            logger.info(f"[dock_group:eeg_spec] calling layout_dockGroups for group={_spec_group_id!r}")
+            _pre_groups = _dock_container.get_dockGroup_dock_dict()
+            _pre_members = {k: [d.name() for d in v] for k, v in _pre_groups.items()}
+            logger.debug(f"[dock_group:eeg_spec] dock groups before layout keys={list(_pre_groups.keys())!r} members={_pre_members!r}")
+            try:
+                _dock_container.layout_dockGroups(dock_group_names_order=[_spec_group_id], dock_group_add_location_opts={_spec_group_id: ['bottom']})
+            except Exception:
+                logger.exception("[dock_group:eeg_spec] EEG spectrogram dock grouping failed")
+            else:
+                logger.info(f"[dock_group:eeg_spec] layout_dockGroups finished; matplotlib_view_widgets count={len(timeline.ui.matplotlib_view_widgets)}")
+                if hasattr(_dock_container, 'nested_dock_items') and getattr(_dock_container, 'nested_dock_items', None):
+                    logger.debug(f"[dock_group:eeg_spec] nested_dock_items keys={list(_dock_container.nested_dock_items.keys())!r}")
+
         # Hide x-axis labels for all tracks except the bottom-most one
         if len(timeline.ui.matplotlib_view_widgets) > 1:
             # Get all plot items

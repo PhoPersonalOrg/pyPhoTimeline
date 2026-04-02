@@ -881,8 +881,8 @@ class ComputableDatasourceMixin:
     from pypho_timeline.rendering.datasources.track_datasource import ComputableDatasourceMixin
 
     """
-    source_compute_started = QtCore.Signal()
-    source_compute_finished = QtCore.Signal()
+    sigSourceComputeStarted = QtCore.Signal()
+    sigSourceComputeFinished = QtCore.Signal(bool)
 
     def compute(self, **kwargs):
         """ a function to perform recomputation of the datasource properties at runtime 

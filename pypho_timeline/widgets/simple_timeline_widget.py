@@ -84,6 +84,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
     compare_window_scrolled = QtCore.Signal(float, float)
     SPLIT_PRIMARY_DOCK_GROUP = 'timeline_primary_column'
     SPLIT_COMPARE_DOCK_GROUP = 'timeline_compare_column'
+    EEG_SPECTROGRAM_DOCK_GROUP = 'timeline_eeg_spectrogram'
     
     @property
     def interval_rendering_plots(self):

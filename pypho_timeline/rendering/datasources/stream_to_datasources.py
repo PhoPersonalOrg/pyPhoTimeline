@@ -485,7 +485,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                                 eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
                                 spec_result = eeg_comps_result["spectogram"]
 
-                                spec_datasource_kwargs = dict(lab_obj=eeg_ds.lab_xdf_obj, raw_datasets=eeg_ds.raw_datasets, parent=eeg_ds)
+                                spec_datasource_kwargs = dict(lab_obj=datasource.lab_xdf_obj, raw_datasets=datasource.raw_datasets, parent=datasource)
 
                                 _effective_groups = spectrogram_channel_groups if spectrogram_channel_groups is None else (spectrogram_channel_groups if len(spectrogram_channel_groups) > 0 else None)
                                 if _effective_groups is None:
