@@ -7,7 +7,7 @@ Used by TimelineBuilder when building from XDF files or pre-loaded streams.
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 
 import pyqtgraph as pg
 
@@ -235,6 +235,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         - all_streams: Dictionary mapping stream names to merged interval DataFrames
         - all_streams_datasources: Dictionary mapping stream names to merged TrackDatasource instances
     """
+    import mne
     from phopymnehelper.historical_data import HistoricalData
     from phopymnehelper.xdf_files import LabRecorderXDF
     from phopymnehelper.SavedSessionsProcessor import DataModalityType
@@ -444,9 +445,6 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         datasource = None
 
         ## Load the XDF raw if needed
-        lab_obj: Optional[LabRecorderXDF] = None
-        raws_dict = {}
-
         if enable_raw_xdf_processing:
             xdf_paths_for_raw = [v[1] for v in stream_file_pairs]
 
@@ -469,29 +467,29 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         if (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name):
             if has_valid_intervals and has_detailed_data:
                 motion_norm_dict = modality_channels_normalization_mode_dict.get('MOTION')
-                # motion_raw_datasets = raws_dict.get(DataModalityType.MOTION.value, []) if raws_dict else None
-
-                # motion_raw_datasets: List[List[mne.io.raw]] = [raws_dict.get(DataModalityType.MOTION.value, [])  for k, raws_dict in raws_dict_dict.items()]
-                motion_raw_datasets: List[List[mne.io.raw]] = [raws_dict.get(DataModalityType.MOTION.value, [])  for k, raws_dict in raws_dict_dict.items()]
+                motion_raw_datasets_dict: Dict[str, Optional[List[Any]]] = {k: (None if raws_dict is None else list(raws_dict.get(DataModalityType.MOTION.value, []) or [])) for k, raws_dict in raws_dict_dict.items()}
 
                 datasource = MotionTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict=motion_norm_dict,
-                    lab_obj=lab_obj, raw_datasets=motion_raw_datasets)
-                
-                if enable_raw_xdf_processing and (lab_obj is not None):
+                    lab_obj_dict=lab_obj_dict, raw_datasets_dict=motion_raw_datasets_dict)
+
+                if enable_raw_xdf_processing and any(v is not None for v in lab_obj_dict.values()):
                     logger.info(f'\tMOTION Modality MNE raw processing...')
-                    if (lab_obj is not None):
-                        raw = motion_raw_datasets[0] if motion_raw_datasets else None
-                        if raw is not None:
-                            try:
-                                from phopymnehelper.motion_data import MotionData
+                    raw = None
+                    for _lst in motion_raw_datasets_dict.values():
+                        if _lst is not None and len(_lst) > 0:
+                            raw = _lst[0]
+                            break
+                    if raw is not None:
+                        try:
+                            from phopymnehelper.motion_data import MotionData
 
-                                is_moving_annots, is_moving_annots_df = MotionData.find_high_accel_periods(a_ds=datasource.detailed_df, total_change_threshold=0.5, should_set_bad_period_annotations=False, minimum_bad_duration=0.050) # at least 50ms in duration to prevent tons of tiny intervals
-                                datasource.set_bad_intervals(bad_intervals_df=is_moving_annots_df, emit_changed=False)
+                            is_moving_annots, is_moving_annots_df = MotionData.find_high_accel_periods(a_ds=datasource.detailed_df, total_change_threshold=0.5, should_set_bad_period_annotations=False, minimum_bad_duration=0.050) # at least 50ms in duration to prevent tons of tiny intervals
+                            datasource.set_bad_intervals(bad_intervals_df=is_moving_annots_df, emit_changed=False)
 
-                            except Exception as spec_e:
-                                logger.warning(f'\t\tFailed to create bad period moving annotations for "{stream_name}": {spec_e}')
-                        else:
-                            logger.warning(f'\tNo MOTION raw found in XDF for stream "{stream_name}"; skipping spectrogram')
+                        except Exception as spec_e:
+                            logger.warning(f'\t\tFailed to create bad period moving annotations for "{stream_name}": {spec_e}')
+                    else:
+                        logger.warning(f'\tNo MOTION raw found in XDF for stream "{stream_name}"; skipping spectrogram')
 
 
 
@@ -507,60 +505,64 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         elif (stream_type.upper() == 'EEG'):
             if has_valid_intervals and has_detailed_data:
                 eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
-                eeg_raw_datasets = raws_dict.get(DataModalityType.EEG.value, []) if raws_dict else None  # type: ignore[arg-type]  # xdf_files keys datasets_dict by enum .value at runtime
-                if eeg_raw_datasets is not None:
-
-                    eeg_raw_datasets = up_convert_raw_objects(eeg_raw_datasets) # [update_eeg_raw(an_eeg_raw) for an_eeg_raw in eeg_raw_datasets]
-                    EEGData.set_montage(datasets_EEG=eeg_raw_datasets)
-
+                eeg_raw_datasets_dict: Dict[str, Optional[List[Any]]] = {k: (None if v is None else list(v.get(DataModalityType.EEG.value, []) or [])) for k, v in raws_dict_dict.items()}
+                for _ek, _elst in list(eeg_raw_datasets_dict.items()):
+                    if _elst is not None and len(_elst) > 0:
+                        eeg_raw_datasets_dict[_ek] = up_convert_raw_objects(_elst)
+                _all_eeg_for_montage = [r for _lst in eeg_raw_datasets_dict.values() if _lst for r in _lst]
+                if len(_all_eeg_for_montage) > 0:
+                    EEGData.set_montage(datasets_EEG=_all_eeg_for_montage)
 
                 datasource = EEGTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict,
-                                                                      lab_obj=lab_obj, raw_datasets=eeg_raw_datasets)
-                if enable_raw_xdf_processing and (lab_obj is not None):
+                                                                      lab_obj_dict=lab_obj_dict, raw_datasets_dict=eeg_raw_datasets_dict)
+                if enable_raw_xdf_processing and any(v is not None for v in lab_obj_dict.values()):
                     logger.info(f'\tEEG MNE raw processing...')
-                    if (lab_obj is not None):
-                        eeg_raw = eeg_raw_datasets[0] if eeg_raw_datasets else None
-                        if eeg_raw is not None:
-                            try:
-                                from phopymnehelper.EEG_data import EEGComputations
-                                # from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
-                                from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
+                    eeg_raw = None
+                    for _lst in eeg_raw_datasets_dict.values():
+                        if _lst is not None and len(_lst) > 0:
+                            eeg_raw = _lst[0]
+                            break
+                    if eeg_raw is not None:
+                        try:
+                            from phopymnehelper.EEG_data import EEGComputations
+                            # from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
+                            from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
 
 
-                                bad_ch_result = EEGComputations.time_independent_bad_channels(eeg_raw)
-                                bad_channels = bad_ch_result.get('all_bad_channels', [])
-                                if bad_channels:
-                                    logger.info(f'Bad channels detected for "{stream_name}": {bad_channels}')
-                                    datasource.exclude_bad_channels(bad_channels)
+                            bad_ch_result = EEGComputations.time_independent_bad_channels(eeg_raw)
+                            bad_channels = bad_ch_result.get('all_bad_channels', [])
+                            if bad_channels:
+                                logger.info(f'Bad channels detected for "{stream_name}": {bad_channels}')
+                                datasource.exclude_bad_channels(bad_channels)
 
-                                # spec_result = compute_raw_eeg_spectrogram(eeg_raw) ## old direct manual way
-                                ## #TODO 2026-04-02 06:27: - [ ] new computation graph way:
-                                eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
-                                spec_result = eeg_comps_result["spectogram"]
+                            # spec_result = compute_raw_eeg_spectrogram(eeg_raw) ## old direct manual way
+                            ## #TODO 2026-04-02 06:27: - [ ] new computation graph way:
+                            eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
+                            spec_result = eeg_comps_result["spectogram"]
 
-                                spec_datasource_kwargs = dict(lab_obj=datasource.lab_xdf_obj, raw_datasets=datasource.raw_datasets, parent=datasource)
+                            spec_datasource_kwargs = dict(lab_obj_dict=datasource.lab_obj_dict, raw_datasets_dict=datasource.raw_datasets_dict, parent=datasource)
 
-                                _effective_groups = spectrogram_channel_groups if spectrogram_channel_groups is None else (spectrogram_channel_groups if len(spectrogram_channel_groups) > 0 else None)
-                                if _effective_groups is None:
-                                    spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}", 
-                                                                                    channel_group_presets=(spectrogram_channel_groups if spectrogram_channel_groups is not None and len(spectrogram_channel_groups) > 0 else None),
-                                                                                    **spec_datasource_kwargs)
-                                    all_streams_datasources[f"EEG_Spectrogram_{stream_name}"] = spec_datasource
-                                    all_streams[f"EEG_Spectrogram_{stream_name}"] = merged_intervals_df
-                                    logger.info(f'Created EEG Spectrogram datasource for "{stream_name}"')
-                                else:
-                                    for group_cfg in _effective_groups:
-                                        group_key = f"EEG_Spectrogram_{stream_name}_{group_cfg.name}"
-                                        spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=group_key, group_config=group_cfg, channel_group_presets=_effective_groups, **spec_datasource_kwargs)
-                                        all_streams_datasources[group_key] = spec_datasource
-                                        all_streams[group_key] = merged_intervals_df
-                                    logger.info(f'Created {len(_effective_groups)} EEG Spectrogram group datasources for "{stream_name}"')
-                            except ImportError:
-                                logger.warning(f'phopymnehelper EEG/spectrogram helpers not available; skipping spectrogram for "{stream_name}"')
-                            except Exception as spec_e:
-                                logger.warning(f'Failed to create spectrogram for "{stream_name}": {spec_e}')
-                        else:
-                            logger.warning(f'No EEG raw found in XDF for stream "{stream_name}"; skipping spectrogram')
+                            _effective_groups = spectrogram_channel_groups if spectrogram_channel_groups is None else (spectrogram_channel_groups if len(spectrogram_channel_groups) > 0 else None)
+                            if _effective_groups is None:
+                                spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}",
+                                                                                channel_group_presets=(spectrogram_channel_groups if spectrogram_channel_groups is not None and len(spectrogram_channel_groups) > 0 else None),
+                                                                                **spec_datasource_kwargs)
+                                all_streams_datasources[f"EEG_Spectrogram_{stream_name}"] = spec_datasource
+                                all_streams[f"EEG_Spectrogram_{stream_name}"] = merged_intervals_df
+                                logger.info(f'Created EEG Spectrogram datasource for "{stream_name}"')
+                            else:
+                                for group_cfg in _effective_groups:
+                                    group_key = f"EEG_Spectrogram_{stream_name}_{group_cfg.name}"
+                                    spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=group_key, group_config=group_cfg, channel_group_presets=_effective_groups, **spec_datasource_kwargs)
+                                    all_streams_datasources[group_key] = spec_datasource
+                                    all_streams[group_key] = merged_intervals_df
+                                logger.info(f'Created {len(_effective_groups)} EEG Spectrogram group datasources for "{stream_name}"')
+                        except ImportError:
+                            logger.warning(f'phopymnehelper EEG/spectrogram helpers not available; skipping spectrogram for "{stream_name}"')
+                        except Exception as spec_e:
+                            logger.warning(f'Failed to create spectrogram for "{stream_name}": {spec_e}')
+                    else:
+                        logger.warning(f'No EEG raw found in XDF for stream "{stream_name}"; skipping spectrogram')
 
 
         elif (stream_type.upper() in ['MARKERS']) and (stream_name in ['EventBoard', 'TextLogger']):
