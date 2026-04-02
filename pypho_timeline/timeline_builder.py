@@ -1186,23 +1186,28 @@ class TimelineBuilder:
                 eeg_df['t'] = datetime_times
                 
                 # Create EEGTrackDatasource
-                if EEGTrackDatasource is not None:
-                    eeg_datasource = EEGTrackDatasource(
-                        intervals_df=base_intervals_df.copy(),
-                        eeg_df=eeg_df,
-                        custom_datasource_name=f"EEG_{stream_name}",
-                        max_points_per_second=10.0,
-                        enable_downsampling=True,
-                        fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL
-                    )
-                    datasources.append(eeg_datasource)
-                    logger.info(f"  Created EEG datasource for '{stream_name}' with {len(eeg_channels)} channels")
+                eeg_datasource = EEGTrackDatasource(
+                    intervals_df=base_intervals_df.copy(),
+                    eeg_df=eeg_df,
+                    custom_datasource_name=f"EEG_{stream_name}",
+                    max_points_per_second=10.0,
+                    enable_downsampling=True,
+                    fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL
+                )
+                datasources.append(eeg_datasource)
+                logger.info(f"  Created EEG datasource for '{stream_name}' with {len(eeg_channels)} channels")
 
                 # Create EEGSpectrogramTrackDatasource (same intervals, detail = spectrogram image)
                 if EEGSpectrogramTrackDatasource is not None and EEG_SPECTROGRAM_AVAILABLE and compute_raw_eeg_spectrogram is not None:
                     try:
                         spec_result = compute_raw_eeg_spectrogram(raw)
-                        spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=base_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}")
+                        if eeg_datasource is not None:
+                            spec_datasource_kwargs = dict(lab_obj=eeg_datasource.lab_xdf_obj, raw_datasets=eeg_datasource.raw_datasets, parent=eeg_datasource)
+                        else:
+                            spec_datasource_kwargs = dict()
+
+                        spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=base_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}",
+                                                                        **spec_datasource_kwargs)
                         datasources.append(spec_datasource)
                         logger.info(f"  Created EEG Spectrogram datasource for '{stream_name}'")
                     except Exception as spec_e:

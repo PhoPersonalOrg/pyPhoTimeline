@@ -470,24 +470,35 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                         if eeg_raw is not None:
                             try:
                                 from phopymnehelper.EEG_data import EEGComputations
-                                from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
+                                # from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
+                                from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
+
+
                                 bad_ch_result = EEGComputations.time_independent_bad_channels(eeg_raw)
                                 bad_channels = bad_ch_result.get('all_bad_channels', [])
                                 if bad_channels:
                                     logger.info(f'Bad channels detected for "{stream_name}": {bad_channels}')
                                     datasource.exclude_bad_channels(bad_channels)
 
-                                spec_result = compute_raw_eeg_spectrogram(eeg_raw)
+                                # spec_result = compute_raw_eeg_spectrogram(eeg_raw) ## old direct manual way
+                                ## #TODO 2026-04-02 06:27: - [ ] new computation graph way:
+                                eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
+                                spec_result = eeg_comps_result["spectogram"]
+
+                                spec_datasource_kwargs = dict(lab_obj=eeg_ds.lab_xdf_obj, raw_datasets=eeg_ds.raw_datasets, parent=eeg_ds)
+
                                 _effective_groups = spectrogram_channel_groups if spectrogram_channel_groups is None else (spectrogram_channel_groups if len(spectrogram_channel_groups) > 0 else None)
                                 if _effective_groups is None:
-                                    spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}", channel_group_presets=(spectrogram_channel_groups if spectrogram_channel_groups is not None and len(spectrogram_channel_groups) > 0 else None), lab_obj=lab_obj, raw_datasets=eeg_raw_datasets)
+                                    spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}", 
+                                                                                    channel_group_presets=(spectrogram_channel_groups if spectrogram_channel_groups is not None and len(spectrogram_channel_groups) > 0 else None),
+                                                                                    **spec_datasource_kwargs)
                                     all_streams_datasources[f"EEG_Spectrogram_{stream_name}"] = spec_datasource
                                     all_streams[f"EEG_Spectrogram_{stream_name}"] = merged_intervals_df
                                     logger.info(f'Created EEG Spectrogram datasource for "{stream_name}"')
                                 else:
                                     for group_cfg in _effective_groups:
                                         group_key = f"EEG_Spectrogram_{stream_name}_{group_cfg.name}"
-                                        spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=group_key, group_config=group_cfg, channel_group_presets=_effective_groups, lab_obj=lab_obj, raw_datasets=eeg_raw_datasets)
+                                        spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=group_key, group_config=group_cfg, channel_group_presets=_effective_groups, **spec_datasource_kwargs)
                                         all_streams_datasources[group_key] = spec_datasource
                                         all_streams[group_key] = merged_intervals_df
                                     logger.info(f'Created {len(_effective_groups)} EEG Spectrogram group datasources for "{stream_name}"')
