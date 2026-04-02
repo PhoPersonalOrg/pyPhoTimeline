@@ -235,12 +235,8 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         - all_streams: Dictionary mapping stream names to merged interval DataFrames
         - all_streams_datasources: Dictionary mapping stream names to merged TrackDatasource instances
     """
-    import mne
     from phopymnehelper.historical_data import HistoricalData
     from phopymnehelper.xdf_files import LabRecorderXDF
-    from phopymnehelper.SavedSessionsProcessor import DataModalityType
-    from phopymnehelper.MNE_helpers import up_convert_raw_objects, up_convert_raw_obj
-    from phopymnehelper.EEG_data import EEGData
 
 
     def _subfn_process_xdf_file(xdf_path_for_raw: Path):
@@ -331,7 +327,6 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         all_detailed_dfs = [] ## #TODO 2026-03-02 08:56: - [ ] these detailed_dfs are being built synchronously in the following loop too, PERFORMANCE: defer this to an async call
         stream_type = None
         stream_info = None
-        raws_dict_dict: Dict[str, Dict[str, mne.io.raw]] = {} ## inner dict is DataModalityType.value
         lab_obj_dict: Dict[str, Optional[LabRecorderXDF]] = {}
 
 
@@ -450,11 +445,9 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
 
             for a_xdf_path in xdf_paths_for_raw:
                 lab_obj_dict[a_xdf_path.name] = None
-                raws_dict_dict[a_xdf_path.name] = None
                 try:
-                    a_lab_obj, a_raws_dict = _subfn_process_xdf_file(xdf_path_for_raw=a_xdf_path)
+                    a_lab_obj, _a_raws_dict = _subfn_process_xdf_file(xdf_path_for_raw=a_xdf_path)
                     lab_obj_dict[a_xdf_path.name] = a_lab_obj
-                    raws_dict_dict[a_xdf_path.name] = a_raws_dict
                 except Exception as e:
                     raise
 
@@ -467,18 +460,17 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         if (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name):
             if has_valid_intervals and has_detailed_data:
                 motion_norm_dict = modality_channels_normalization_mode_dict.get('MOTION')
-                motion_raw_datasets_dict: Dict[str, Optional[List[Any]]] = {k: (None if raws_dict is None else list(raws_dict.get(DataModalityType.MOTION.value, []) or [])) for k, raws_dict in raws_dict_dict.items()}
-
-                datasource = MotionTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict=motion_norm_dict,
-                    lab_obj_dict=lab_obj_dict, raw_datasets_dict=motion_raw_datasets_dict)
+                datasource = MotionTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict=motion_norm_dict, lab_obj_dict=lab_obj_dict)
 
                 if enable_raw_xdf_processing and any(v is not None for v in lab_obj_dict.values()):
                     logger.info(f'\tMOTION Modality MNE raw processing...')
                     raw = None
-                    for _lst in motion_raw_datasets_dict.values():
-                        if _lst is not None and len(_lst) > 0:
-                            raw = _lst[0]
-                            break
+                    _motion_rdd = datasource.raw_datasets_dict
+                    if _motion_rdd is not None:
+                        for _lst in _motion_rdd.values():
+                            if _lst is not None and len(_lst) > 0:
+                                raw = _lst[0]
+                                break
                     if raw is not None:
                         try:
                             from phopymnehelper.motion_data import MotionData
@@ -505,23 +497,16 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         elif (stream_type.upper() == 'EEG'):
             if has_valid_intervals and has_detailed_data:
                 eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
-                eeg_raw_datasets_dict: Dict[str, Optional[List[Any]]] = {k: (None if v is None else list(v.get(DataModalityType.EEG.value, []) or [])) for k, v in raws_dict_dict.items()}
-                for _ek, _elst in list(eeg_raw_datasets_dict.items()):
-                    if _elst is not None and len(_elst) > 0:
-                        eeg_raw_datasets_dict[_ek] = up_convert_raw_objects(_elst)
-                _all_eeg_for_montage = [r for _lst in eeg_raw_datasets_dict.values() if _lst for r in _lst]
-                if len(_all_eeg_for_montage) > 0:
-                    EEGData.set_montage(datasets_EEG=_all_eeg_for_montage)
-
-                datasource = EEGTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict,
-                                                                      lab_obj_dict=lab_obj_dict, raw_datasets_dict=eeg_raw_datasets_dict)
+                datasource = EEGTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict, lab_obj_dict=lab_obj_dict)
                 if enable_raw_xdf_processing and any(v is not None for v in lab_obj_dict.values()):
                     logger.info(f'\tEEG MNE raw processing...')
                     eeg_raw = None
-                    for _lst in eeg_raw_datasets_dict.values():
-                        if _lst is not None and len(_lst) > 0:
-                            eeg_raw = _lst[0]
-                            break
+                    _eeg_rdd = datasource.raw_datasets_dict
+                    if _eeg_rdd is not None:
+                        for _lst in _eeg_rdd.values():
+                            if _lst is not None and len(_lst) > 0:
+                                eeg_raw = _lst[0]
+                                break
                     if eeg_raw is not None:
                         try:
                             from phopymnehelper.EEG_data import EEGComputations

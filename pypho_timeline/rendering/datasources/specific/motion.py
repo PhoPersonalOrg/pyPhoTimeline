@@ -20,6 +20,7 @@ from pypho_timeline.rendering.datasources.track_datasource import TrackDatasourc
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin
 from phopymnehelper.motion_data import BadMotionDataFrame
+from phopymnehelper.SavedSessionsProcessor import DataModalityType
 
 from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
@@ -395,7 +396,16 @@ class MotionTrackDatasource(RawProvidingTrackDatasource):
         self._motion_plot_detail_renderer: Optional[MotionPlotDetailRenderer] = None
 
 
-    
+    def try_extract_raw_datasets_dict(self) -> Optional[Dict[str, Optional[List[Any]]]]:
+        out: Dict[str, Optional[List[Any]]] = {}
+        for k, lab in self.lab_obj_dict.items():
+            if lab is None or not lab.datasets_dict:
+                out[k] = None
+                continue
+            elst = list(lab.datasets_dict.get(DataModalityType.MOTION, []) or [])
+            out[k] = elst if len(elst) > 0 else None
+        return out if out else None
+
 
     def set_bad_intervals(self, bad_intervals_df: Optional[pd.DataFrame], bad_intervals_time_origin_unix: Optional[float] = None, *, emit_changed: bool = True) -> None:
         """Replace bad/exclusion intervals. Updates the cached detail renderer if present.

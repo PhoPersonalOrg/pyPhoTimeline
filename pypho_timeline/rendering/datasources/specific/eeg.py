@@ -398,7 +398,27 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         # Override visualization properties (parent sets blue, we want blue too, but keep same height)
         # Parent already sets series_height=1.0, which is what we want, so no change needed
         # Parent already sets blue color, which is what we want, so no change needed
-    
+
+
+    def try_extract_raw_datasets_dict(self) -> Optional[Dict[str, Optional[List[Any]]]]:
+        from phopymnehelper.SavedSessionsProcessor import DataModalityType
+        from phopymnehelper.MNE_helpers import up_convert_raw_objects
+        from phopymnehelper.EEG_data import EEGData
+        out: Dict[str, Optional[List[Any]]] = {}
+        for k, lab in self.lab_obj_dict.items():
+            if lab is None or not lab.datasets_dict:
+                out[k] = None
+                continue
+            elst = list(lab.datasets_dict.get(DataModalityType.EEG, []) or [])
+            out[k] = up_convert_raw_objects(elst) if len(elst) > 0 else None
+        if not out:
+            return None
+        _all_eeg_for_montage = [r for _lst in out.values() if _lst for r in _lst]
+        if len(_all_eeg_for_montage) > 0:
+            EEGData.set_montage(datasets_EEG=_all_eeg_for_montage)
+        return out
+
+
     def get_detail_renderer(self):
         """Get detail renderer for eeg data."""
         _extra_kw = {'channel_names': self.channel_names} if self.channel_names is not None else {}

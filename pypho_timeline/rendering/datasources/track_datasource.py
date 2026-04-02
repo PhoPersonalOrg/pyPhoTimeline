@@ -786,10 +786,12 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
 
 
 class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
-    """A TrackDatasource that holds access to raw MNE objects 
+    """A TrackDatasource that holds access to raw MNE objects.
 
     Inherits from IntervalProvidingTrackDatasource and implements all required methods for
-    displaying position data with async detail loading.
+    displaying position data with async detail loading. Subclasses may implement
+    :meth:`try_extract_raw_datasets_dict` to populate ``raw_datasets_dict`` from
+    :attr:`lab_obj_dict` when the caller passes ``raw_datasets_dict=None``.
     """
     def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None, detail_renderer: Optional[IntervalPlotDetailRenderer]=None,
             max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
@@ -807,6 +809,7 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
             enable_downsampling: Whether to enable downsampling. Default: True
             lab_obj_dict: Map of source id (e.g. XDF filename) to optional LabRecorderXDF for that file.
             raw_datasets_dict: Map of source id to optional list of MNE Raw objects for that source.
+                If ``None``, :meth:`try_extract_raw_datasets_dict` is used (subclass-specific).
         """
         if custom_datasource_name is None:
             custom_datasource_name = "GenericRawProvidingTrack"
@@ -814,6 +817,13 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
                             max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, parent=parent)
         self._lab_obj_dict = dict(lab_obj_dict) if lab_obj_dict is not None else {}
         self._raw_datasets_dict = raw_datasets_dict
+        if self._raw_datasets_dict is None:
+            self._raw_datasets_dict = self.try_extract_raw_datasets_dict()
+
+
+    def try_extract_raw_datasets_dict(self) -> Optional[Dict[str, Optional[List[Any]]]]:
+        """Build per-source raw lists from :attr:`lab_obj_dict`; base returns ``None``."""
+        return None
 
 
     @property
