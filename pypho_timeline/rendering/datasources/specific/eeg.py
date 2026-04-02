@@ -16,6 +16,15 @@ from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
 
 
+def _first_nonempty_raw_list_from_dict(raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> List[Any]:
+    if raw_datasets_dict is None:
+        return []
+    for v in raw_datasets_dict.values():
+        if v is not None and len(v) > 0:
+            return v
+    return []
+
+
 @dataclass
 class SpectrogramChannelGroupConfig:
     """Defines a named group of EEG channels to average for one spectrogram track."""
@@ -503,11 +512,11 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
 
         logger.info(f'.compute(...) called.')
-        if len((self.raw_datasets or [])) < 1:
+        if len(_first_nonempty_raw_list_from_dict(self.raw_datasets_dict)) < 1:
             if self.parent() is not None:
-                if getattr(self.parent(), 'raw_datasets', None) is not None:
-                    self.raw_datasets = self.parent().raw_datasets
-        eeg_raw = self.raw_datasets[0]
+                if getattr(self.parent(), 'raw_datasets_dict', None) is not None:
+                    self.raw_datasets_dict = self.parent().raw_datasets_dict
+        eeg_raw = _first_nonempty_raw_list_from_dict(self.raw_datasets_dict)[0]
         ## TODO: Do computations here
 
         self.sigSourceComputeStarted.emit()
@@ -816,11 +825,11 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
         from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
 
         logger.info(f'.compute(...) called.')
-        if len((self.raw_datasets or [])) < 1:
+        if len(_first_nonempty_raw_list_from_dict(self.raw_datasets_dict)) < 1:
             if self.parent() is not None:
-                if getattr(self.parent(), 'raw_datasets', None) is not None:
-                    self.raw_datasets = self.parent().raw_datasets
-        eeg_raw = self.raw_datasets[0]
+                if getattr(self.parent(), 'raw_datasets_dict', None) is not None:
+                    self.raw_datasets_dict = self.parent().raw_datasets_dict
+        eeg_raw = _first_nonempty_raw_list_from_dict(self.raw_datasets_dict)[0]
         self.sigSourceComputeStarted.emit()
         eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
         self._spectrogram_result = eeg_comps_result["spectogram"]

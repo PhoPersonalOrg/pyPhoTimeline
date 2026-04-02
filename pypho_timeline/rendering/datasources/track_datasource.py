@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     ## typehinting only imports here
     from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import IntervalPlotDetailRenderer
+    from phopymnehelper.xdf_files import LabRecorderXDF
 
 
 """TrackDatasource and DetailRenderer protocols for timeline track rendering.
@@ -892,11 +893,18 @@ class ComputableDatasourceMixin:
 
         from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
 
-        if len((datasource.raw_datasets or [])) < 1:
+        def _first_nonempty_raw_list(d):
+            if d is None:
+                return []
+            for v in d.values():
+                if v is not None and len(v) > 0:
+                    return v
+            return []
+        if len(_first_nonempty_raw_list(datasource.raw_datasets_dict)) < 1:
             if datasource.parent() is not None:
-                if getattr(datasource.parent(), 'raw_datasets', None) is not None:
-                    datasource.raw_datasets = datasource.parent().raw_datasets
-        eeg_raw = datasource.raw_datasets[0]
+                if getattr(datasource.parent(), 'raw_datasets_dict', None) is not None:
+                    datasource.raw_datasets_dict = datasource.parent().raw_datasets_dict
+        eeg_raw = _first_nonempty_raw_list(datasource.raw_datasets_dict)[0]
 
         eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
         spec_result = eeg_comps_result["spectogram"]
