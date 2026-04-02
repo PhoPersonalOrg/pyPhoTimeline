@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from qtpy import QtCore
 from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence, TYPE_CHECKING
 from datetime import datetime
-from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, RawProvidingTrackDatasource
+from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, RawProvidingTrackDatasource, ComputableDatasourceMixin
 if TYPE_CHECKING:
     import mne
     from phopymnehelper.xdf_files import LabRecorderXDF
@@ -658,8 +658,10 @@ class EEGSpectrogramDetailRenderer(DetailRenderer):
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGSpectrogramTrackDatasource
 # ==================================================================================================================================================================================================================================================================================== #
-class EEGSpectrogramTrackDatasource(RawProvidingTrackDatasource):
+class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource):
     """TrackDatasource that shares intervals with an EEG track and displays spectrogram detail (from EEGComputations.raw_spectogram_working). Optional lab/raw handles via RawProvidingTrackDatasource."""
+    sigSourceComputeStarted = QtCore.Signal()
+    sigSourceComputeFinished = QtCore.Signal(bool)
 
     def __init__(self, intervals_df: pd.DataFrame, spectrogram_result: Dict, custom_datasource_name: Optional[str] = None, spectrogram_results: Optional[List[Dict]] = None,
                  freq_min: float = 1.0, freq_max: float = 40.0, group_config: Optional[SpectrogramChannelGroupConfig] = None, channel_group_presets: Optional[List[SpectrogramChannelGroupConfig]] = None, lab_obj: Optional[LabRecorderXDF] = None, raw_datasets: Optional[List[mne.io.Raw]] = None, parent: Optional[QtCore.QObject] = None):
@@ -765,6 +767,36 @@ class EEGSpectrogramTrackDatasource(RawProvidingTrackDatasource):
         merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start')
         first_result = spectrogram_results[0]
         return cls(intervals_df=merged_intervals_df, spectrogram_result=first_result, custom_datasource_name=custom_datasource_name, spectrogram_results=spectrogram_results, freq_min=freq_min, freq_max=freq_max, group_config=group_config, channel_group_presets=channel_group_presets, lab_obj=lab_obj, raw_datasets=raw_datasets)
+
+
+
+    # ==================================================================================================================================================================================================================================================================================== #
+    # ComputableDatasourceMixin Conformance                                                                                                                                                                                                                                                #
+    # ==================================================================================================================================================================================================================================================================================== #
+    def compute(self, **kwargs):
+        """ a function to perform recomputation of the datasource properties at runtime 
+        """
+        from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
+
+        logger.info(f'.compute(...) called.')
+        if len((self.raw_datasets or [])) < 1:
+            if self.parent() is not None:
+                if getattr(self.parent(), 'raw_datasets', None) is not None:
+                    self.raw_datasets = self.parent().raw_datasets
+        eeg_raw = self.raw_datasets[0]
+        self.sigSourceComputeStarted.emit()
+        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
+        self._spectrogram_result = eeg_comps_result["spectogram"]
+        self.on_recompute_finished()
+
+
+    def on_compute_finished(self, **kwargs):
+        """ called to indicate that a recompute is finished """
+        was_success: bool = (self._spectrogram_result is not None)
+        # print(f'.on_recompute_finished(was_success: {was_success})')
+        logger.info(f'.on_recompute_finished(was_success: {was_success})')
+        self.sigSourceComputeFinished.emit(was_success)
+
 
 
 __all__ = ['SpectrogramChannelGroupConfig', 'EMOTIV_EPOC_X_SPECTROGRAM_GROUPS', 'EEGPlotDetailRenderer', 'EEGTrackDatasource', 'EEGSpectrogramDetailRenderer', 'EEGSpectrogramTrackDatasource']

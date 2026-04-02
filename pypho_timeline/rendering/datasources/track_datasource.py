@@ -875,5 +875,42 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
         )
 
 
+class ComputableDatasourceMixin:
+    """ implementors are able to recompute their results when a property changes
+
+    from pypho_timeline.rendering.datasources.track_datasource import ComputableDatasourceMixin
+
+    """
+    source_compute_started = QtCore.Signal()
+    source_compute_finished = QtCore.Signal()
+
+    def compute(self, **kwargs):
+        """ a function to perform recomputation of the datasource properties at runtime 
+
+        datasource: EEGSpectrogramTrackDatasource
+        datasource = self
+
+        from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
+
+        if len((datasource.raw_datasets or [])) < 1:
+            if datasource.parent() is not None:
+                if getattr(datasource.parent(), 'raw_datasets', None) is not None:
+                    datasource.raw_datasets = datasource.parent().raw_datasets
+        eeg_raw = datasource.raw_datasets[0]
+
+        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
+        spec_result = eeg_comps_result["spectogram"]
+        spec_result
+
+        """
+        raise NotImplementedError(f'Implementors must override to perform their computations')
+        self.on_recompute_finished()
+
+
+    def on_compute_finished(self, **kwargs):
+        """ called to indicate that a recompute is finished """
+        print(f'on_recompute_finished()')
+
+
 __all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource', 'IntervalProvidingTrackDatasource', 'RawProvidingTrackDatasource']
 
