@@ -1394,8 +1394,25 @@ class TimelineBuilder:
             a_detail_renderer = datasource.get_detail_renderer()
             _scheme_key = default_dock_named_color_scheme_key(datasource.custom_datasource_name)
             display_config = CustomCyclicColorsDockDisplayConfig(named_color_scheme=NamedColorScheme[_scheme_key], showCloseButton=True, showCollapseButton=True, showGroupButton=False, corner_radius='3px')
+
+            if getattr(display_config, 'custom_button_configs', None) is None:
+                setattr(display_config, 'custom_button_configs', {})
+                # setattr(display_config, 'custom_button_callback_connections', {})
+
+            # else:
+            #     ## disconnect before setting now
+            #     for k, v in getattr(display_config, 'custom_button_callback_connections', {}).items():
+            #         a_dock.sigCustomButtonClicked.disconnect(v)
+
+
+
             if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
                 setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonIcon=QtWidgets.QStyle.StandardPixmap.SP_FileDialogListView, buttonToolTip='Show table')})
+            elif getattr(datasource, 'detailed_df', None) is not None:
+                ## enable for all tracks with a detailed_df
+                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonIcon=QtWidgets.QStyle.StandardPixmap.SP_FileDialogListView, buttonToolTip='Show table')})
+
+
             track_widget, a_root_graphics, a_plot_item, a_dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
                 name=datasource.custom_datasource_name,
                 dockSize=(500, 80),
@@ -1403,19 +1420,31 @@ class TimelineBuilder:
                 display_config=display_config,
                 sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA
             )
-            if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
-                def _on_show_table(dock, button_id, tl=timeline, ds=datasource):
-                    if button_id != 'show_table':
-                        return
-                    table_name = f"{ds.custom_datasource_name}_table"
-                    existing = tl.ui.dynamic_docked_widget_container.find_display_dock(table_name)
-                    if existing is not None:
-                        existing.show()
-                        existing.raise_()
-                        return
-                    tl.add_dataframe_table_track(track_name=table_name, dataframe=getattr(ds, 'detailed_df'), time_column='t', dockSize=(400, 200), sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA)
-                a_dock.sigCustomButtonClicked.connect(_on_show_table)
+            # if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
+
+
+            # for a_custom_button_key, a_dock_button_config in display_config.custom_button_configs.items():
+            #     if a_custom_button_key == 'show_table':
+
+            if getattr(datasource, 'detailed_df', None) is not None:
+                if ('show_table' in display_config.custom_button_configs):
+                    def _on_show_table(dock, button_id, tl=timeline, ds=datasource):
+                        if button_id != 'show_table':
+                            return
+                        table_name = f"{ds.custom_datasource_name}_table"
+                        existing = tl.ui.dynamic_docked_widget_container.find_display_dock(table_name)
+                        if existing is not None:
+                            existing.show()
+                            existing.raise_()
+                            return
+
+                        _scheme_key = default_dock_named_color_scheme_key(datasource.custom_datasource_name)
+                        table_dock_display_config = CustomCyclicColorsDockDisplayConfig(named_color_scheme=NamedColorScheme[_scheme_key], showCloseButton=True, showCollapseButton=True, showGroupButton=True, corner_radius='1px')
+                        tl.add_dataframe_table_track(track_name=table_name, dataframe=getattr(ds, 'detailed_df'), time_column='t', dockSize=(400, 200), display_config=table_dock_display_config, sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA)
+                    a_dock.sigCustomButtonClicked.connect(_on_show_table)
             
+
+
             assert a_detail_renderer is not None, f"Detail renderer is None for datasource: {datasource.custom_datasource_name}"
             #TODO 2026-03-28 06:30: - [ ] note `track_widget.set_track_renderer(a_detail_renderer)` was removed
             # track_widget.set_track_renderer(a_detail_renderer)

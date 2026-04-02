@@ -1,10 +1,12 @@
+from __future__ import annotations # prevents having to specify types for typehinting as strings
+from typing import TYPE_CHECKING
+
 """
 Simple timeline widget for pyPhoTimeline library.
 
 This module provides a simple example timeline widget that demonstrates pyPhoTimeline usage,
 along with utility functions for processing stream data.
 """
-
 import json
 import logging
 import numpy as np
@@ -29,6 +31,10 @@ from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPl
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
 
 from pypho_timeline.widgets.track_options_panels import apply_track_options_document, build_track_options_document
+
+if TYPE_CHECKING:
+    ## typehinting only imports here
+    from pypho_timeline.docking.dock_display_configs import CustomDockDisplayConfig
 
 logger = logging.getLogger(__name__)
 
@@ -316,12 +322,73 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         return prev_tgt, next_tgt
 
 
+    _GOTO_NAV_TIME_EPS = 1e-6
+
+
+    def _target_window_start_go_latest(self) -> Any:
+        """Scroll target start for :meth:`go_to_latest_window` (same clamping as that action)."""
+        if isinstance(self.active_window_start_time, (datetime, pd.Timestamp)) and isinstance(self.active_window_end_time, (datetime, pd.Timestamp)):
+            duration = self.active_window_end_time - self.active_window_start_time
+            new_start = self.total_data_end_time - duration
+            if new_start < self.total_data_start_time:
+                new_start = self.total_data_start_time
+            return new_start
+        duration = float(self.active_window_end_time) - float(self.active_window_start_time)
+        new_start = float(self.total_data_end_time) - duration
+        ts = float(self.total_data_start_time)
+        if new_start < ts:
+            new_start = ts
+        return new_start
+
+
+    def _target_window_start_go_earliest(self) -> Any:
+        """Scroll target start for :meth:`go_to_earliest_window` (same clamping as that action)."""
+        if isinstance(self.active_window_start_time, (datetime, pd.Timestamp)) and isinstance(self.active_window_end_time, (datetime, pd.Timestamp)):
+            duration = self.active_window_end_time - self.active_window_start_time
+            new_start = self.total_data_start_time
+            if new_start + duration > self.total_data_end_time:
+                new_start = self.total_data_end_time - duration
+            if new_start < self.total_data_start_time:
+                new_start = self.total_data_start_time
+            return new_start
+        duration = float(self.active_window_end_time) - float(self.active_window_start_time)
+        new_start = float(self.total_data_start_time)
+        te = float(self.total_data_end_time)
+        if new_start + duration > te:
+            new_start = te - duration
+        ts = float(self.total_data_start_time)
+        if new_start < ts:
+            new_start = ts
+        return new_start
+
+
+    def _goto_scroll_target_differs_from_active_start(self, target_start: Any) -> bool:
+        return abs(self._scalar_to_sort_float(self.active_window_start_time) - self._scalar_to_sort_float(target_start)) > self._GOTO_NAV_TIME_EPS
+
+
     def _update_interval_jump_buttons_enabled(self):
         if not hasattr(self.ui, 'jump_prev_interval_button'):
             return
         prev_t, next_t = self._interval_jump_prev_next_targets()
-        self.ui.jump_prev_interval_button.setEnabled(prev_t is not None)
-        self.ui.jump_next_interval_button.setEnabled(next_t is not None)
+        en_prev, en_next = prev_t is not None, next_t is not None
+        tgt_earliest = self._target_window_start_go_earliest()
+        tgt_latest = self._target_window_start_go_latest()
+        en_earliest = self._goto_scroll_target_differs_from_active_start(tgt_earliest)
+        en_latest = self._goto_scroll_target_differs_from_active_start(tgt_latest)
+        self.ui.jump_prev_interval_button.setEnabled(en_prev)
+        self.ui.jump_next_interval_button.setEnabled(en_next)
+        p = self.parentWidget()
+        while p is not None:
+            if hasattr(p, 'actionGoToPrev'):
+                p.actionGoToPrev.setEnabled(en_prev)
+                if hasattr(p, 'actionGoToNext'):
+                    p.actionGoToNext.setEnabled(en_next)
+                if hasattr(p, 'actionGoToEarliest'):
+                    p.actionGoToEarliest.setEnabled(en_earliest)
+                if hasattr(p, 'actionGoToLatest'):
+                    p.actionGoToLatest.setEnabled(en_latest)
+                break
+            p = p.parentWidget()
 
 
     def _on_jump_prev_interval_clicked(self):
@@ -346,41 +413,12 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
 
     def go_to_latest_window(self):
         """Move the viewport so its end aligns with ``total_data_end_time``, preserving window duration; start is clamped to ``total_data_start_time``."""
-        if isinstance(self.active_window_start_time, (datetime, pd.Timestamp)) and isinstance(self.active_window_end_time, (datetime, pd.Timestamp)):
-            duration = self.active_window_end_time - self.active_window_start_time
-            new_start = self.total_data_end_time - duration
-            if new_start < self.total_data_start_time:
-                new_start = self.total_data_start_time
-            self.simulate_window_scroll(new_start)
-        else:
-            duration = float(self.active_window_end_time) - float(self.active_window_start_time)
-            new_start = float(self.total_data_end_time) - duration
-            ts = float(self.total_data_start_time)
-            if new_start < ts:
-                new_start = ts
-            self.simulate_window_scroll(new_start)
+        self.simulate_window_scroll(self._target_window_start_go_latest())
 
 
     def go_to_earliest_window(self):
         """Move the viewport so its start aligns with ``total_data_start_time`` when possible, preserving window duration; if the window would extend past ``total_data_end_time``, start is shifted earlier; start is clamped to ``total_data_start_time`` when needed (symmetric to ``go_to_latest_window``)."""
-        if isinstance(self.active_window_start_time, (datetime, pd.Timestamp)) and isinstance(self.active_window_end_time, (datetime, pd.Timestamp)):
-            duration = self.active_window_end_time - self.active_window_start_time
-            new_start = self.total_data_start_time
-            if new_start + duration > self.total_data_end_time:
-                new_start = self.total_data_end_time - duration
-            if new_start < self.total_data_start_time:
-                new_start = self.total_data_start_time
-            self.simulate_window_scroll(new_start)
-        else:
-            duration = float(self.active_window_end_time) - float(self.active_window_start_time)
-            new_start = float(self.total_data_start_time)
-            te = float(self.total_data_end_time)
-            if new_start + duration > te:
-                new_start = te - duration
-            ts = float(self.total_data_start_time)
-            if new_start < ts:
-                new_start = ts
-            self.simulate_window_scroll(new_start)
+        self.simulate_window_scroll(self._target_window_start_go_earliest())
 
 
     # ==================================================================================================================================================================================================================================================================================== #
@@ -421,7 +459,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         self.ui.split_group_docks = getattr(dock_container, 'nested_dock_items', {})
         
 
-    def simulate_window_scroll(self, new_start_time: Union[float, datetime, pd.Timestamp]):
+    def simulate_window_scroll(self, new_start_time: Union[float, datetime, pd.Timestamp]): # , new_end_time: Optional[Union[float, datetime, pd.Timestamp]]=None
         """Simulate scrolling the time window (for demonstration)."""
         # Calculate duration
         if isinstance(self.active_window_start_time, (datetime, pd.Timestamp)) and isinstance(self.active_window_end_time, (datetime, pd.Timestamp)):
@@ -455,6 +493,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         self._last_applied_plot_window_x1 = float(emit_end)
         self._applying_window_from_signal = True
         try:
+            self.update_window(emit_start, emit_end) ## the main update function, calls recurrsively
             self.window_scrolled.emit(emit_start, emit_end)
         finally:
             self._applying_window_from_signal = False
@@ -500,6 +539,41 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         if isinstance(value, (datetime, pd.Timestamp)):
             return value.timestamp() if hasattr(value, 'timestamp') else pd.Timestamp(value).timestamp()
         return float(value)
+
+
+    @pyqtExceptionPrintingSlot(float, float)
+    def update_window(self, new_start: Optional[float] = None, new_end: Optional[float] = None):
+        """Called to programmatically update the viewport window of all child tracks. 
+
+        Args:
+            new_start: New start time of viewport
+            new_end: New end time of viewport
+        """
+        logger.debug(f"update_window: new_start: {new_start}, new_end: {new_end}")
+
+        if new_start is None or new_end is None:
+             logger.error(f"\tupdate_window: new_start: {new_start}, new_end: {new_end} one of the values is None! Aborting and not applying changes.")
+             return
+
+        # # Emit the signal to update synchronized tracks (convert to float for signal)
+        # if isinstance(new_start_time, (datetime, pd.Timestamp)):
+        #     emit_start = new_start_time.timestamp() if hasattr(new_start_time, 'timestamp') else pd.Timestamp(new_start_time).timestamp()
+        #     emit_end = new_end_time.timestamp() if hasattr(new_end_time, 'timestamp') else pd.Timestamp(new_end_time).timestamp()
+        # else:
+        #     emit_start = float(new_start_time)
+        #     emit_end = float(new_end_time)
+        # self._last_applied_plot_window_x0 = float(emit_start)
+        # self._last_applied_plot_window_x1 = float(emit_end)
+
+        assert len(timeline.get_track_names_for_window_sync_group('primary')) > 0, f"must have at least one synced track to properly set window programmatically!"
+        a_track_name: str = timeline.get_track_names_for_window_sync_group('primary')[0]
+        a_widget, _, _ = timeline.get_track_tuple(a_track_name)
+        # a_widget.on_window_changed(start_t=1776323640.023324, end_t=1776370487.5812337)
+        a_widget.on_window_changed(start_t=new_start, end_t=new_end)
+        ## done
+        logger.debug(f"\done.")
+
+
 
 
     def _resolve_window_bounds(self, start_time: Optional[Union[float, datetime, pd.Timestamp]], end_time: Optional[Union[float, datetime, pd.Timestamp]], default_start: Union[float, datetime, pd.Timestamp], default_end: Union[float, datetime, pd.Timestamp]):
@@ -861,7 +935,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         return self.ui.compare_calendar
 
 
-    def add_dataframe_table_track(self, track_name: str, dataframe: pd.DataFrame, time_column: Optional[str] = None, dockSize: Tuple[int, int] = (400, 200), sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA):
+    # Track Dataframe Tables _____________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
+    def add_dataframe_table_track(self, track_name: str, dataframe: pd.DataFrame, time_column: Optional[str] = None, dockSize: Tuple[int, int] = (400, 200), dockAddLocationOpts=None, display_config:CustomDockDisplayConfig=None, sync_mode: SynchronizedPlotMode = SynchronizedPlotMode.TO_GLOBAL_DATA, dock_group_names=None, **kwargs):
         """Add a dataframe table track to the timeline.
         
         Args:
@@ -882,15 +957,16 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         # Create the widget
         table_widget = DataFrameTableWidget(df=dataframe, time_column=time_column, name=track_name, reference_datetime=self.reference_datetime)
         
-        # Try to find the log widget to dock next to it
-        log_dock = self.ui.dynamic_docked_widget_container.find_display_dock('log_widget')
-        if log_dock:
-            dock_opts = [log_dock, 'right']
-        else:
-            dock_opts = ['bottom']
+        if dockAddLocationOpts is None:
+            # Try to find the log widget to dock next to it
+            log_dock = self.ui.dynamic_docked_widget_container.find_display_dock('log_widget')
+            if log_dock:
+                dockAddLocationOpts = [log_dock, 'right']
+            else:
+                dockAddLocationOpts = ['bottom']
             
         # Add to docking system
-        self.ui.dynamic_docked_widget_container.add_display_dock(identifier=track_name, widget=table_widget, dockSize=dockSize, dockAddLocationOpts=dock_opts)
+        self.ui.dynamic_docked_widget_container.add_display_dock(identifier=track_name, widget=table_widget, dockSize=dockSize, dockAddLocationOpts=dockAddLocationOpts, display_config=display_config, **kwargs)
         
         # Connect synchronization
         if sync_mode == SynchronizedPlotMode.TO_GLOBAL_DATA:
