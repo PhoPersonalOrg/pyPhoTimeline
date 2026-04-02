@@ -238,6 +238,46 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
     from phopymnehelper.historical_data import HistoricalData
     from phopymnehelper.xdf_files import LabRecorderXDF
     from phopymnehelper.SavedSessionsProcessor import DataModalityType
+    from phopymnehelper.MNE_helpers import up_convert_raw_objects, up_convert_raw_obj
+    from phopymnehelper.EEG_data import EEGData
+
+
+    def _subfn_process_xdf_file(xdf_path_for_raw: Path):
+        """ 
+            xdf_paths_for_raw = [v[1] for v in stream_file_pairs]
+            raws_dict_dict = {}
+            lab_obj_dict = {}
+            for a_xdf_path in xdf_paths_for_raw:
+                a_lab_obj, a_raws_dict = _subfn_process_xdf_file(xdf_path_for_raw=a_xdf_path)
+                lab_obj_dict[a_xdf_path] = a_lap_obj
+                raws_dict_dict[a_xdf_path] = a_raws_dict
+
+
+        """
+        a_lab_obj = None
+        a_raws_dict = {}
+        logger.info(f'enable_raw_xdf_processing is True so this stream will be processed as MNE raw...')
+        # xdf_path_for_raw = stream_file_pairs[0][1]
+        if not xdf_path_for_raw.exists():
+            return a_lab_obj, None
+        logger.info(f'\ttrying to load raw XDF file load for stream_name: "{stream_name}" with xdf_path: "{xdf_path_for_raw}"...')
+        try:
+            a_lab_obj = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_path_for_raw, should_load_full_file_data=True)
+        except ValueError as e:
+            if 'datetime' in str(e).lower() or 'UTC' in str(e):
+                logger.warning(f'\tSkipping raw XDF file load for "{stream_name}" with xdf_path: {xdf_path_for_raw}: LabRecorderXDF load failed (UTC/datetime issue): {e}')
+            else:
+                raise
+        
+        if a_lab_obj is not None:
+            a_raws_dict = a_lab_obj.datasets_dict or {}
+            logger.info(f'\traws_dict: {a_raws_dict}')
+
+        return a_lab_obj, a_raws_dict
+
+    # ==================================================================================================================================================================================================================================================================================== #
+    # BEGIN FUNCTION BODY                                                                                                                                                                                                                                                                  #
+    # ==================================================================================================================================================================================================================================================================================== #
 
     if len(streams_list) != len(xdf_file_paths):
         raise ValueError(f"streams_list length ({len(streams_list)}) must match xdf_file_paths length ({len(xdf_file_paths)})")
@@ -290,6 +330,9 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         all_detailed_dfs = [] ## #TODO 2026-03-02 08:56: - [ ] these detailed_dfs are being built synchronously in the following loop too, PERFORMANCE: defer this to an async call
         stream_type = None
         stream_info = None
+        raws_dict_dict: Dict[str, Dict[str, mne.io.raw]] = {} ## inner dict is DataModalityType.value
+        lab_obj_dict: Dict[str, Optional[LabRecorderXDF]] = {}
+
 
         for stream, file_path in stream_file_pairs:
             current_stream_type = stream['info']['type'][0]
@@ -405,23 +448,19 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         raws_dict = {}
 
         if enable_raw_xdf_processing:
-            from phopymnehelper.MNE_helpers import up_convert_raw_objects, up_convert_raw_obj
-            from phopymnehelper.EEG_data import EEGData
+            xdf_paths_for_raw = [v[1] for v in stream_file_pairs]
 
-            logger.info(f'enable_raw_xdf_processing is True so this stream will be processed as MNE raw...')
-            xdf_path_for_raw = stream_file_pairs[0][1]
-            logger.info(f'\ttrying to load raw XDF file load for stream_name: "{stream_name}" with xdf_path: "{xdf_path_for_raw}"...')
-            try:
-                lab_obj = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_path_for_raw, should_load_full_file_data=True)
-            except ValueError as e:
-                if 'datetime' in str(e).lower() or 'UTC' in str(e):
-                    logger.warning(f'\tSkipping raw XDF file load for "{stream_name}" with xdf_path: {xdf_path_for_raw}: LabRecorderXDF load failed (UTC/datetime issue): {e}')
-                else:
+            for a_xdf_path in xdf_paths_for_raw:
+                lab_obj_dict[a_xdf_path.name] = None
+                raws_dict_dict[a_xdf_path.name] = None
+                try:
+                    a_lab_obj, a_raws_dict = _subfn_process_xdf_file(xdf_path_for_raw=a_xdf_path)
+                    lab_obj_dict[a_xdf_path.name] = a_lab_obj
+                    raws_dict_dict[a_xdf_path.name] = a_raws_dict
+                except Exception as e:
                     raise
 
-            if lab_obj is not None:
-                raws_dict = lab_obj.datasets_dict or {}
-                logger.info(f'\traws_dict: {raws_dict}')
+
 
 
         # ==================================================================================================================================================================================================================================================================================== #
@@ -430,8 +469,13 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         if (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name):
             if has_valid_intervals and has_detailed_data:
                 motion_norm_dict = modality_channels_normalization_mode_dict.get('MOTION')
-                motion_raw_datasets = raws_dict.get(DataModalityType.MOTION.value, []) if raws_dict else None
-                datasource = MotionTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict=motion_norm_dict, lab_obj=lab_obj, raw_datasets=motion_raw_datasets)
+                # motion_raw_datasets = raws_dict.get(DataModalityType.MOTION.value, []) if raws_dict else None
+
+                # motion_raw_datasets: List[List[mne.io.raw]] = [raws_dict.get(DataModalityType.MOTION.value, [])  for k, raws_dict in raws_dict_dict.items()]
+                motion_raw_datasets: List[List[mne.io.raw]] = [raws_dict.get(DataModalityType.MOTION.value, [])  for k, raws_dict in raws_dict_dict.items()]
+
+                datasource = MotionTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict=motion_norm_dict,
+                    lab_obj=lab_obj, raw_datasets=motion_raw_datasets)
                 
                 if enable_raw_xdf_processing and (lab_obj is not None):
                     logger.info(f'\tMOTION Modality MNE raw processing...')

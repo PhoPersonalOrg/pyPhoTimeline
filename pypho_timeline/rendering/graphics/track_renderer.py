@@ -115,7 +115,12 @@ class TrackRenderer(QtCore.QObject):
         enable_time_crosshair = kwargs.pop('enable_time_crosshair', False)
         if enable_time_crosshair:
             self.enable_time_crosshair_overlay()
-    
+
+
+    def refresh_overview(self) -> None:
+        """Rebuild overview interval rectangles from the current datasource (e.g. after mutating ``intervals_df``)."""
+        self._update_overview()
+
 
     def _update_overview(self):
         """Update the overview interval rectangles."""
