@@ -1448,7 +1448,9 @@ class TimelineBuilder:
             assert a_detail_renderer is not None, f"Detail renderer is None for datasource: {datasource.custom_datasource_name}"
             #TODO 2026-03-28 06:30: - [ ] note `track_widget.set_track_renderer(a_detail_renderer)` was removed
             # track_widget.set_track_renderer(a_detail_renderer)
-            
+            # bottom_label_text: str = 'Time'
+            bottom_label_text: str = ''
+
             # Set the plot to show the full time range
             # Handle datetime objects directly
             if isinstance(timeline.total_data_start_time, (datetime, pd.Timestamp)):
@@ -1464,7 +1466,7 @@ class TimelineBuilder:
                     # a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0) ## performs So min and max (your timeline.total_data_start_time and timeline.total_data_end_time) are datetime objects. In Python, datetime + datetime is invalid (only datetime - datetime or datetime + timedelta are defined), so you get that TypeError.
                     a_plot_item.setXRange(unix_start, unix_end, padding=0)
 
-                a_plot_item.setLabel('bottom', 'Time')
+                a_plot_item.setLabel('bottom', bottom_label_text)
             elif (timeline.reference_datetime is not None):
                 # Timeline uses float timestamps with reference_datetime - convert to datetime then Unix timestamp
                 dt_start = float_to_datetime(timeline.total_data_start_time, timeline.reference_datetime)
@@ -1473,11 +1475,13 @@ class TimelineBuilder:
                 unix_start = datetime_to_unix_timestamp(dt_start)
                 unix_end = datetime_to_unix_timestamp(dt_end)
                 a_plot_item.setXRange(unix_start, unix_end, padding=0)
-                a_plot_item.setLabel('bottom', 'Time')
+                a_plot_item.setLabel('bottom', bottom_label_text)
             else:
                 # Fallback: use float timestamps directly
                 a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0)
-                a_plot_item.setLabel('bottom', 'Time', units='s')
+                a_plot_item.setLabel('bottom', bottom_label_text, units='s')
+
+            # a_plot_item.showLabel('bottom', False)
 
             a_plot_item.setYRange(0, 1, padding=0)
             a_plot_item.setLabel('left', datasource.custom_datasource_name)

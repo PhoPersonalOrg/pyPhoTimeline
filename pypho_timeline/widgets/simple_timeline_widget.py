@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from qtpy import QtWidgets, QtCore
 import pyqtgraph as pg
+
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, datetime_to_float, get_reference_datetime_from_xdf_header, unix_timestamp_to_datetime
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
@@ -26,6 +27,7 @@ from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 
+from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData, RenderPlots
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
@@ -782,10 +784,13 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
                 unix_start = datetime_to_unix_timestamp(dt_start)
                 unix_end = datetime_to_unix_timestamp(dt_end)
                 plot_item.setXRange(unix_start, unix_end, padding=0)
-                plot_item.setLabel('bottom', 'Time')
+                # plot_item.setLabel('bottom', 'Time')
+                plot_item.setLabel('bottom', '')
+
             else:
                 plot_item.setXRange(t_start, t_end, padding=0)
-                plot_item.setLabel('bottom', 'Time', units='s')
+                # plot_item.setLabel('bottom', 'Time', units='s')
+                plot_item.setLabel('bottom', '', units='s')
             plot_item.setYRange(0, 60, padding=0)
             plot_item.setLabel('left', track_name)
             plot_item.hideAxis('left')
