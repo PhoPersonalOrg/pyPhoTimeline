@@ -24,10 +24,11 @@ class SpectrogramChannelGroupConfig:
 
 
 EMOTIV_EPOC_X_SPECTROGRAM_GROUPS: List[SpectrogramChannelGroupConfig] = [
-    SpectrogramChannelGroupConfig(name='Frontal-L', channels=['AF3', 'F7', 'FC5', 'F3']),
-    SpectrogramChannelGroupConfig(name='Frontal-R', channels=['AF4', 'F8', 'FC6', 'F4']),
-    SpectrogramChannelGroupConfig(name='Posterior-L', channels=['T7', 'P7', 'O1']),
-    SpectrogramChannelGroupConfig(name='Posterior-R', channels=['T8', 'P8', 'O2']),
+    # SpectrogramChannelGroupConfig(name='Frontal-L', channels=['AF3', 'F7', 'FC5', 'F3']),
+    # SpectrogramChannelGroupConfig(name='Frontal-R', channels=['AF4', 'F8', 'FC6', 'F4']),
+    # SpectrogramChannelGroupConfig(name='Posterior-L', channels=['T7', 'P7', 'O1']),
+    # SpectrogramChannelGroupConfig(name='Posterior-R', channels=['T8', 'P8', 'O2']),
+    SpectrogramChannelGroupConfig(name='All', channels=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4']),
 ]
 
 # ==================================================================================================================================================================================================================================================================================== #
@@ -329,7 +330,7 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGTrackDatasource                                                                                                                                                                                                                                                                   #
 # ==================================================================================================================================================================================================================================================================================== #
-class EEGTrackDatasource(RawProvidingTrackDatasource):
+class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource):
     """TrackDatasource for EEG data with optional LabRecorderXDF / MNE raws (via RawProvidingTrackDatasource).
 
     Extends RawProvidingTrackDatasource for eeg-specific detail rendering and async detail loading.
@@ -338,7 +339,9 @@ class EEGTrackDatasource(RawProvidingTrackDatasource):
 
         from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
     """
-    
+    sigSourceComputeStarted = QtCore.Signal()
+    sigSourceComputeFinished = QtCore.Signal(bool)
+
     def __init__(self, intervals_df: pd.DataFrame, eeg_df: pd.DataFrame, custom_datasource_name: Optional[str]=None,
                  max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
@@ -488,6 +491,39 @@ class EEGTrackDatasource(RawProvidingTrackDatasource):
             lab_obj=lab_obj,
             raw_datasets=raw_datasets,
         )
+
+
+    # ==================================================================================================================================================================================================================================================================================== #
+    # ComputableDatasourceMixin Conformance                                                                                                                                                                                                                                                #
+    # ==================================================================================================================================================================================================================================================================================== #
+    def compute(self, **kwargs):
+        """ a function to perform recomputation of the datasource properties at runtime 
+        """
+        from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
+
+        logger.info(f'.compute(...) called.')
+        if len((self.raw_datasets or [])) < 1:
+            if self.parent() is not None:
+                if getattr(self.parent(), 'raw_datasets', None) is not None:
+                    self.raw_datasets = self.parent().raw_datasets
+        eeg_raw = self.raw_datasets[0]
+        ## TODO: Do computations here
+
+        self.sigSourceComputeStarted.emit()
+        # eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
+        # self._spectrogram_result = eeg_comps_result["spectogram"]
+        pass
+        self.on_recompute_finished()
+
+
+    def on_compute_finished(self, **kwargs):
+        """ called to indicate that a recompute is finished """
+        was_success: bool = True # (self._spectrogram_result is not None)
+        # print(f'.on_recompute_finished(was_success: {was_success})')
+        logger.info(f'.on_recompute_finished(was_success: {was_success})')
+        self.sigSourceComputeFinished.emit(was_success)
+
+
 
 
 # ==================================================================================================================================================================================================================================================================================== #

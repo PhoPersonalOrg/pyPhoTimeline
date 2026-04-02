@@ -405,6 +405,9 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         raws_dict = {}
 
         if enable_raw_xdf_processing:
+            from phopymnehelper.MNE_helpers import up_convert_raw_objects, up_convert_raw_obj
+            from phopymnehelper.EEG_data import EEGData
+
             logger.info(f'enable_raw_xdf_processing is True so this stream will be processed as MNE raw...')
             xdf_path_for_raw = stream_file_pairs[0][1]
             logger.info(f'\ttrying to load raw XDF file load for stream_name: "{stream_name}" with xdf_path: "{xdf_path_for_raw}"...')
