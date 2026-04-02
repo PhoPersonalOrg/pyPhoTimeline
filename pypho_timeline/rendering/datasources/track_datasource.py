@@ -922,12 +922,12 @@ class ComputableDatasourceMixin:
 
         """
         raise NotImplementedError(f'Implementors must override to perform their computations')
-        self.on_recompute_finished()
+        self.on_compute_finished()
 
 
     def on_compute_finished(self, **kwargs):
         """ called to indicate that a recompute is finished """
-        print(f'on_recompute_finished()')
+        print(f'on_compute_finished()')
 
 
 __all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource', 'IntervalProvidingTrackDatasource', 'RawProvidingTrackDatasource']
