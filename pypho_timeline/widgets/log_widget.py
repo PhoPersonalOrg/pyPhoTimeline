@@ -133,9 +133,9 @@ class LogWidget(QtWidgets.QWidget):
         self.log_display = QtWidgets.QPlainTextEdit()
         self.log_display.setReadOnly(True)
         # Use monospace font for better log readability
-        font = QtGui.QFont("Consolas", 9)
+        font = QtGui.QFont("Consolas", 6)
         if not font.exactMatch():
-            font = QtGui.QFont("Courier", 9)
+            font = QtGui.QFont("Courier", 6)
         self.log_display.setFont(font)
         self.log_display.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
         
