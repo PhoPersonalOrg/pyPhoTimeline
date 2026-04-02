@@ -33,6 +33,7 @@ from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPl
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
 
 from pypho_timeline.widgets.track_options_panels import apply_track_options_document, build_track_options_document
+from pypho_timeline.utils.window_icon import ensure_timeline_application_window_icon, timeline_window_icon
 
 if TYPE_CHECKING:
     ## typehinting only imports here
@@ -179,8 +180,10 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         
         # Setup UI (this will call add_example_tracks which uses the mixins)
         self.setupUI()
-        
-        
+        self.setWindowIcon(timeline_window_icon())
+        ensure_timeline_application_window_icon()
+
+
     def setupUI(self):
         """Setup the user interface."""
         # Create main layout

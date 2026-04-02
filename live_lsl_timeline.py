@@ -54,6 +54,7 @@ from pypho_timeline.rendering.datasources.specific.lsl import (
     LiveMotionTrackDatasource,
 )
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
+from pypho_timeline.utils.window_icon import ensure_timeline_application_window_icon, timeline_window_icon
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -92,6 +93,8 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
     def __init__(self, eeg_datasource: LiveEEGTrackDatasource, motion_datasource: LiveMotionTrackDatasource, window_seconds: float = WINDOW_SECONDS, buffer_seconds: float = BUFFER_SECONDS, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Live LSL Timeline – EEG & Motion (backscroll enabled)")
+        self.setWindowIcon(timeline_window_icon())
+        ensure_timeline_application_window_icon()
         self.resize(1200, 600)
 
         self._eeg_ds = eeg_datasource

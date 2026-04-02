@@ -48,4 +48,8 @@ dev = [
 packages = ["pypho_timeline", "pypho_timeline._embed"]
 
 [tool.setuptools.package-data]
-pypho_timeline = ["py.typed"]
+pypho_timeline = [
+    "py.typed",
+    "resources/pyPhoTimeline_Icon_Screenshot.ico",
+    "resources/pyPhoTimeline_Icon_Screenshot.png",
+]

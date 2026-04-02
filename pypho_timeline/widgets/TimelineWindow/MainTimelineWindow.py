@@ -10,6 +10,7 @@ from qtpy.QtWidgets import QApplication, QMainWindow, QVBoxLayout
 ## IMPORTS:
 from pypho_timeline.widgets.log_widget import LogWidget, QtLogHandler
 from pypho_timeline.utils.logging_util import get_rendering_logger
+from pypho_timeline.utils.window_icon import ensure_timeline_application_window_icon, timeline_window_icon
 
 ## Define the .ui file path
 path = os.path.dirname(os.path.abspath(__file__))
@@ -51,6 +52,8 @@ class MainTimelineWindow(QMainWindow):
             self.actionGoToNext.triggered.connect(self._on_go_to_next)
         if hasattr(self, "actionGoToLatest"):
             self.actionGoToLatest.triggered.connect(self._on_go_to_latest)
+        self.setWindowIcon(timeline_window_icon())
+        ensure_timeline_application_window_icon()
 
 
     def _on_go_to_earliest(self):
