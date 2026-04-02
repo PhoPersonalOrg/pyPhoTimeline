@@ -1202,7 +1202,7 @@ class TimelineBuilder:
                     try:
                         spec_result = compute_raw_eeg_spectrogram(raw)
                         if eeg_datasource is not None:
-                            spec_datasource_kwargs = dict(lab_obj=eeg_datasource.lab_xdf_obj, raw_datasets=eeg_datasource.raw_datasets, parent=eeg_datasource)
+                            spec_datasource_kwargs = dict(lab_obj_dict=eeg_datasource.lab_obj_dict, raw_datasets_dict=eeg_datasource.raw_datasets_dict, parent=eeg_datasource)
                         else:
                             spec_datasource_kwargs = dict()
 
