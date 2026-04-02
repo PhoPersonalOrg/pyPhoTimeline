@@ -363,7 +363,7 @@ class MotionTrackDatasource(RawProvidingTrackDatasource):
     def __init__(self, intervals_df: pd.DataFrame, motion_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
-                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None, lab_obj: Optional[LabRecorderXDF] = None, raw_datasets: Optional[List[mne.io.Raw]] = None, parent: Optional[QtCore.QObject] = None,
+                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, parent: Optional[QtCore.QObject] = None,
                  bad_intervals_df: Optional[pd.DataFrame] = None, bad_intervals_time_origin_unix: Optional[float] = None,
                  exclude_bad_from_detail: bool = True, bad_overlay_alpha: float = 0.9):
         """Initialize with motion data and intervals.
@@ -374,8 +374,8 @@ class MotionTrackDatasource(RawProvidingTrackDatasource):
             custom_datasource_name: Custom name for this datasource (optional)
             max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
             enable_downsampling: Whether to enable downsampling. Default: True
-            lab_obj: Optional LabRecorderXDF handle for the loaded XDF session.
-            raw_datasets: Optional list of MNE Raw objects for this track's modality.
+            lab_obj_dict: Map of source id to optional LabRecorderXDF for that file.
+            raw_datasets_dict: Map of source id to optional list of MNE Raw objects for that source.
             bad_intervals_df: Optional intervals to mark and optionally exclude (see ``normalize_motion_bad_intervals_df``).
             bad_intervals_time_origin_unix: Required when bad_intervals_df uses MNE ``onset``/``duration`` (recording start, Unix s).
             exclude_bad_from_detail: If True, drop samples whose time falls inside a bad interval before downsampling.
@@ -383,7 +383,7 @@ class MotionTrackDatasource(RawProvidingTrackDatasource):
         """
         if custom_datasource_name is None:
             custom_datasource_name = "MotionTrack"
-        super().__init__(intervals_df, detailed_df=motion_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, lab_obj=lab_obj, raw_datasets=raw_datasets, parent=parent)
+        super().__init__(intervals_df, detailed_df=motion_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict, parent=parent)
 
         self.fallback_normalization_mode = fallback_normalization_mode
         self.normalization_mode_dict = normalization_mode_dict
@@ -394,6 +394,8 @@ class MotionTrackDatasource(RawProvidingTrackDatasource):
         self._bad_intervals_key_suffix: str = BadMotionDataFrame.motion_bad_intervals_key_suffix(self._bad_intervals_unix_df)
         self._motion_plot_detail_renderer: Optional[MotionPlotDetailRenderer] = None
 
+
+    
 
     def set_bad_intervals(self, bad_intervals_df: Optional[pd.DataFrame], bad_intervals_time_origin_unix: Optional[float] = None, *, emit_changed: bool = True) -> None:
         """Replace bad/exclusion intervals. Updates the cached detail renderer if present.
@@ -472,7 +474,7 @@ class MotionTrackDatasource(RawProvidingTrackDatasource):
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None,
             max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True,
             fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
-            bad_intervals_df: Optional[pd.DataFrame] = None, bad_intervals_time_origin_unix: Optional[float] = None, exclude_bad_from_detail: bool = True, bad_overlay_alpha: float = 0.9, lab_obj: Optional[LabRecorderXDF] = None, raw_datasets: Optional[List[mne.io.Raw]] = None) -> 'MotionTrackDatasource':
+            bad_intervals_df: Optional[pd.DataFrame] = None, bad_intervals_time_origin_unix: Optional[float] = None, exclude_bad_from_detail: bool = True, bad_overlay_alpha: float = 0.9, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None) -> 'MotionTrackDatasource':
         """Create a MotionTrackDatasource by merging data from multiple sources.
         
         Args:
@@ -488,8 +490,8 @@ class MotionTrackDatasource(RawProvidingTrackDatasource):
             bad_intervals_time_origin_unix: Recording start in Unix seconds when using MNE-style onsets.
             exclude_bad_from_detail: Drop samples in bad intervals before downsampling.
             bad_overlay_alpha: Opacity of the dark overlay bands in the detail view.
-            lab_obj: Optional LabRecorderXDF handle for the loaded XDF session.
-            raw_datasets: Optional list of MNE Raw objects for this track's modality.
+            lab_obj_dict: Map of source id to optional LabRecorderXDF for that file.
+            raw_datasets_dict: Map of source id to optional list of MNE Raw objects for that source.
             
         Returns:
             MotionTrackDatasource instance with merged data
@@ -522,8 +524,8 @@ class MotionTrackDatasource(RawProvidingTrackDatasource):
             bad_intervals_time_origin_unix=bad_intervals_time_origin_unix,
             exclude_bad_from_detail=exclude_bad_from_detail,
             bad_overlay_alpha=bad_overlay_alpha,
-            lab_obj=lab_obj,
-            raw_datasets=raw_datasets,
+            lab_obj_dict=lab_obj_dict,
+            raw_datasets_dict=raw_datasets_dict,
         )
 
 

@@ -587,7 +587,7 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
     
     def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, video_paths: Optional[List[Union[Path, str]]] = None,
             custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False,
-            lab_obj: Optional[LabRecorderXDF] = None, raw_datasets: Optional[List[mne.io.Raw]] = None, parent: Optional[QtCore.QObject] = None):
+            lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, parent: Optional[QtCore.QObject] = None):
         """Initialize with video intervals.
 
         Args:
@@ -600,8 +600,8 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
             frames_per_second: Target frame rate for thumbnail extraction (default: 10.0)
             thumbnail_size: Optional (width, height) tuple for resizing frames (default: (128, 128))
             use_vispy_renderer: If True, use high-performance vispy renderer instead of pyqtgraph (default: False)
-            lab_obj: Optional LabRecorderXDF handle for the loaded XDF session (optional)
-            raw_datasets: Optional list of MNE Raw objects for this track's modality (optional)
+            lab_obj_dict: Map of source id to optional LabRecorderXDF (optional)
+            raw_datasets_dict: Map of source id to optional list of MNE Raw objects (optional)
         """
         # Determine which input method to use
         if video_intervals_df is not None:
@@ -672,7 +672,7 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
         
         if custom_datasource_name is None:
             custom_datasource_name = "VideoTrack"
-        super().__init__(intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name, lab_obj=lab_obj, raw_datasets=raw_datasets, parent=parent)
+        super().__init__(intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name, lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict, parent=parent)
 
         self.video_folder_path = video_folder_path
         
