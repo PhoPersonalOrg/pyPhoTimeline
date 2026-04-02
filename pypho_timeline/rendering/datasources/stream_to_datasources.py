@@ -464,6 +464,12 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             if has_valid_intervals and has_detailed_data:
                 eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
                 eeg_raw_datasets = raws_dict.get(DataModalityType.EEG.value, []) if raws_dict else None  # type: ignore[arg-type]  # xdf_files keys datasets_dict by enum .value at runtime
+                if eeg_raw_datasets is not None:
+
+                    eeg_raw_datasets = up_convert_raw_objects(eeg_raw_datasets) # [update_eeg_raw(an_eeg_raw) for an_eeg_raw in eeg_raw_datasets]
+                    EEGData.set_montage(datasets_EEG=eeg_raw_datasets)
+
+
                 datasource = EEGTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict,
                                                                       lab_obj=lab_obj, raw_datasets=eeg_raw_datasets)
                 if enable_raw_xdf_processing and (lab_obj is not None):
