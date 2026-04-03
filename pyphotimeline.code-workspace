@@ -15,17 +15,17 @@
     ],
 	"settings": {
 		"workbench.colorCustomizations": {
-            "editor.lineHighlightBackground": "#E67E002d",
-            "editor.lineHighlightBorder": "#C8E6C91f",
-            "scrollbarSlider.background": "#C8E6C957",
-            "scrollbarSlider.hoverBackground": "#A5D6A782",
-            "scrollbarSlider.activeBackground": "#C5E1A5df",
-            "notebook.outputContainerBackgroundColor": "#D9770050",
-            "notebook.outputContainerBorderColor": "#E67E00",
-            "notebook.focusedCellBorder": "#C8E6C9da",
-            "notebook.focusedEditorBorder": "#C5E1A5",
-            "notebook.inactiveFocusedCellBorder": "#C8E6C963",
-            "sideBarSectionHeader.border": "#C8E6C9"
+            // "editor.lineHighlightBackground": "#E67E002d",
+            // "editor.lineHighlightBorder": "#C8E6C91f",
+            // "scrollbarSlider.background": "#C8E6C957",
+            // "scrollbarSlider.hoverBackground": "#A5D6A782",
+            // "scrollbarSlider.activeBackground": "#C5E1A5df",
+            // "notebook.outputContainerBackgroundColor": "#D9770050",
+            // "notebook.outputContainerBorderColor": "#E67E00",
+            // "notebook.focusedCellBorder": "#C8E6C9da",
+            // "notebook.focusedEditorBorder": "#C5E1A5",
+            // "notebook.inactiveFocusedCellBorder": "#C8E6C963",
+            // "sideBarSectionHeader.border": "#C8E6C9"
         },
 		"git.ignoreLimitWarning": true,
 		"python.languageServer": "None",

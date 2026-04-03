@@ -96,15 +96,15 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
         # Sort by time
         df_sorted = detail_data.sort_values('t')
 
-        # Compute interval bounds as unix seconds so we can clamp log events
-        interval_t_start_unix: Optional[float] = None
-        interval_t_end_unix: Optional[float] = None
-        if interval is not None and len(interval) > 0 and 't_start' in interval.columns and 't_duration' in interval.columns:
-            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-            _t_start_raw = interval['t_start'].iloc[0]
-            _t_dur = float(interval['t_duration'].iloc[0])
-            interval_t_start_unix = float(datetime_to_unix_timestamp(_t_start_raw)) if isinstance(_t_start_raw, (datetime, pd.Timestamp)) else float(_t_start_raw)
-            interval_t_end_unix = interval_t_start_unix + _t_dur
+        # # Compute interval bounds as unix seconds so we can clamp log events
+        # interval_t_start_unix: Optional[float] = None
+        # interval_t_end_unix: Optional[float] = None
+        # if interval is not None and len(interval) > 0 and 't_start' in interval.columns and 't_duration' in interval.columns:
+        #     from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+        #     _t_start_raw = interval['t_start'].iloc[0]
+        #     _t_dur = float(interval['t_duration'].iloc[0])
+        #     interval_t_start_unix = float(datetime_to_unix_timestamp(_t_start_raw)) if isinstance(_t_start_raw, (datetime, pd.Timestamp)) else float(_t_start_raw)
+        #     interval_t_end_unix = interval_t_start_unix + _t_dur
 
         # Create a TextItem for each row, displaying all channel values
         for idx, row in df_sorted.iterrows():
@@ -116,10 +116,10 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
             else:
                 t_value = float(t_value_raw)
 
-            # Skip events that fall outside the owning interval bounds
-            if interval_t_start_unix is not None and interval_t_end_unix is not None:
-                if t_value < interval_t_start_unix or t_value > interval_t_end_unix:
-                    continue
+            # # Skip events that fall outside the owning interval bounds
+            # if interval_t_start_unix is not None and interval_t_end_unix is not None:
+            #     if t_value < interval_t_start_unix or t_value > interval_t_end_unix:
+            #         continue
             
             # Create vertical line at message time if enabled
             if self.enable_lines:
