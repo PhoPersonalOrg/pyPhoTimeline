@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from qtpy import QtCore
 
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
 
 from pyphocorehelpers.function_helpers import function_attributes
@@ -260,7 +260,7 @@ class SpecificDockWidgetManipulatingMixin:
                     
                 
         """
-        import pyqtgraph as pg
+        import pypho_timeline.EXTERNAL.pyqtgraph as pg
 
         if sync_mode is None:
             sync_mode = SynchronizedPlotMode.TO_WINDOW

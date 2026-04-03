@@ -3,7 +3,7 @@ from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 
 from pypho_timeline._embed.interval_datasource import IntervalsDatasource, _renaming_synonym_columns_if_needed
 

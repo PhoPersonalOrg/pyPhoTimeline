@@ -8,7 +8,7 @@ from qtpy import QtCore, QtWidgets
 import nptyping as ND
 from nptyping import NDArray
 import numpy as np
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, create_am_pm_date_axis, unix_timestamp_to_datetime
 from pyphocorehelpers.DataStructure.general_parameter_containers import VisualizationParameters, RenderPlotsData, RenderPlots
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots

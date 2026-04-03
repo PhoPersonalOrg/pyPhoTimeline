@@ -2,7 +2,7 @@ import sys
 from copy import deepcopy
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 from qtpy import QtCore, QtGui, QtWidgets
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 
 from pypho_timeline._embed.mixins.SelectableItemMixin import SelectableItemMixin
 
