@@ -199,10 +199,7 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
         # Extract t_values aligned with normalized_channel_df's index to ensure shape matches
         # normalized_channel_df may have fewer rows due to index intersection during normalization
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
-        if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
-            t_values = np.asarray(datetime_to_unix_timestamp(t_col_aligned.to_list()), dtype=float)
-        else:
-            t_values = t_col_aligned.to_numpy(dtype=float, copy=False)
+        t_values = t_col_aligned.to_numpy(dtype=float, copy=False)
 
         # Keep detailed EEG x-values in the owning interval bounds; if there is no overlap,
         # fallback to evenly rebasing samples into [t_start, t_end] to prevent visual drift.

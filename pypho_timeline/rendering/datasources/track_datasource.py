@@ -22,7 +22,6 @@ from qtpy import QtCore
 import mne
 from pypho_timeline.rendering.datasources.interval_datasource import IntervalsDatasource
 import pyqtgraph as pg
-from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime
 from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
 from phopymnehelper.helpers.dataframe_accessor_helpers import MaskedValidDataFrameAccessor
 import phopymnehelper.type_aliases as types
@@ -31,6 +30,45 @@ logger = get_rendering_logger(__name__)
 
 
 _UNCHANGED_DOWNSAMPLING = object()
+
+
+def _first_valid_scalar(series: pd.Series) -> Any:
+    valid_values = series.dropna()
+    return valid_values.iloc[0] if len(valid_values) > 0 else None
+
+
+def _series_looks_datetime(series: pd.Series) -> bool:
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return True
+    first_valid = _first_valid_scalar(series)
+    return isinstance(first_valid, (datetime, pd.Timestamp, np.datetime64))
+
+
+def _series_looks_timedelta(series: pd.Series) -> bool:
+    if pd.api.types.is_timedelta64_dtype(series):
+        return True
+    first_valid = _first_valid_scalar(series)
+    return isinstance(first_valid, (timedelta, pd.Timedelta, np.timedelta64))
+
+
+def _normalize_time_series_to_unix_seconds(series: pd.Series) -> pd.Series:
+    if _series_looks_datetime(series):
+        dt_series = pd.to_datetime(series, utc=True, errors='coerce')
+        normalized_series = pd.Series(np.nan, index=series.index, dtype=float)
+        valid_mask = dt_series.notna()
+        normalized_series.loc[valid_mask] = (dt_series.loc[valid_mask].astype('int64') / 1e9).astype(float)
+        return normalized_series
+    return pd.to_numeric(series, errors='coerce').astype(float)
+
+
+def _normalize_duration_series_to_seconds(series: pd.Series) -> pd.Series:
+    if _series_looks_timedelta(series):
+        td_series = pd.to_timedelta(series, errors='coerce')
+        normalized_series = pd.Series(np.nan, index=series.index, dtype=float)
+        valid_mask = td_series.notna()
+        normalized_series.loc[valid_mask] = td_series.loc[valid_mask].dt.total_seconds().astype(float)
+        return normalized_series
+    return pd.to_numeric(series, errors='coerce').astype(float)
 
 
 
@@ -387,19 +425,22 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """
         super().__init__(parent=parent)
         self._detail_renderer = detail_renderer
+        intervals_df = intervals_df.copy()
+        if 't_start' in intervals_df.columns:
+            intervals_df['t_start'] = _normalize_time_series_to_unix_seconds(intervals_df['t_start'])
+        if 't_duration' in intervals_df.columns:
+            intervals_df['t_duration'] = _normalize_duration_series_to_seconds(intervals_df['t_duration'])
+        if 't_end' in intervals_df.columns:
+            intervals_df['t_end'] = _normalize_time_series_to_unix_seconds(intervals_df['t_end'])
+        elif ('t_start' in intervals_df.columns) and ('t_duration' in intervals_df.columns):
+            intervals_df['t_end'] = intervals_df['t_start'] + intervals_df['t_duration']
+
+        if detailed_df is not None:
+            detailed_df = detailed_df.copy()
+            if 't' in detailed_df.columns:
+                detailed_df['t'] = _normalize_time_series_to_unix_seconds(detailed_df['t'])
         
         self.detailed_df = detailed_df
-        
-        if ('t_start_dt' not in intervals_df) or ('t_end_dt' not in intervals_df):
-            intervals_df['t_start_dt'] = intervals_df['t_start'].map(lambda x: unix_timestamp_to_datetime(x))
-            if 't_end' in intervals_df.columns:
-                intervals_df['t_end_dt'] = intervals_df['t_end'].map(lambda x: unix_timestamp_to_datetime(x))
-            elif 't_duration' in intervals_df.columns:
-                intervals_df['t_end_dt'] = intervals_df['t_start_dt'] + pd.to_timedelta(intervals_df['t_duration'], unit='s')
-            else:
-                raise ValueError("intervals_df must have either 't_end' or 't_duration' to compute t_end_dt")
-            # Change column type to datetime64[ns] for columns: 't_start_dt', 't_end_dt' -- this is so they can be matched against `detailed_df['t']`
-            intervals_df = intervals_df.astype({'t_start_dt': 'datetime64[ns]', 't_end_dt': 'datetime64[ns]'})
 
         self.intervals_df = intervals_df.copy()
         
@@ -538,119 +579,18 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """
         if self.detailed_df is None:
             return pd.DataFrame()  # Return empty DataFrame if no position data available
-        
-        t_start_col_name: str = 't_start_dt'
-        t_end_col_name: str = 't_end_dt'
 
-
-        # t_start = interval['t_start']
-        t_start = interval[t_start_col_name]        
-        t_end = interval[t_end_col_name]
-
-        # Check if using datetime in intervals_df
-        intervals_is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df[t_start_col_name])
-        
-        # Check if detailed_df 't' column is datetime
-        detailed_is_datetime = False
-        if 't' in self.detailed_df.columns:
-            detailed_is_datetime = pd.api.types.is_datetime64_any_dtype(self.detailed_df['t'])
-        
-        # # Calculate t_end based on intervals_df type
-        # if intervals_is_datetime:
-        #     t_end = t_start + pd.to_timedelta(interval['t_duration'], unit='s')
-        # else:
-        #     t_end = t_start + interval['t_duration']
-
-        
-        # Ensure t_start and t_end match the dtype of detailed_df['t'] for comparison
-        if 't' in self.detailed_df.columns:
-            # if detailed_is_datetime:
-            #     # Check if detailed_df['t'] is timezone-aware and get its timezone
-            #     detailed_tz = None
-            #     detailed_tz_aware = False
-            #     # Check dtype first (for DatetimeTZDtype)
-            #     if hasattr(self.detailed_df['t'].dtype, 'tz') and self.detailed_df['t'].dtype.tz is not None:
-            #         detailed_tz = self.detailed_df['t'].dtype.tz
-            #         detailed_tz_aware = True
-            #     else:
-            #         # Check by sampling a value (for regular datetime64 that might have timezone-aware values)
-            #         try:
-            #             if len(self.detailed_df) > 0:
-            #                 sample_val = self.detailed_df['t'].iloc[0]
-            #                 if isinstance(sample_val, pd.Timestamp) and sample_val.tz is not None:
-            #                     detailed_tz = sample_val.tz
-            #                     detailed_tz_aware = True
-            #         except (IndexError, AttributeError, TypeError):
-            #             pass
-                
-            #     # Convert t_start and t_end to datetime if they're not already
-            #     if not isinstance(t_start, (datetime, pd.Timestamp)):
-            #         if isinstance(t_start, (int, float)):
-            #             if detailed_tz_aware and detailed_tz is not None:
-            #                 t_start = pd.Timestamp.fromtimestamp(t_start, tz=detailed_tz)
-            #             else:
-            #                 t_start = pd.Timestamp.fromtimestamp(t_start)
-            #         else:
-            #             t_start = pd.Timestamp(t_start)
-            #             # After conversion, ensure timezone matches
-            #             if detailed_tz_aware and detailed_tz is not None:
-            #                 if t_start.tzinfo is None:
-            #                     t_start = t_start.tz_localize(detailed_tz)
-            #                 elif t_start.tzinfo != detailed_tz:
-            #                     t_start = t_start.tz_convert(detailed_tz)
-            #             else:
-            #                 if t_start.tzinfo is not None:
-            #                     t_start = t_start.tz_convert('UTC').tz_localize(None)
-            #     else:
-            #         # Ensure timezone awareness matches detailed_df
-            #         if detailed_tz_aware and detailed_tz is not None:
-            #             if t_start.tzinfo is None:
-            #                 t_start = t_start.tz_localize(detailed_tz)
-            #             elif t_start.tzinfo != detailed_tz:
-            #                 t_start = t_start.tz_convert(detailed_tz)
-            #         else:
-            #             if t_start.tzinfo is not None:
-            #                 # Convert to UTC then remove timezone to make it naive
-            #                 t_start = t_start.tz_convert('UTC').tz_localize(None)
-                
-            #     if not isinstance(t_end, (datetime, pd.Timestamp)):
-            #         if isinstance(t_end, (int, float)):
-            #             if detailed_tz_aware and detailed_tz is not None:
-            #                 t_end = pd.Timestamp.fromtimestamp(t_end, tz=detailed_tz)
-            #             else:
-            #                 t_end = pd.Timestamp.fromtimestamp(t_end)
-            #         else:
-            #             t_end = pd.Timestamp(t_end)
-            #             # After conversion, ensure timezone matches
-            #             if detailed_tz_aware and detailed_tz is not None:
-            #                 if t_end.tzinfo is None:
-            #                     t_end = t_end.tz_localize(detailed_tz)
-            #                 elif t_end.tzinfo != detailed_tz:
-            #                     t_end = t_end.tz_convert(detailed_tz)
-            #             else:
-            #                 if t_end.tzinfo is not None:
-            #                     t_end = t_end.tz_convert('UTC').tz_localize(None)
-            #     else:
-            #         # Ensure timezone awareness matches detailed_df
-            #         if detailed_tz_aware and detailed_tz is not None:
-            #             if t_end.tzinfo is None:
-            #                 t_end = t_end.tz_localize(detailed_tz)
-            #             elif t_end.tzinfo != detailed_tz:
-            #                 t_end = t_end.tz_convert(detailed_tz)
-            #         else:
-            #             if t_end.tzinfo is not None:
-            #                 # Convert to UTC then remove timezone to make it naive
-            #                 t_end = t_end.tz_convert('UTC').tz_localize(None)
-            # else:
-            #     # Convert t_start and t_end to float if they're datetime
-            #     if isinstance(t_start, (datetime, pd.Timestamp)):
-            #         t_start = t_start.timestamp() if hasattr(t_start, 'timestamp') else pd.Timestamp(t_start).timestamp()
-            #     if isinstance(t_end, (datetime, pd.Timestamp)):
-            #         t_end = t_end.timestamp() if hasattr(t_end, 'timestamp') else pd.Timestamp(t_end).timestamp()
-            
-            mask = (self.detailed_df['t'] >= t_start) & (self.detailed_df['t'] < t_end)
-        else:
+        if 't' not in self.detailed_df.columns:
             mask = pd.Series([False] * len(self.detailed_df))
+        else:
+            t_start = interval.get('t_start', 0.0)
+            t_duration = interval.get('t_duration', 0.0)
+            t_end = interval.get('t_end', float(t_start) + float(t_duration))
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                t_start = _normalize_time_series_to_unix_seconds(pd.Series([t_start])).iloc[0]
+            if isinstance(t_end, (datetime, pd.Timestamp)):
+                t_end = _normalize_time_series_to_unix_seconds(pd.Series([t_end])).iloc[0]
+            mask = (self.detailed_df['t'] >= float(t_start)) & (self.detailed_df['t'] < float(t_end))
         
         result_df = self.detailed_df[mask].copy()
         result_df = self._post_slice_detailed_dataframe(result_df, interval)
@@ -699,85 +639,7 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
             
     def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
         """Get cache key for interval (single-row DataFrame or Series)."""
-        if isinstance(interval, pd.DataFrame):
-            interval = interval.iloc[0]
-        active_t_start = None
-        t_start_dt = interval.get('t_start_dt', interval.iloc[0] if 't_start_dt' in interval.index else None)
-        active_t_start = t_start_dt
-        if t_start_dt is None:
-            t_start = interval.get('t_start', interval.iloc[0] if 't_start' in interval.index else None)
-            active_t_start = t_start
-        t_duration = interval.get('t_duration', interval.iloc[0] if 't_duration' in interval.index else None)
-        
-        assert active_t_start is not None
-        # Convert pandas scalars/numpy types to Python native types
-        # This is critical for proper type checking and formatting
-        if hasattr(active_t_start, 'item'):
-            try:
-                active_t_start = active_t_start.item()
-            except (ValueError, AttributeError):
-                pass  # Not a scalar, keep as-is
-        if hasattr(t_duration, 'item'):
-            try:
-                t_duration = t_duration.item()
-            except (ValueError, AttributeError):
-                pass  # Not a scalar, keep as-is
-        
-        # Handle datetime objects in cache key - check datetime types first
-        t_start_str = None
-        try:
-            # Check if it's a datetime/Timestamp
-            if isinstance(active_t_start, (datetime, pd.Timestamp)):
-                timestamp_value = active_t_start.timestamp()
-                # t_start_str = f"{timestamp_value:.3f}"
-                t_start_str = str(timestamp_value)
-            else:
-                # Try to convert to Timestamp (handles string dates, numpy datetime64, etc.)
-                try:
-                    ts = pd.Timestamp(active_t_start)
-                    # t_start_str = f"{ts.timestamp():.3f}"
-                    t_start_str = str(ts.timestamp())
-                except (ValueError, TypeError, AttributeError):
-                    # Not a datetime, try as numeric
-                    try:
-                        t_start_float = float(active_t_start)
-                        # t_start_str = f"{t_start_float:.3f}"
-                        t_start_str = str(t_start_float)
-                    except (ValueError, TypeError):
-                        # Last resort: use string representation
-                        t_start_str = str(active_t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
-        except Exception as e:
-            # Ultimate fallback
-            logger.error(f"Error formatting t_start for cache key: {active_t_start} (type: {type(active_t_start)}), error: {e}")
-            t_start_str = str(active_t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
-        
-        # Handle duration/timedelta objects
-        t_duration_str = None
-        try:
-            if isinstance(t_duration, timedelta):
-                t_duration_str = f"{t_duration.total_seconds()}"
-            elif isinstance(t_duration, pd.Timedelta):
-                t_duration_str = f"{t_duration.total_seconds()}"
-            else:
-                # Try to convert to Timedelta (handles string durations, numpy timedelta64, etc.)
-                try:
-                    td = pd.Timedelta(t_duration)
-                    t_duration_str = f"{td.total_seconds()}"
-                except (ValueError, TypeError, AttributeError):
-                    # Not a timedelta, try as numeric
-                    try:
-                        t_duration_float = float(t_duration)
-                        t_duration_str = f"{t_duration_float}"
-                    except (ValueError, TypeError):
-                        # Last resort: use string representation
-                        t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
-        except Exception as e:
-            # Ultimate fallback
-            logger.error(f"Error formatting t_duration for cache key: {t_duration} (type: {type(t_duration)}), error: {e}")
-            t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
-        
-        result_key = f"{self.custom_datasource_name}_{t_start_str}_{t_duration_str}"
-        return result_key
+        return super().get_detail_cache_key(interval)
 
 
     @classmethod

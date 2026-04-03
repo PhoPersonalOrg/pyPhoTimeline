@@ -108,13 +108,7 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
 
         # Create a TextItem for each row, displaying all channel values
         for idx, row in df_sorted.iterrows():
-            t_value_raw = row['t']
-            # Convert datetime to Unix timestamp if needed
-            if isinstance(t_value_raw, (datetime, pd.Timestamp)):
-                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-                t_value = datetime_to_unix_timestamp(t_value_raw)
-            else:
-                t_value = float(t_value_raw)
+            t_value = float(row['t'])
 
             # # Skip events that fall outside the owning interval bounds
             # if interval_t_start_unix is not None and interval_t_end_unix is not None:
@@ -182,16 +176,8 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
             if has_valid_detail_data:
                 # Try to get time column: use 't' if present
                 if 't' in detail_data.columns:
-                    t_min = detail_data['t'].min()
-                    t_max = detail_data['t'].max()
-                    # Convert datetime to Unix timestamp if needed
-                    if isinstance(t_min, (datetime, pd.Timestamp)):
-                        from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-                        t_start = datetime_to_unix_timestamp(t_min)
-                        t_end = datetime_to_unix_timestamp(t_max)
-                    else:
-                        t_start = float(t_min)
-                        t_end = float(t_max)
+                    t_start = float(detail_data['t'].min())
+                    t_end = float(detail_data['t'].max())
                 else:
                     # Fallback: use DataFrame index if it is numeric and sorted
                     try:

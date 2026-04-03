@@ -144,13 +144,7 @@ class IntervalPlotDetailRenderer(DetailRenderer):
         # Sort by time
         df_sorted = detail_data.sort_values('t')
         
-        # Convert datetime 't' column to Unix timestamps for plotting
-        t_col = df_sorted['t']
-        if pd.api.types.is_datetime64_any_dtype(t_col):
-            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-            t_values = t_col.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
-        else:
-            t_values = t_col.values
+        t_values = df_sorted['t'].to_numpy(dtype=float, copy=False)
         
         x_values = df_sorted['x'].values
         
@@ -336,13 +330,7 @@ class DataframePlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, Deta
         # Sort by time
         df_sorted = detail_data.sort_values('t')
         
-        # Convert datetime 't' column to Unix timestamps for plotting
-        t_col = df_sorted['t']
-        if pd.api.types.is_datetime64_any_dtype(t_col):
-            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-            t_values = np.asarray(datetime_to_unix_timestamp(t_col.to_list()), dtype=float)
-        else:
-            t_values = t_col.to_numpy(dtype=float, copy=False)
+        t_values = df_sorted['t'].to_numpy(dtype=float, copy=False)
 
         # Clamp x-values to owning interval bounds to prevent visual drift
         if interval is not None and len(interval) > 0 and 't_start' in interval.columns and 't_duration' in interval.columns and len(t_values) > 0:

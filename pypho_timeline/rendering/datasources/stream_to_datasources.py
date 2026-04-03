@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Tuple, Optional
 
 import pyqtgraph as pg
 
-from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, unix_timestamp_to_datetime, get_reference_datetime_from_xdf_header
+from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, get_reference_datetime_from_xdf_header
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource
 from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource, SpectrogramChannelGroupConfig, EMOTIV_EPOC_X_SPECTROGRAM_GROUPS, compute_multiraw_spectrogram_results, first_chronological_raw_from_datasets_dict
@@ -351,9 +351,11 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                 timestamps_absolute = float_to_datetime(timestamps, file_ref_dt)
                 timestamps = datetime_to_unix_timestamp(timestamps_absolute)
             else:
-                timestamps = np.array([float(ts) for ts in timestamps])
+                timestamps = np.asarray(timestamps, dtype=float)
                 if file_ref_dt is None:
                     print(f"  WARN: No reference datetime found for {file_path.name}, timestamps may be misaligned")
+
+            timestamps = np.asarray(timestamps, dtype=float)
 
             stream_start = float(timestamps[0])
             stream_end = float(timestamps[-1])
@@ -371,12 +373,6 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                     except (TypeError, KeyError, IndexError, ValueError):
                         stream_duration = 1.0
                 stream_end = stream_start + stream_duration
-
-            timestamps = unix_timestamp_to_datetime(timestamps)
-
-            ts_index = pd.to_datetime(timestamps)
-            ts_index = ts_index.tz_localize('UTC') if ts_index.tz is None else ts_index.tz_convert('UTC')
-            timestamps = ts_index.values
 
             # Create interval DataFrame __________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
             intervals_df = pd.DataFrame({
