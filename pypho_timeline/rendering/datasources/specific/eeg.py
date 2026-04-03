@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     import phopymnehelper.type_aliases as types
     from phopymnehelper.xdf_files import LabRecorderXDF
 
+from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 from pypho_timeline.utils.logging_util import get_rendering_logger

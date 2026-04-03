@@ -978,6 +978,7 @@ class ComputableDatasourceMixin:
     """ implementors are able to recompute their results when a property changes
 
     from pypho_timeline.rendering.datasources.track_datasource import ComputableDatasourceMixin
+    from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
 
     """
     sigSourceComputeStarted = QtCore.Signal()
