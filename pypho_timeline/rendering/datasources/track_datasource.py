@@ -1026,6 +1026,14 @@ class ComputableDatasourceMixin:
         self._computed_result = value
 
 
+    @property
+    def eeg_comps_flat_concat_dict(self):
+        """The eeg_comps_flat_concat_dict property."""
+        return self.computed_result.get('eeg_comps_flat_concat_dict', None)
+    @eeg_comps_flat_concat_dict.setter
+    def eeg_comps_flat_concat_dict(self, value):
+        self._eeg_comps_flat_concat_dict = value
+
     def ComputableDatasourceMixin_on_init(self):
         """ perform any parameters setting/checking during init """
         self._computed_result = {} ## init to a dictionary
@@ -1132,7 +1140,7 @@ class ComputableDatasourceMixin:
 
 
 
-    def extract_all_datasets_results(self, eeg_comps_results_dict: Dict[types.xdf_file_name, Dict]) -> Dict[types.EEGComputationId, Any]:
+    def extract_all_datasets_results(self, eeg_comps_results_dict: Dict[types.xdf_file_name, List]) -> Dict[types.EEGComputationId, Any]:
         """ PURE: doesn't alter self
 
         """
@@ -1147,12 +1155,15 @@ class ComputableDatasourceMixin:
                 if eeg_comps_result is None:
                     continue
                 ## main extract from result
-                for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
-                    if a_specific_computed_value is None:
-                        continue
-                    if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
-                        eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = []
-                    eeg_comps_flat_concat_dict[a_specific_computed_goal_name].append(a_specific_computed_value)
+                if isinstance(eeg_comps_result, dict):
+                    for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+                        if a_specific_computed_value is None:
+                            continue
+                        if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+                            eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = []
+                        eeg_comps_flat_concat_dict[a_specific_computed_goal_name].append(a_specific_computed_value)
+                else:
+                    print(f'WARN')
 
         ## END for a_sess_xdf_filename, a_sess_comps_results_list in eeg_comps_results_dict.items()...
         return eeg_comps_flat_concat_dict
