@@ -14,7 +14,7 @@ import pyqtgraph as pg
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, unix_timestamp_to_datetime, get_reference_datetime_from_xdf_header
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource
-from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource, SpectrogramChannelGroupConfig, EMOTIV_EPOC_X_SPECTROGRAM_GROUPS
+from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource, SpectrogramChannelGroupConfig, EMOTIV_EPOC_X_SPECTROGRAM_GROUPS, compute_multiraw_spectrogram_results, first_chronological_raw_from_datasets_dict
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 from pypho_timeline.utils.logging_util import get_rendering_logger
 
@@ -497,39 +497,40 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         elif (stream_type.upper() == 'EEG'):
             if has_valid_intervals and has_detailed_data:
                 eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
-                datasource = EEGTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict, lab_obj_dict=lab_obj_dict)
+                eeg_raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]] = None
+                if enable_raw_xdf_processing and lab_obj_dict:
+                    from phopymnehelper.SavedSessionsProcessor import DataModalityType
+                    from phopymnehelper.MNE_helpers import up_convert_raw_objects
+                    from phopymnehelper.EEG_data import EEGData
+                    eeg_raw_datasets_dict = {}
+                    for _fname, _lab in lab_obj_dict.items():
+                        if _lab is None:
+                            eeg_raw_datasets_dict[_fname] = None
+                            continue
+                        _dd = getattr(_lab, "datasets_dict", None) or {}
+                        _elst = list(_dd.get(DataModalityType.EEG.value, []) or [])
+                        eeg_raw_datasets_dict[_fname] = up_convert_raw_objects(_elst) if _elst else None
+                    _all_eeg = [r for _lst in eeg_raw_datasets_dict.values() if _lst for r in _lst]
+                    if len(_all_eeg) > 0:
+                        EEGData.set_montage(datasets_EEG=_all_eeg)
+                datasource = EEGTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict, lab_obj_dict=lab_obj_dict, raw_datasets_dict=eeg_raw_datasets_dict)
                 if enable_raw_xdf_processing and any(v is not None for v in lab_obj_dict.values()):
                     logger.info(f'\tEEG MNE raw processing...')
-                    eeg_raw = None
-                    _eeg_rdd = datasource.raw_datasets_dict
-                    if _eeg_rdd is not None:
-                        for _lst in _eeg_rdd.values():
-                            if _lst is not None and len(_lst) > 0:
-                                eeg_raw = _lst[0]
-                                break
+                    eeg_raw = first_chronological_raw_from_datasets_dict(eeg_raw_datasets_dict)
                     if eeg_raw is not None:
                         try:
                             from phopymnehelper.EEG_data import EEGComputations
-                            # from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
-                            from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
-
-
                             bad_ch_result = EEGComputations.time_independent_bad_channels(eeg_raw)
                             bad_channels = bad_ch_result.get('all_bad_channels', [])
                             if bad_channels:
                                 logger.info(f'Bad channels detected for "{stream_name}": {bad_channels}')
                                 datasource.exclude_bad_channels(bad_channels)
-
-                            # spec_result = compute_raw_eeg_spectrogram(eeg_raw) ## old direct manual way
-                            ## #TODO 2026-04-02 06:27: - [ ] new computation graph way:
-                            eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
-                            spec_result = eeg_comps_result["spectogram"]
-
+                            spec_result, spec_results = compute_multiraw_spectrogram_results(merged_intervals_df, eeg_raw_datasets_dict)
+                            _spec_row0 = spec_result if spec_result is not None else {}
                             spec_datasource_kwargs = dict(lab_obj_dict=datasource.lab_obj_dict, raw_datasets_dict=datasource.raw_datasets_dict, parent=datasource)
-
                             _effective_groups = spectrogram_channel_groups if spectrogram_channel_groups is None else (spectrogram_channel_groups if len(spectrogram_channel_groups) > 0 else None)
                             if _effective_groups is None:
-                                spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=f"EEG_Spectrogram_{stream_name}",
+                                spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=_spec_row0, spectrogram_results=spec_results, custom_datasource_name=f"EEG_Spectrogram_{stream_name}",
                                                                                 channel_group_presets=(spectrogram_channel_groups if spectrogram_channel_groups is not None and len(spectrogram_channel_groups) > 0 else None),
                                                                                 **spec_datasource_kwargs)
                                 all_streams_datasources[f"EEG_Spectrogram_{stream_name}"] = spec_datasource
@@ -538,7 +539,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                             else:
                                 for group_cfg in _effective_groups:
                                     group_key = f"EEG_Spectrogram_{stream_name}_{group_cfg.name}"
-                                    spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=spec_result, custom_datasource_name=group_key, group_config=group_cfg, channel_group_presets=_effective_groups, **spec_datasource_kwargs)
+                                    spec_datasource = EEGSpectrogramTrackDatasource(intervals_df=merged_intervals_df.copy(), spectrogram_result=_spec_row0, spectrogram_results=spec_results, custom_datasource_name=group_key, group_config=group_cfg, channel_group_presets=_effective_groups, **spec_datasource_kwargs)
                                     all_streams_datasources[group_key] = spec_datasource
                                     all_streams[group_key] = merged_intervals_df
                                 logger.info(f'Created {len(_effective_groups)} EEG Spectrogram group datasources for "{stream_name}"')

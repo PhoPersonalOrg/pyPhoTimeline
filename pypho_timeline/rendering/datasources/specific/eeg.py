@@ -25,6 +25,29 @@ def _first_nonempty_raw_list_from_dict(raw_datasets_dict: Optional[Dict[str, Opt
     return []
 
 
+def first_chronological_raw_from_datasets_dict(raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> Any:
+    raws = RawProvidingTrackDatasource._sort_raws_by_meas_start(RawProvidingTrackDatasource._flatten_raw_lists_from_dict(raw_datasets_dict))
+    return raws[0] if raws else None
+
+
+def compute_multiraw_spectrogram_results(intervals_df: pd.DataFrame, raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> Tuple[Optional[Dict[str, Any]], Optional[List[Optional[Dict[str, Any]]]]]:
+    from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
+    raws = RawProvidingTrackDatasource._sort_raws_by_meas_start(RawProvidingTrackDatasource._flatten_raw_lists_from_dict(raw_datasets_dict))
+    n_iv = len(intervals_df)
+    if n_iv == 0 or not raws:
+        return None, None
+    n = min(len(raws), n_iv)
+    if len(raws) != n_iv:
+        logger.warning("EEG spectrogram: raw count (%s) != interval count (%s); using %s chronological raws aligned to interval rows; excess raws or intervals have no matching spectrogram.", len(raws), n_iv, n)
+    out: List[Optional[Dict[str, Any]]] = [None] * n_iv
+    for i in range(n):
+        raw = raws[i]
+        eeg_comps_result = run_eeg_computations_graph(raw, session=session_fingerprint_for_raw_or_path(raw), goals=("spectogram",))
+        out[i] = eeg_comps_result.get("spectogram")
+    rep = next((x for x in out if x is not None), None)
+    return rep, out
+
+
 @dataclass
 class SpectrogramChannelGroupConfig:
     """Defines a named group of EEG channels to average for one spectrogram track."""
@@ -529,28 +552,20 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
     def compute(self, **kwargs):
         """ a function to perform recomputation of the datasource properties at runtime 
         """
-        from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
-
         logger.info(f'.compute(...) called.')
-        if len(_first_nonempty_raw_list_from_dict(self.raw_datasets_dict)) < 1:
+        if len(self._flatten_raw_lists_from_dict(self.raw_datasets_dict)) < 1:
             if self.parent() is not None:
                 if getattr(self.parent(), 'raw_datasets_dict', None) is not None:
                     self.raw_datasets_dict = self.parent().raw_datasets_dict
-        eeg_raw = _first_nonempty_raw_list_from_dict(self.raw_datasets_dict)[0]
-        ## TODO: Do computations here
-
         self.sigSourceComputeStarted.emit()
-        # eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
-        # self._spectrogram_result = eeg_comps_result["spectogram"]
         pass
-        self.on_recompute_finished()
+        self.on_compute_finished()
 
 
     def on_compute_finished(self, **kwargs):
         """ called to indicate that a recompute is finished """
         was_success: bool = True # (self._spectrogram_result is not None)
-        # print(f'.on_recompute_finished(was_success: {was_success})')
-        logger.info(f'.on_recompute_finished(was_success: {was_success})')
+        logger.info(f'.on_compute_finished(was_success: {was_success})')
         self.sigSourceComputeFinished.emit(was_success)
 
 
@@ -842,28 +857,29 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
     def compute(self, **kwargs):
         """ a function to perform recomputation of the datasource properties at runtime 
         """
-        from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
-
         logger.info(f'.compute(...) called.')
-        if len(_first_nonempty_raw_list_from_dict(self.raw_datasets_dict)) < 1:
+        if len(self._flatten_raw_lists_from_dict(self.raw_datasets_dict)) < 1:
             if self.parent() is not None:
                 if getattr(self.parent(), 'raw_datasets_dict', None) is not None:
                     self.raw_datasets_dict = self.parent().raw_datasets_dict
-        eeg_raw = _first_nonempty_raw_list_from_dict(self.raw_datasets_dict)[0]
         self.sigSourceComputeStarted.emit()
-        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
-        self._spectrogram_result = eeg_comps_result["spectogram"]
-        self.on_recompute_finished()
+        rep, lst = compute_multiraw_spectrogram_results(self.intervals_df, self.raw_datasets_dict)
+        self._spectrogram_result = rep
+        self._spectrogram_results = lst
+        self.on_compute_finished()
 
 
     def on_compute_finished(self, **kwargs):
         """ called to indicate that a recompute is finished """
-        was_success: bool = (self._spectrogram_result is not None)
-        # print(f'.on_recompute_finished(was_success: {was_success})')
-        logger.info(f'.on_recompute_finished(was_success: {was_success})')
+        was_success = False
+        if self._spectrogram_results is not None:
+            was_success = any(x is not None for x in self._spectrogram_results)
+        if not was_success:
+            was_success = self._spectrogram_result is not None
+        logger.info(f'.on_compute_finished(was_success: {was_success})')
         self.sigSourceComputeFinished.emit(was_success)
 
 
 
-__all__ = ['SpectrogramChannelGroupConfig', 'EMOTIV_EPOC_X_SPECTROGRAM_GROUPS', 'EEGPlotDetailRenderer', 'EEGTrackDatasource', 'EEGSpectrogramDetailRenderer', 'EEGSpectrogramTrackDatasource']
+__all__ = ['SpectrogramChannelGroupConfig', 'EMOTIV_EPOC_X_SPECTROGRAM_GROUPS', 'EEGPlotDetailRenderer', 'EEGTrackDatasource', 'EEGSpectrogramDetailRenderer', 'EEGSpectrogramTrackDatasource', 'compute_multiraw_spectrogram_results', 'first_chronological_raw_from_datasets_dict']
 

@@ -15,7 +15,7 @@ and detailed data that can be fetched asynchronously when intervals scroll into 
 """
 from typing import Protocol, Optional, Tuple, List, Dict, Any, Union, runtime_checkable
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 from qtpy import QtCore
 
@@ -842,6 +842,38 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
     @raw_datasets_dict.setter
     def raw_datasets_dict(self, value: Optional[Dict[str, Optional[List[mne.io.Raw]]]]):
         self._raw_datasets_dict = value
+
+
+    @classmethod
+    def _flatten_raw_lists_from_dict(cls, raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> List[Any]:
+        if not raw_datasets_dict:
+            return []
+        out: List[Any] = []
+        for _k in sorted(raw_datasets_dict.keys(), key=lambda x: str(x)):
+            v = raw_datasets_dict[_k]
+            if v:
+                out.extend(v)
+        return out
+
+
+    @classmethod
+    def _sort_raws_by_meas_start(cls, raws: List[Any]) -> List[Any]:
+        def _key(r: Any) -> Tuple[bool, datetime]:
+            tr_m = getattr(r, "raw_timerange", None)
+            start = None
+            if callable(tr_m):
+                try:
+                    start, _end = tr_m()
+                except Exception:
+                    start = None
+            if start is None and hasattr(r, "info"):
+                start = r.info.get("meas_date")
+            if start is None:
+                return True, datetime.max.replace(tzinfo=timezone.utc)
+            if getattr(start, "tzinfo", None) is None:
+                start = start.replace(tzinfo=timezone.utc)
+            return False, start
+        return sorted(raws, key=_key)
 
     
     @classmethod
