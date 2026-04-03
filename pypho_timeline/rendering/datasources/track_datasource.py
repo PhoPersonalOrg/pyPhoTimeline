@@ -31,6 +31,9 @@ import phopymnehelper.type_aliases as types
 logger = get_rendering_logger(__name__)
 
 
+_UNCHANGED_DOWNSAMPLING = object()
+
+
 
 class DetailRenderer(Protocol):
     """Protocol for rendering detailed data within an interval.
@@ -499,6 +502,36 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """Get overview intervals."""
         return self.intervals_df
     
+
+    def set_downsampling(self, max_points_per_second: Any = _UNCHANGED_DOWNSAMPLING, enable_downsampling: Any = _UNCHANGED_DOWNSAMPLING, *, emit_changed: bool = True) -> bool:
+        """Update runtime downsampling settings and optionally emit a refresh signal.
+
+        Returns:
+            True when at least one setting changed.
+
+        Usage:
+            timeline.track_datasources['EEG_Stream'].set_downsampling(max_points_per_second=50.0)
+            timeline.track_datasources['EEG_Stream'].set_downsampling(enable_downsampling=False, max_points_per_second=None)
+        """
+        did_change = False
+
+        if max_points_per_second is not _UNCHANGED_DOWNSAMPLING:
+            normalized_max_points_per_second = None if max_points_per_second is None else float(max_points_per_second)
+            if self.max_points_per_second != normalized_max_points_per_second:
+                self.max_points_per_second = normalized_max_points_per_second
+                did_change = True
+
+        if enable_downsampling is not _UNCHANGED_DOWNSAMPLING:
+            normalized_enable_downsampling = bool(enable_downsampling)
+            if self.enable_downsampling != normalized_enable_downsampling:
+                self.enable_downsampling = normalized_enable_downsampling
+                did_change = True
+
+        if did_change and emit_changed:
+            self.source_data_changed_signal.emit()
+
+        return did_change
+
 
     def fetch_detailed_data(self, interval: pd.Series) -> pd.DataFrame:
         """Fetch position data for an interval with optional downsampling.
