@@ -149,12 +149,12 @@ def getConfigOption(opt):
 # from .graphicsItems.PColorMeshItem import *
 # from .graphicsItems.PlotCurveItem import *
 # from .graphicsItems.PlotDataItem import *
-# from .graphicsItems.PlotItem import *
+from .graphicsItems.PlotItem import *
 # from .graphicsItems.ROI import *
 # from .graphicsItems.ScaleBar import *
 # from .graphicsItems.ScatterPlotItem import *
 # from .graphicsItems.TargetItem import *
-# from .graphicsItems.TextItem import *
+from .graphicsItems.TextItem import *
 # from .graphicsItems.UIGraphicsItem import *
 # from .graphicsItems.ViewBox import *
 # from .graphicsItems.VTickGroup import *
@@ -189,17 +189,17 @@ def getConfigOption(opt):
 # from .widgets.FeedbackButton import *
 # from .widgets.FileDialog import *
 # from .widgets.GradientWidget import *
-# from .widgets.GraphicsLayoutWidget import *
-# from .widgets.GraphicsView import *
+from .widgets.GraphicsLayoutWidget import *
+from .widgets.GraphicsView import *
 # from .widgets.GroupBox import GroupBox
 # from .widgets.HistogramLUTWidget import *
 # from .widgets.JoystickButton import *
-# from .widgets.LayoutWidget import *
+from .widgets.LayoutWidget import *
 # from .widgets.MultiPlotWidget import *
 # from .widgets.PathButton import *
 # from .widgets.PlotWidget import *
 # from .widgets.ProgressDialog import *
-# from .widgets.RemoteGraphicsView import RemoteGraphicsView
+from .widgets.RemoteGraphicsView import RemoteGraphicsView
 # from .widgets.ScatterPlotWidget import *
 # from .widgets.SpinBox import *
 # from .widgets.TableWidget import *
