@@ -44,6 +44,7 @@ dev = [
     "debugpy>=1.8.19",
     "pyrefly>=0.54.0",
 ]
+tools = []
 
 [tool.setuptools]
 packages = ["pypho_timeline", "pypho_timeline._embed"]

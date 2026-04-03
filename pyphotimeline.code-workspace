@@ -4,10 +4,10 @@
             "path": "."
         },
         {
-            "path": "../PhoPyMNEHelper"
+            "path": "../PhoPyMNEHelper/src/phopymnehelper"
         },
         {
-            "path": "../PhoPyLSLhelper"
+            "path": "../PhoPyLSLhelper/src/phopylslhelper"
         },
         {
             "path": "../PhoOfflineEEGAnalysis"

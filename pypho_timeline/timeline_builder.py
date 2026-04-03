@@ -342,7 +342,7 @@ class TimelineBuilder:
                 # # raws_dict = _obj.datasets_dict
                 # ## Convert back to the simple outputs:
                 # streams = obj.xdf_streams
-                # file_header = obj.xdf_header
+                # file_header = obj.xdf_header  # streams, file_header = pyxdf.load_xdf(str(xdf_file_path), verbose=True)
 
                 logger.info(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
                 

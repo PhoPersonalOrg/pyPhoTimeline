@@ -4,16 +4,16 @@ overview: Add a datasource-level runtime API for updating downsampling settings 
 todos:
   - id: add-datasource-setter
     content: Add a concise public downsampling update method to `IntervalProvidingTrackDatasource` for all interval-backed tracks.
-    status: in_progress
+    status: completed
   - id: wire-refresh-path
     content: Connect datasource change handling to clear affected detail state and re-render the current viewport automatically.
-    status: pending
+    status: completed
   - id: fix-cache-invalidation
     content: Make per-track detail cache invalidation reliable for runtime downsampling changes.
-    status: pending
+    status: completed
   - id: verify-notebook-usage
     content: Confirm the final API is a simple one-liner from notebook code and document the intended call pattern in code comments or docstring.
-    status: pending
+    status: completed
 isProject: false
 ---
 
