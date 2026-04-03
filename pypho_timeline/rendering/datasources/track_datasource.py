@@ -857,23 +857,49 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
 
 
     @classmethod
-    def _sort_raws_by_meas_start(cls, raws: List[Any]) -> List[Any]:
-        def _key(r: Any) -> Tuple[bool, datetime]:
-            tr_m = getattr(r, "raw_timerange", None)
+    def _sort_raws_by_meas_start(cls, raws: Union[List[Any], Dict[str, Any]]) -> Union[List[Any], Dict[str, Any]]:
+        """ sorts the list of raws by the meas start """
+        def _key(x):
+            # allow either raw or (key, raw)
+            r = x[1] if isinstance(x, tuple) and len(x) == 2 else x
+
+            if isinstance(r, dict):
+                tr_m = r.get("raw_timerange")
+                info = r.get("info")
+            else:
+                tr_m = getattr(r, "raw_timerange", None)
+                info = r.info if hasattr(r, "info") else None
+
             start = None
+
             if callable(tr_m):
                 try:
                     start, _end = tr_m()
                 except Exception:
                     start = None
-            if start is None and hasattr(r, "info"):
-                start = r.info.get("meas_date")
+
+            if start is None and info is not None:
+                if hasattr(info, "get"):
+                    start = info.get("meas_date")
+                else:
+                    try:
+                        start = info["meas_date"]
+                    except (TypeError, KeyError):
+                        start = None
+
             if start is None:
                 return True, datetime.max.replace(tzinfo=timezone.utc)
+
             if getattr(start, "tzinfo", None) is None:
                 start = start.replace(tzinfo=timezone.utc)
+
             return False, start
-        return sorted(raws, key=_key)
+
+        # --- only real change is here ---
+        if isinstance(raws, dict):
+            return dict(sorted(raws.items(), key=_key))
+        else:
+            return sorted(raws, key=_key)
 
 
     @classmethod

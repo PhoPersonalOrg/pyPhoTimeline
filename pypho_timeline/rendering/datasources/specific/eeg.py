@@ -434,14 +434,14 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
             if lab is None or not lab.datasets_dict:
                 out[k] = None
                 continue
-            elst = list(lab.datasets_dict.get(DataModalityType.EEG, []) or [])
+            elst = list(lab.datasets_dict.get(DataModalityType.EEG.value, []) or [])
             out[k] = up_convert_raw_objects(elst) if len(elst) > 0 else None
         if not out:
             return None
         _all_eeg_for_montage = [r for _lst in out.values() if _lst for r in _lst]
         if len(_all_eeg_for_montage) > 0:
             EEGData.set_montage(datasets_EEG=_all_eeg_for_montage)
-        return self.get_sorted_and_extracted_raws(out)
+        return self._sort_raws_by_meas_start(out)
 
 
     def get_detail_renderer(self):

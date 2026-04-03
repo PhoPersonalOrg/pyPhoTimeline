@@ -402,11 +402,11 @@ class MotionTrackDatasource(RawProvidingTrackDatasource):
             if lab is None or not lab.datasets_dict:
                 out[k] = None
                 continue
-            elst = list(lab.datasets_dict.get(DataModalityType.MOTION, []) or [])
+            elst = list(lab.datasets_dict.get(DataModalityType.MOTION.value, []) or [])
             out[k] = elst if len(elst) > 0 else None
 
         # return out if out else None
-        return self.get_sorted_and_extracted_raws(out) if out else None
+        return self._sort_raws_by_meas_start(out) if out else None
 
 
 
