@@ -420,6 +420,7 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         self.normalization_reference_df = normalization_reference_df
         self.channel_names = channel_names
 
+        self.ComputableDatasourceMixin_on_init()
         # Override visualization properties (parent sets blue, we want blue too, but keep same height)
         # Parent already sets series_height=1.0, which is what we want, so no change needed
         # Parent already sets blue color, which is what we want, so no change needed
@@ -563,14 +564,44 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
                     self.raw_datasets_dict = self.parent().raw_datasets_dict
                     self.raw_datasets_dict = self.get_sorted_and_extracted_raws(self.raw_datasets_dict) ## try sort and extract
 
+
+        self.clear_computed_result()
         self.sigSourceComputeStarted.emit()
-        pass
+        
+        active_compute_goals_list = ("time_independent_bad_channels", "bad_epochs",)
+
+        ## init the compute list goals
+        for a_specific_computed_goal_name in active_compute_goals_list:
+            if a_specific_computed_goal_name not in self.computed_result:
+                self.computed_result[a_specific_computed_goal_name] = [] ## create a list
+
+
+        for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items():
+            if eeg_raw_list is not None:
+                for eeg_raw in eeg_raw_list:
+                    if eeg_raw is not None:
+                        # if a_sess_xdf_filename not in eeg_comps_results_dict:
+                        #     eeg_comps_results_dict[a_sess_xdf_filename] = []
+
+                        ## do the computation:
+                        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=active_compute_goals_list)
+                        # eeg_comps_results_dict[a_sess_xdf_filename].append(eeg_comps_result) ## append to the result
+
+                        for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+                            if a_specific_computed_value is not None:
+                                if a_specific_computed_goal_name not in self.computed_result:
+                                    self.computed_result[a_specific_computed_goal_name] = []
+                                self.computed_result[a_specific_computed_goal_name].append(a_specific_computed_value)
+
+        ## END for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items()...
+
+        ## OUTPUTS: eeg_comps_flat_concat_dict
         self.on_compute_finished()
 
 
     def on_compute_finished(self, **kwargs):
         """ called to indicate that a recompute is finished """
-        was_success: bool = True # (self._spectrogram_result is not None)
+        was_success: bool = (self.computed_result is not None) and (len(self.computed_result) > 0) # (self._spectrogram_result is not None)
         logger.info(f'.on_compute_finished(was_success: {was_success})')
         self.sigSourceComputeFinished.emit(was_success)
 
@@ -770,6 +801,7 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
         self._freq_max = freq_max
         self._group_config = group_config
         self._channel_group_presets = channel_group_presets
+        self.ComputableDatasourceMixin_on_init()
 
 
     @property
@@ -868,16 +900,59 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
             if self.parent() is not None:
                 if getattr(self.parent(), 'raw_datasets_dict', None) is not None:
                     self.raw_datasets_dict = self.parent().raw_datasets_dict
+                    self.raw_datasets_dict = self.get_sorted_and_extracted_raws(self.raw_datasets_dict) ## try sort and extract
+
+        self.clear_computed_result()
         self.sigSourceComputeStarted.emit()
-        rep, lst = compute_multiraw_spectrogram_results(self.intervals_df, self.raw_datasets_dict)
-        self._spectrogram_result = rep
-        self._spectrogram_results = lst
+        
+        active_compute_goals_list = ("spectogram",)
+
+        ## init the compute list goals
+        for a_specific_computed_goal_name in active_compute_goals_list:
+            if a_specific_computed_goal_name not in self.computed_result:
+                self.computed_result[a_specific_computed_goal_name] = [] ## create a list
+
+
+        for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items():
+            if eeg_raw_list is not None:
+                for eeg_raw in eeg_raw_list:
+                    if eeg_raw is not None:
+                        # if a_sess_xdf_filename not in eeg_comps_results_dict:
+                        #     eeg_comps_results_dict[a_sess_xdf_filename] = []
+
+                        ## do the computation:
+                        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=active_compute_goals_list)
+                        # eeg_comps_results_dict[a_sess_xdf_filename].append(eeg_comps_result) ## append to the result
+
+                        for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+                            if a_specific_computed_value is not None:
+                                if a_specific_computed_goal_name not in self.computed_result:
+                                    self.computed_result[a_specific_computed_goal_name] = []
+                                self.computed_result[a_specific_computed_goal_name].append(a_specific_computed_value)
+
+        ## END for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items()...
+
+
+
+        ## ACTIVE
+        # rep, lst = compute_multiraw_spectrogram_results(self.intervals_df, self.raw_datasets_dict)
+        # self._spectrogram_result = rep
+        # self._spectrogram_results = lst
+
+
+        # eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
+        # self._spectrogram_result = eeg_comps_result["spectogram"]
+        # self.on_recompute_finished()
+
         self.on_compute_finished()
 
 
     def on_compute_finished(self, **kwargs):
         """ called to indicate that a recompute is finished """
         was_success = False
+
+        self._spectrogram_results = self.computed_result.get('spectogram', None)
+
         if self._spectrogram_results is not None:
             was_success = any(x is not None for x in self._spectrogram_results)
         if not was_success:
