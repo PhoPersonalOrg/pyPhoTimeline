@@ -4426,6 +4426,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "debugpy" },
     { name = "pyrefly" },
 ]
 
@@ -4456,7 +4457,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pyrefly", specifier = ">=0.54.0" }]
+dev = [
+    { name = "debugpy", specifier = ">=1.8.19" },
+    { name = "pyrefly", specifier = ">=0.54.0" },
+]
 
 [[package]]
 name = "pyarrow"

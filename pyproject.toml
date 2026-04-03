@@ -41,6 +41,7 @@ build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
+    "debugpy>=1.8.19",
     "pyrefly>=0.54.0",
 ]
 
