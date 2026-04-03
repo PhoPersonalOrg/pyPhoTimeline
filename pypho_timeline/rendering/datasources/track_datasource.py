@@ -26,6 +26,7 @@ import pyqtgraph as pg
 from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime
 from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
 from phopymnehelper.helpers.dataframe_accessor_helpers import MaskedValidDataFrameAccessor
+import phopymnehelper.type_aliases as types
 
 logger = get_rendering_logger(__name__)
 
@@ -982,6 +983,40 @@ class ComputableDatasourceMixin:
     sigSourceComputeStarted = QtCore.Signal()
     sigSourceComputeFinished = QtCore.Signal(bool)
 
+    @property
+    def computed_result(self) -> Dict[types.EEGComputationId, Any]:
+        """The result computed this sources .compute(...) function."""
+        return self._computed_result
+    @computed_result.setter
+    def computed_result(self, value: Dict[types.EEGComputationId, Any]):
+        self._computed_result = value
+
+
+    def ComputableDatasourceMixin_on_init(self):
+        """ perform any parameters setting/checking during init """
+        self._computed_result = {} ## init to a dictionary
+
+
+    def ComputableDatasourceMixin_on_setup(self):
+        """ perform setup/creation of widget/graphical/data objects. Only the core objects are expected to exist on the implementor (root widget, etc) """
+        pass
+
+
+    def ComputableDatasourceMixin_on_buildUI(self):
+        """ perform setup/creation of widget/graphical/data objects. Only the core objects are expected to exist on the implementor (root widget, etc) """
+        pass
+    
+
+    def ComputableDatasourceMixin_on_destroy(self):
+        """ perform teardown/destruction of anything that needs to be manually removed or released """
+        self.clear_computed_result()
+
+
+    def clear_computed_result(self):
+        print(f'clear_computed_result()')
+        self.computed_result.clear()
+
+
     def compute(self, **kwargs):
         """ a function to perform recomputation of the datasource properties at runtime 
 
@@ -990,31 +1025,135 @@ class ComputableDatasourceMixin:
 
         from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
 
-        def _first_nonempty_raw_list(d):
-            if d is None:
-                return []
-            for v in d.values():
-                if v is not None and len(v) > 0:
-                    return v
-            return []
-        if len(_first_nonempty_raw_list(datasource.raw_datasets_dict)) < 1:
-            if datasource.parent() is not None:
-                if getattr(datasource.parent(), 'raw_datasets_dict', None) is not None:
-                    datasource.raw_datasets_dict = datasource.parent().raw_datasets_dict
-        eeg_raw = _first_nonempty_raw_list(datasource.raw_datasets_dict)[0]
+        active_compute_goals_list = ("time_independent_bad_channels", "bad_epochs",)
+        eeg_comps_flat_concat_dict = self.computed_result
+        for a_specific_computed_goal_name in active_compute_goals_list:
+            if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+                eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = [] ## create a list
 
-        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("spectogram",))
-        spec_result = eeg_comps_result["spectogram"]
-        spec_result
+
+        for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items():
+            if eeg_raw_list is not None:
+                for eeg_raw in eeg_raw_list:
+                    if eeg_raw is not None:
+                        # if a_sess_xdf_filename not in eeg_comps_results_dict:
+                        #     eeg_comps_results_dict[a_sess_xdf_filename] = []
+
+                        ## do the computation:
+                        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=active_compute_goals_list)
+                        # eeg_comps_results_dict[a_sess_xdf_filename].append(eeg_comps_result) ## append to the result
+
+                        for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+                            if a_specific_computed_value is not None:
+                                if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+                                    eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = []
+                                eeg_comps_flat_concat_dict[a_specific_computed_goal_name].append(a_specific_computed_value)
+
+        ## END for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items()...
+
+        ## OUTPUTS: eeg_comps_flat_concat_dict
+
+
 
         """
         raise NotImplementedError(f'Implementors must override to perform their computations')
+
+        self.clear_computed_result()
+        self.sigSourceComputeStarted.emit()
+
+        active_compute_goals_list = ("time_independent_bad_channels", "bad_epochs",)
+        eeg_comps_flat_concat_dict = self.computed_result
+        for a_specific_computed_goal_name in active_compute_goals_list:
+            if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+                eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = [] ## create a list
+
+
+        for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items():
+            if eeg_raw_list is not None:
+                for eeg_raw in eeg_raw_list:
+                    if eeg_raw is not None:
+                        # if a_sess_xdf_filename not in eeg_comps_results_dict:
+                        #     eeg_comps_results_dict[a_sess_xdf_filename] = []
+
+                        ## do the computation:
+                        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=active_compute_goals_list)
+                        # eeg_comps_results_dict[a_sess_xdf_filename].append(eeg_comps_result) ## append to the result
+
+                        ## do basic extraction from result here either way:
+                        for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+                            if a_specific_computed_value is not None:
+                                if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+                                    eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = []
+                                eeg_comps_flat_concat_dict[a_specific_computed_goal_name].append(a_specific_computed_value)
+
+        ## END for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items()...
+
+        ## OUTPUTS: eeg_comps_flat_concat_dict
         self.on_compute_finished()
 
 
     def on_compute_finished(self, **kwargs):
         """ called to indicate that a recompute is finished """
         print(f'on_compute_finished()')
+
+
+
+    def extract_all_datasets_results(self, eeg_comps_results_dict: Dict[types.xdf_file_name, Dict]) -> Dict[types.EEGComputationId, Any]:
+        """ PURE: doesn't alter self
+
+        """
+        # eeg_comps_results_dict: Dict[types.xdf_file_name, Dict] = {}
+
+        eeg_comps_flat_concat_dict: Dict[types.EEGComputationId, Any] = {} ## A dict with keys like {"time_independent_bad_channels": {}, "bad_epochs": {}}
+
+        for a_sess_xdf_filename, a_sess_comps_results_list in eeg_comps_results_dict.items():
+            if a_sess_comps_results_list is None:
+                continue
+            for eeg_comps_result in a_sess_comps_results_list:
+                if eeg_comps_result is None:
+                    continue
+                ## main extract from result
+                for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+                    if a_specific_computed_value is None:
+                        continue
+                    if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+                        eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = []
+                    eeg_comps_flat_concat_dict[a_specific_computed_goal_name].append(a_specific_computed_value)
+
+        ## END for a_sess_xdf_filename, a_sess_comps_results_list in eeg_comps_results_dict.items()...
+        return eeg_comps_flat_concat_dict
+
+        # for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items():
+        #     if eeg_raw_list is not None:
+        #         for eeg_raw in eeg_raw_list:
+        #             if eeg_raw is not None:
+        #                 eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("time_independent_bad_channels", "bad_epochs",))
+        #                 if a_sess_xdf_filename not in eeg_comps_results_dict:
+        #                     eeg_comps_results_dict[a_sess_xdf_filename] = []
+        #                 eeg_comps_results_dict[a_sess_xdf_filename].append(eeg_comps_result)
+        #                 for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+        #                     if a_specific_computed_value is not None:
+        #                         if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+        #                             eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = []
+        #                         eeg_comps_flat_concat_dict[a_specific_computed_goal_name].append(a_specific_computed_value)
+
+        #                 # time_independent_bad_channels = eeg_comps_result["time_independent_bad_channels"]
+        #                 # bad_epochs = eeg_comps_result["bad_epochs"]
+        #                 # time_independent_bad_channels
+        #                 # bad_epochs
+
+        #                 # bad_epoch_intervals_rel = bad_epochs['bad_epoch_intervals_rel']
+        #                 # bad_epoch_intervals_df: pd.DataFrame = pd.DataFrame(bad_epoch_intervals_rel, columns=['start_t_rel', 'end_t_rel'])
+        #                 # t_col_names: str = ['start_t', 'end_t']
+        #                 # for a_t_col in t_col_names:
+        #                 #     bad_epoch_intervals_df[a_t_col] = bad_epoch_intervals_df[f'{a_t_col}_rel'] + t0
+
+        # ## OUTPUTS: eeg_comps_flat_concat_dict
+        # return eeg_comps_flat_concat_dict
+
+
+
+
 
 
 __all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource', 'IntervalProvidingTrackDatasource', 'RawProvidingTrackDatasource']

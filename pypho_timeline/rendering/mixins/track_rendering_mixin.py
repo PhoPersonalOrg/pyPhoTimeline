@@ -5,6 +5,7 @@ from qtpy import QtCore
 import pyqtgraph as pg
 from pyqtgraph import SignalProxy
 
+import phopymnehelper.type_aliases as types
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData
 

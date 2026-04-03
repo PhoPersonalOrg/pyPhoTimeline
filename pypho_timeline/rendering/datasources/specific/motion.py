@@ -21,6 +21,7 @@ from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import Gene
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin
 from phopymnehelper.motion_data import BadMotionDataFrame
 from phopymnehelper.SavedSessionsProcessor import DataModalityType
+import phopymnehelper.type_aliases as types
 
 from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)

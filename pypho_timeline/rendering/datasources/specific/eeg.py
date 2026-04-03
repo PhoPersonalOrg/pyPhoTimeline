@@ -9,7 +9,9 @@ from datetime import datetime
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, RawProvidingTrackDatasource, ComputableDatasourceMixin
 if TYPE_CHECKING:
     import mne
+    import phopymnehelper.type_aliases as types
     from phopymnehelper.xdf_files import LabRecorderXDF
+
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 from pypho_timeline.utils.logging_util import get_rendering_logger
