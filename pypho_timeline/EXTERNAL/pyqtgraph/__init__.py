@@ -130,33 +130,33 @@ def getConfigOption(opt):
 # from .graphicsItems.FillBetweenItem import *
 # from .graphicsItems.GradientEditorItem import *
 # from .graphicsItems.GradientLegend import *
-# from .graphicsItems.GraphicsItem import *
-# from .graphicsItems.GraphicsLayout import *
-# from .graphicsItems.GraphicsObject import *
-# from .graphicsItems.GraphicsWidget import *
-# from .graphicsItems.GraphicsWidgetAnchor import *
+from .graphicsItems.GraphicsItem import *
+from .graphicsItems.GraphicsLayout import *
+from .graphicsItems.GraphicsObject import *
+from .graphicsItems.GraphicsWidget import *
+from .graphicsItems.GraphicsWidgetAnchor import *
 # from .graphicsItems.GraphItem import *
-# from .graphicsItems.GridItem import *
+from .graphicsItems.GridItem import *
 # from .graphicsItems.HistogramLUTItem import *
-# from .graphicsItems.ImageItem import *
-# from .graphicsItems.InfiniteLine import *
+from .graphicsItems.ImageItem import *
+from .graphicsItems.InfiniteLine import *
 # from .graphicsItems.IsocurveItem import *
-# from .graphicsItems.ItemGroup import *
-# from .graphicsItems.LabelItem import *
-# from .graphicsItems.LegendItem import *
-# from .graphicsItems.LinearRegionItem import *
-# from .graphicsItems.MultiPlotItem import *
+from .graphicsItems.ItemGroup import *
+from .graphicsItems.LabelItem import *
+from .graphicsItems.LegendItem import *
+from .graphicsItems.LinearRegionItem import *
+from .graphicsItems.MultiPlotItem import *
 # from .graphicsItems.PColorMeshItem import *
-# from .graphicsItems.PlotCurveItem import *
-# from .graphicsItems.PlotDataItem import *
+from .graphicsItems.PlotCurveItem import *
+from .graphicsItems.PlotDataItem import *
 from .graphicsItems.PlotItem import *
 # from .graphicsItems.ROI import *
 # from .graphicsItems.ScaleBar import *
 # from .graphicsItems.ScatterPlotItem import *
-# from .graphicsItems.TargetItem import *
+from .graphicsItems.TargetItem import *
 from .graphicsItems.TextItem import *
-# from .graphicsItems.UIGraphicsItem import *
-# from .graphicsItems.ViewBox import *
+from .graphicsItems.UIGraphicsItem import *
+from .graphicsItems.ViewBox import *
 # from .graphicsItems.VTickGroup import *
 
 # # indirect imports used within library
