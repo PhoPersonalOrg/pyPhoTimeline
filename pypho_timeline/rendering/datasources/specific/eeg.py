@@ -26,13 +26,13 @@ def _first_nonempty_raw_list_from_dict(raw_datasets_dict: Optional[Dict[str, Opt
 
 
 def first_chronological_raw_from_datasets_dict(raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> Any:
-    raws = RawProvidingTrackDatasource._sort_raws_by_meas_start(RawProvidingTrackDatasource._flatten_raw_lists_from_dict(raw_datasets_dict))
+    raws = RawProvidingTrackDatasource.get_sorted_and_extracted_raws(raw_datasets_dict)
     return raws[0] if raws else None
 
 
 def compute_multiraw_spectrogram_results(intervals_df: pd.DataFrame, raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> Tuple[Optional[Dict[str, Any]], Optional[List[Optional[Dict[str, Any]]]]]:
     from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
-    raws = RawProvidingTrackDatasource._sort_raws_by_meas_start(RawProvidingTrackDatasource._flatten_raw_lists_from_dict(raw_datasets_dict))
+    raws = RawProvidingTrackDatasource.get_sorted_and_extracted_raws(raw_datasets_dict)
     n_iv = len(intervals_df)
     if n_iv == 0 or not raws:
         return None, None
@@ -424,6 +424,8 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
 
 
     def try_extract_raw_datasets_dict(self) -> Optional[Dict[str, Optional[List[Any]]]]:
+        if not self.lab_obj_dict:
+            return None
         from phopymnehelper.SavedSessionsProcessor import DataModalityType
         from phopymnehelper.MNE_helpers import up_convert_raw_objects
         from phopymnehelper.EEG_data import EEGData
@@ -439,7 +441,7 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         _all_eeg_for_montage = [r for _lst in out.values() if _lst for r in _lst]
         if len(_all_eeg_for_montage) > 0:
             EEGData.set_montage(datasets_EEG=_all_eeg_for_montage)
-        return out
+        return self.get_sorted_and_extracted_raws(out)
 
 
     def get_detail_renderer(self):
@@ -557,6 +559,8 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
             if self.parent() is not None:
                 if getattr(self.parent(), 'raw_datasets_dict', None) is not None:
                     self.raw_datasets_dict = self.parent().raw_datasets_dict
+                    self.raw_datasets_dict = self.get_sorted_and_extracted_raws(self.raw_datasets_dict) ## try sort and extract
+
         self.sigSourceComputeStarted.emit()
         pass
         self.on_compute_finished()

@@ -404,7 +404,10 @@ class MotionTrackDatasource(RawProvidingTrackDatasource):
                 continue
             elst = list(lab.datasets_dict.get(DataModalityType.MOTION, []) or [])
             out[k] = elst if len(elst) > 0 else None
-        return out if out else None
+
+        # return out if out else None
+        return self.get_sorted_and_extracted_raws(out) if out else None
+
 
 
     def set_bad_intervals(self, bad_intervals_df: Optional[pd.DataFrame], bad_intervals_time_origin_unix: Optional[float] = None, *, emit_changed: bool = True) -> None:

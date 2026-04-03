@@ -875,6 +875,11 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
             return False, start
         return sorted(raws, key=_key)
 
+
+    @classmethod
+    def get_sorted_and_extracted_raws(cls, raw_datasets_dict):
+        return cls._sort_raws_by_meas_start(cls._flatten_raw_lists_from_dict(raw_datasets_dict))
+
     
     @classmethod
     def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: Optional[List[pd.DataFrame]] = None, custom_datasource_name: Optional[str] = None, detail_renderer: Optional['DetailRenderer'] = None,
