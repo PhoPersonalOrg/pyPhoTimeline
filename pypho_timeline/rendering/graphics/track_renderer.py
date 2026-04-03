@@ -108,6 +108,10 @@ class TrackRenderer(QtCore.QObject):
         # Connect to async fetcher
         self.async_fetcher.detail_data_ready.connect(self._on_detail_data_ready)
         logger.debug(f"TrackRenderer[{self.track_id}] Connected to async_fetcher.detail_data_ready signal")
+
+        if hasattr(self.datasource, 'source_data_changed_signal'):
+            self.datasource.source_data_changed_signal.connect(self._on_datasource_changed)
+            logger.debug(f"TrackRenderer[{self.track_id}] Connected to datasource change signal")
         
         # Initialize overview rendering
         self._update_overview()
@@ -122,10 +126,29 @@ class TrackRenderer(QtCore.QObject):
         self._update_overview()
 
 
+    def _detail_cache_prefix(self) -> str:
+        datasource_name = getattr(self.datasource, 'custom_datasource_name', None)
+        if datasource_name is None:
+            return self.track_id
+        return str(datasource_name)
+
+
+    def _on_datasource_changed(self) -> None:
+        """Refresh overview and visible detail when the datasource mutates in place."""
+        logger.info(f"TrackRenderer[{self.track_id}] _on_datasource_changed()")
+        self.async_fetcher.cancel_all_pending_fetches(self.track_id)
+        self.async_fetcher.clear_cache(self._detail_cache_prefix())
+        self.detail_renderer = self.datasource.get_detail_renderer()
+        self.refresh_overview()
+        self._trigger_visibility_render()
+
+
     def _update_overview(self):
         """Update the overview interval rectangles."""
         logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - starting")
         try:
+            old_overview_rects_item = self.overview_rects_item
+
             # Get overview intervals
             overview_df = self.datasource.get_overview_intervals()
             num_intervals = len(overview_df)
@@ -345,8 +368,8 @@ class TrackRenderer(QtCore.QObject):
             )
             
             # Remove old overview if exists
-            if self.overview_rects_item is not None and self.overview_rects_item in self.plot_item.listDataItems():
-                self.plot_item.removeItem(self.overview_rects_item)
+            if old_overview_rects_item is not None:
+                self.plot_item.removeItem(old_overview_rects_item)
                 logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - removed old overview item")
             
             # Add new overview
@@ -705,6 +728,13 @@ class TrackRenderer(QtCore.QObject):
             logger.debug(f"TrackRenderer[{self.track_id}] remove() - disconnected from async_fetcher signal")
         except (TypeError, RuntimeError) as e:
             logger.debug(f"TrackRenderer[{self.track_id}] remove() - signal already disconnected: {e}")
+
+        if hasattr(self.datasource, 'source_data_changed_signal'):
+            try:
+                self.datasource.source_data_changed_signal.disconnect(self._on_datasource_changed)
+                logger.debug(f"TrackRenderer[{self.track_id}] remove() - disconnected from datasource change signal")
+            except (TypeError, RuntimeError) as e:
+                logger.debug(f"TrackRenderer[{self.track_id}] remove() - datasource signal already disconnected: {e}")
         
         logger.info(f"TrackRenderer[{self.track_id}] remove() - track removal complete")
     
