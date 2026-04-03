@@ -16,6 +16,7 @@ and detailed data that can be fetched asynchronously when intervals scroll into 
 from typing import Protocol, Optional, Tuple, List, Dict, Any, Union, runtime_checkable
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
+import numpy as np
 import pandas as pd
 from qtpy import QtCore
 
@@ -947,6 +948,29 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
             enable_downsampling=enable_downsampling,
             lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict, **kwargs
         )
+
+
+    @property
+    def earliest_unix_timestamp(self)-> Optional[float]:
+        """ gets the earliest timestamp for this datasource in the unix_timestamp format 
+
+        t0: float = eeg_ds.earliest_unix_timestamp
+        """
+        if self.detailed_df is None:
+            return None
+
+        detailed_df: pd.DataFrame = self.detailed_df.sort_values("t").reset_index(drop=True)
+        _t = detailed_df['t']
+        # print(f"type(_t): {type(_t)}, t: {_t}")
+        if pd.api.types.is_datetime64_any_dtype(_t):
+            t0 = float(pd.to_datetime(_t, utc=True, errors="coerce").astype(np.int64).iloc[0] / 1e9)
+        else:
+            t0 = float(pd.to_numeric(_t, errors="coerce").iloc[0])
+        # print(f'\tt0: {t0}')
+        ## OUTPUTS: t0
+        return t0
+
+
 
 
 class ComputableDatasourceMixin:
