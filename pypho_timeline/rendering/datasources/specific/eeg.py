@@ -422,6 +422,8 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         self.channel_names = channel_names
 
         self.ComputableDatasourceMixin_on_init()
+        self.clear_computed_result()
+
         # Override visualization properties (parent sets blue, we want blue too, but keep same height)
         # Parent already sets series_height=1.0, which is what we want, so no change needed
         # Parent already sets blue color, which is what we want, so no change needed
@@ -600,106 +602,224 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         self.on_compute_finished()
 
 
+    def clear_computed_result(self):
+        print(f'clear_computed_result()')
+        self.computed_result.clear()
+        ## reset
+        self.merged_bad_epoch_intervals_df = None
+        self.merged_bad_epoch_intervals_plot_callback_fn = None
+
+
     def on_compute_finished(self, **kwargs):
         """ called to indicate that a recompute is finished """
         was_success: bool = (self.computed_result is not None) and (len(self.computed_result) > 0) # (self._spectrogram_result is not None)
         logger.info(f'.on_compute_finished(was_success: {was_success})')
         eeg_comps_flat_concat_dict = self.computed_result
 
-        for a_specific_computed_goal_name, a_specific_computed_value_list in eeg_comps_flat_concat_dict.items():
-            for a_specific_computed_value in (a_specific_computed_value_list or []):
-                if a_specific_computed_value is not None:
-                    ## do the post-compute stuff
-                    if 'bad_epochs' in eeg_comps_flat_concat_dict:
-                        ## tries to provide keys: eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_df']
 
-                        def _subfn_post_compute_build_merged_bad_epochs(eeg_ds, eeg_comps_flat_concat_dict) -> pd.DataFrame:
-                            """ computes the bad epoch times for EEG/MOTION tracks and optinally adds them to the timeline to preview 
+        # eeg_comps_flat_concat_dict = self.extract_all_datasets_results(eeg_comps_results_dict=self.computed_result)
 
-                                eeg_comps_flat_concat_dict = _subfn_post_compute_build_merged_bad_epochs(eeg_ds, eeg_comps_flat_concat_dict=eeg_comps_flat_concat_dict)
+        eeg_comps_flat_concat_dict = self.computed_result.copy()
+        if 'bad_epochs' in eeg_comps_flat_concat_dict:
+            ## tries to provide keys: eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_df']
 
-                            """
-                            ## INPUTS: eeg_ds, eeg_comps_flat_concat_dict
-                            ## UPDATES: eeg_comps_flat_concat_dict
-                            # bad_epochs_intervals_df_t_col_names: str = ['start_t', 'end_t']
-                            bad_epochs_intervals_df_t_col_names: str = ['t_start', 't_end']
-                            bad_epochs_intervals_df_non_descript_rel_t_col_names = [f'{a_t_col}_rel' for a_t_col in bad_epochs_intervals_df_t_col_names]
+            def _subfn_post_compute_build_merged_bad_epochs(eeg_ds, eeg_comps_flat_concat_dict) -> pd.DataFrame:
+                """ computes the bad epoch times for EEG/MOTION tracks and optinally adds them to the timeline to preview 
 
-                            bad_epochs_intervals_df_sess_rel_t_col_names = [f'{a_t_col}_sess_rel' for a_t_col in bad_epochs_intervals_df_t_col_names]
-                            bad_epochs_intervals_df_timeline_rel_t_col_names = [f'{a_t_col}_timeline_rel' for a_t_col in bad_epochs_intervals_df_t_col_names]
+                    eeg_comps_flat_concat_dict = _subfn_post_compute_build_merged_bad_epochs(eeg_ds, eeg_comps_flat_concat_dict=eeg_comps_flat_concat_dict)
 
-                            active_col_names = ['t_start', 't_start_dt', 't_end', 't_end_dt', 't_duration']
-                            rename_fn = lambda df: df.rename(columns=dict(zip(['start_t', 'end_t', 'start_t_rel', 'end_t_rel', 'start_t_dt', 'end_t_dt', 'duration'], ['t_start', 't_end', 't_start_rel', 't_end_rel', 't_start_dt', 't_end_dt', 't_duration'])), inplace=False)
+                """
+                ## INPUTS: eeg_ds, eeg_comps_flat_concat_dict
+                ## UPDATES: eeg_comps_flat_concat_dict
+                # bad_epochs_intervals_df_t_col_names: str = ['start_t', 'end_t']
+                bad_epochs_intervals_df_t_col_names: str = ['t_start', 't_end']
+                bad_epochs_intervals_df_non_descript_rel_t_col_names = [f'{a_t_col}_rel' for a_t_col in bad_epochs_intervals_df_t_col_names]
 
-                            ds_overview_intervals_df: pd.DataFrame = eeg_ds.get_overview_intervals()[active_col_names].sort_values(active_col_names).reset_index(drop=True)
+                bad_epochs_intervals_df_sess_rel_t_col_names = [f'{a_t_col}_sess_rel' for a_t_col in bad_epochs_intervals_df_t_col_names]
+                bad_epochs_intervals_df_timeline_rel_t_col_names = [f'{a_t_col}_timeline_rel' for a_t_col in bad_epochs_intervals_df_t_col_names]
 
-                            for idx, a_bad_epochs_result_dict in enumerate(eeg_comps_flat_concat_dict['bad_epochs']):
-                                active_interval_row = ds_overview_intervals_df.iloc[idx].to_dict()
-                                active_interval_t_start: float = active_interval_row['t_start']
-                                a_bad_epochs_df = a_bad_epochs_result_dict.get('bad_epoch_intervals_df', None)
-                                # a_bad_epochs_df = a_bad_epochs_result_dict.pop('bad_epoch_intervals_df', None)
-                                if a_bad_epochs_df is not None:
-                                    a_bad_epochs_df = rename_fn(a_bad_epochs_df)
-                                    print(f'idx: {idx}, active_interval_t_start: {active_interval_t_start}, {active_interval_row}:')
-                                    for a_t_col in bad_epochs_intervals_df_t_col_names:
-                                        a_bad_epochs_df[a_t_col] = a_bad_epochs_df[f'{a_t_col}_rel'] + active_interval_t_start ## these are relative to each individual session/recording, not the timeline start or the earliest recording
+                active_col_names = ['t_start', 't_start_dt', 't_end', 't_end_dt', 't_duration']
+                rename_fn = lambda df: df.rename(columns=dict(zip(['start_t', 'end_t', 'start_t_rel', 'end_t_rel', 'start_t_dt', 'end_t_dt', 'duration'], ['t_start', 't_end', 't_start_rel', 't_end_rel', 't_start_dt', 't_end_dt', 't_duration'])), inplace=False)
+
+                ds_overview_intervals_df: pd.DataFrame = eeg_ds.get_overview_intervals()[active_col_names].sort_values(active_col_names).reset_index(drop=True)
+
+                for idx, a_bad_epochs_result_dict in enumerate(eeg_comps_flat_concat_dict['bad_epochs']):
+                    active_interval_row = ds_overview_intervals_df.iloc[idx].to_dict()
+                    active_interval_t_start: float = active_interval_row['t_start']
+                    a_bad_epochs_df = a_bad_epochs_result_dict.get('bad_epoch_intervals_df', None)
+                    # a_bad_epochs_df = a_bad_epochs_result_dict.pop('bad_epoch_intervals_df', None)
+                    if a_bad_epochs_df is not None:
+                        a_bad_epochs_df = rename_fn(a_bad_epochs_df)
+                        print(f'idx: {idx}, active_interval_t_start: {active_interval_t_start}, {active_interval_row}:')
+                        for a_t_col in bad_epochs_intervals_df_t_col_names:
+                            a_bad_epochs_df[a_t_col] = a_bad_epochs_df[f'{a_t_col}_rel'] + active_interval_t_start ## these are relative to each individual session/recording, not the timeline start or the earliest recording
+                            
+                        a_bad_epochs_df['eeg_raw_idx'] = idx
+                        a_bad_epochs_result_dict['bad_epoch_intervals_df'] = a_bad_epochs_df ## re-apply
+
+                # [v.get('bad_epoch_intervals_df', None) for idx, v in enumerate(eeg_comps_flat_concat_dict['bad_epochs'])]
+                merged_bad_epoch_intervals_df: pd.DataFrame = pd.concat([v.get('bad_epoch_intervals_df', None) for v in eeg_comps_flat_concat_dict['bad_epochs']])
+                # merged_bad_epoch_intervals_df
+                merged_bad_epoch_intervals_df = rename_fn(merged_bad_epoch_intervals_df)
+                earliest_interval_t_start: float = np.nanmin(ds_overview_intervals_df['t_start'].to_numpy())
+                merged_bad_epoch_intervals_df[bad_epochs_intervals_df_timeline_rel_t_col_names] = merged_bad_epoch_intervals_df[bad_epochs_intervals_df_t_col_names] - earliest_interval_t_start ## timeline start relative
+                merged_bad_epoch_intervals_df = merged_bad_epoch_intervals_df.rename(columns=dict(zip(bad_epochs_intervals_df_non_descript_rel_t_col_names, bad_epochs_intervals_df_sess_rel_t_col_names)), inplace=False) ## indicate that the non-descript '*_rel' columns are actually '*_sess_rel' columns
+                merged_bad_epoch_intervals_df
+
+                # eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_df'] = merged_bad_epoch_intervals_df
+                eeg_ds.merged_bad_epoch_intervals_df = merged_bad_epoch_intervals_df
+
+                ## OUTPUTS: merged_bad_epoch_intervals_df
+                return eeg_comps_flat_concat_dict
+            ## END def _subfn_post_compute_build_merged_bad_epochs(e....
+            
+            def _subfn_post_compute_post_build_display_merged_bad_epochs(eeg_ds, timeline, include_overlays_on_timeline_tracks: bool=True, include_dedicated_interval_track: bool=False) -> pd.DataFrame:
+                """ plots the bad epochs on the EEG/MOTION views and optionally as a separate track
+
+                    a_plot_callback_fn = lambda timeline: _subfn_post_compute_post_build_display_merged_bad_epochs(timeline=timeline, eeg_ds=eeg_ds, include_overlays_on_timeline_tracks=True, include_dedicated_interval_track=False)
+                """
+                from phopymnehelper.analysis.computations.specific.bad_epochs import ensure_bad_epochs_interval_track, apply_bad_epochs_overlays_to_timeline
+
+                # assert eeg_comps_flat_concat_dict is not None
+                # merged_bad_epoch_intervals_df: pd.DataFrame = eeg_comps_flat_concat_dict.get('merged_bad_epoch_intervals_df', None)
+
+                merged_bad_epoch_intervals_df: pd.DataFrame = eeg_ds.merged_bad_epoch_intervals_df.copy()
+                # assert merged_bad_epoch_intervals_df is not None
+
+                if merged_bad_epoch_intervals_df is None:
+                    print(f'WARNING: {merged_bad_epoch_intervals_df} is None!')
+                    return None
+
+                #TODO 2026-04-03 08:57: - [ ] needs timeline `timeline`
+                _common_kwargs = dict(time_offset=0)
+
+                if include_overlays_on_timeline_tracks:
+                    new_regions = apply_bad_epochs_overlays_to_timeline(timeline, merged_bad_epoch_intervals_df, add_interval_track=include_dedicated_interval_track, **_common_kwargs)
+
+
+                if include_dedicated_interval_track:
+                    ensure_bad_epochs_interval_track(timeline, merged_bad_epoch_intervals_df, **_common_kwargs)
+
+                return merged_bad_epoch_intervals_df
+
+
+            ## reset
+            self.merged_bad_epoch_intervals_df = None
+            self.merged_bad_epoch_intervals_plot_callback_fn = None
+            
+            eeg_comps_flat_concat_dict = _subfn_post_compute_build_merged_bad_epochs(self, eeg_comps_flat_concat_dict=eeg_comps_flat_concat_dict) ## sets `eeg_ds.merged_bad_epoch_intervals_df`, doesn't change `eeg_comps_flat_concat_dict`
+
+            # merged_bad_epoch_intervals_plot_callback_fn = lambda eeg_ds, timeline: _subfn_post_compute_post_build_display_merged_bad_epochs(eeg_ds=eeg_ds, timeline=timeline, include_overlays_on_timeline_tracks=True, include_dedicated_interval_track=False)
+
+            ## this version captures `self`
+            merged_bad_epoch_intervals_plot_callback_fn = lambda timeline: _subfn_post_compute_post_build_display_merged_bad_epochs(eeg_ds=self, timeline=timeline, include_overlays_on_timeline_tracks=True, include_dedicated_interval_track=False)
+
+            # eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_plot_callback_fn'] = merged_bad_epoch_intervals_plot_callback_fn
+            # eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_df']
+            self.merged_bad_epoch_intervals_plot_callback_fn = merged_bad_epoch_intervals_plot_callback_fn
+
+            # ## USAGE:
+            #     eeg_ds.merged_bad_epoch_intervals_plot_callback_fn(timeline=timeline, include_overlays_on_timeline_tracks=True)
+
+
+
+        # for a_specific_computed_goal_name, a_specific_computed_value_list in eeg_comps_flat_concat_dict.items():
+        #     for a_specific_computed_value in (a_specific_computed_value_list or []):
+        #         if a_specific_computed_value is not None:
+        #             ## do the post-compute stuff
+        #             if a_specific_computed_goal_name == 'bad_epochs': # in eeg_comps_flat_concat_dict:
+        #                 ## tries to provide keys: eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_df']
+
+        #                 def _subfn_post_compute_build_merged_bad_epochs(eeg_ds, eeg_comps_flat_concat_dict) -> pd.DataFrame:
+        #                     """ computes the bad epoch times for EEG/MOTION tracks and optinally adds them to the timeline to preview 
+
+        #                         eeg_comps_flat_concat_dict = _subfn_post_compute_build_merged_bad_epochs(eeg_ds, eeg_comps_flat_concat_dict=eeg_comps_flat_concat_dict)
+
+        #                     """
+        #                     ## INPUTS: eeg_ds, eeg_comps_flat_concat_dict
+        #                     ## UPDATES: eeg_comps_flat_concat_dict
+        #                     # bad_epochs_intervals_df_t_col_names: str = ['start_t', 'end_t']
+        #                     bad_epochs_intervals_df_t_col_names: str = ['t_start', 't_end']
+        #                     bad_epochs_intervals_df_non_descript_rel_t_col_names = [f'{a_t_col}_rel' for a_t_col in bad_epochs_intervals_df_t_col_names]
+
+        #                     bad_epochs_intervals_df_sess_rel_t_col_names = [f'{a_t_col}_sess_rel' for a_t_col in bad_epochs_intervals_df_t_col_names]
+        #                     bad_epochs_intervals_df_timeline_rel_t_col_names = [f'{a_t_col}_timeline_rel' for a_t_col in bad_epochs_intervals_df_t_col_names]
+
+        #                     active_col_names = ['t_start', 't_start_dt', 't_end', 't_end_dt', 't_duration']
+        #                     rename_fn = lambda df: df.rename(columns=dict(zip(['start_t', 'end_t', 'start_t_rel', 'end_t_rel', 'start_t_dt', 'end_t_dt', 'duration'], ['t_start', 't_end', 't_start_rel', 't_end_rel', 't_start_dt', 't_end_dt', 't_duration'])), inplace=False)
+
+        #                     ds_overview_intervals_df: pd.DataFrame = eeg_ds.get_overview_intervals()[active_col_names].sort_values(active_col_names).reset_index(drop=True)
+
+        #                     for idx, a_bad_epochs_result_dict in enumerate(eeg_comps_flat_concat_dict['bad_epochs']):
+        #                         active_interval_row = ds_overview_intervals_df.iloc[idx].to_dict()
+        #                         active_interval_t_start: float = active_interval_row['t_start']
+        #                         a_bad_epochs_df = a_bad_epochs_result_dict.get('bad_epoch_intervals_df', None)
+        #                         # a_bad_epochs_df = a_bad_epochs_result_dict.pop('bad_epoch_intervals_df', None)
+        #                         if a_bad_epochs_df is not None:
+        #                             a_bad_epochs_df = rename_fn(a_bad_epochs_df)
+        #                             print(f'idx: {idx}, active_interval_t_start: {active_interval_t_start}, {active_interval_row}:')
+        #                             for a_t_col in bad_epochs_intervals_df_t_col_names:
+        #                                 a_bad_epochs_df[a_t_col] = a_bad_epochs_df[f'{a_t_col}_rel'] + active_interval_t_start ## these are relative to each individual session/recording, not the timeline start or the earliest recording
                                         
-                                    a_bad_epochs_df['eeg_raw_idx'] = idx
-                                    a_bad_epochs_result_dict['bad_epoch_intervals_df'] = a_bad_epochs_df ## re-apply
+        #                             a_bad_epochs_df['eeg_raw_idx'] = idx
+        #                             a_bad_epochs_result_dict['bad_epoch_intervals_df'] = a_bad_epochs_df ## re-apply
 
-                            # [v.get('bad_epoch_intervals_df', None) for idx, v in enumerate(eeg_comps_flat_concat_dict['bad_epochs'])]
-                            merged_bad_epoch_intervals_df: pd.DataFrame = pd.concat([v.get('bad_epoch_intervals_df', None) for v in eeg_comps_flat_concat_dict['bad_epochs']])
-                            # merged_bad_epoch_intervals_df
-                            merged_bad_epoch_intervals_df = rename_fn(merged_bad_epoch_intervals_df)
-                            earliest_interval_t_start: float = np.nanmin(ds_overview_intervals_df['t_start'].to_numpy())
-                            merged_bad_epoch_intervals_df[bad_epochs_intervals_df_timeline_rel_t_col_names] = merged_bad_epoch_intervals_df[bad_epochs_intervals_df_t_col_names] - earliest_interval_t_start ## timeline start relative
-                            merged_bad_epoch_intervals_df = merged_bad_epoch_intervals_df.rename(columns=dict(zip(bad_epochs_intervals_df_non_descript_rel_t_col_names, bad_epochs_intervals_df_sess_rel_t_col_names)), inplace=False) ## indicate that the non-descript '*_rel' columns are actually '*_sess_rel' columns
-                            merged_bad_epoch_intervals_df
+        #                     # [v.get('bad_epoch_intervals_df', None) for idx, v in enumerate(eeg_comps_flat_concat_dict['bad_epochs'])]
+        #                     merged_bad_epoch_intervals_df: pd.DataFrame = pd.concat([v.get('bad_epoch_intervals_df', None) for v in eeg_comps_flat_concat_dict['bad_epochs']])
+        #                     # merged_bad_epoch_intervals_df
+        #                     merged_bad_epoch_intervals_df = rename_fn(merged_bad_epoch_intervals_df)
+        #                     earliest_interval_t_start: float = np.nanmin(ds_overview_intervals_df['t_start'].to_numpy())
+        #                     merged_bad_epoch_intervals_df[bad_epochs_intervals_df_timeline_rel_t_col_names] = merged_bad_epoch_intervals_df[bad_epochs_intervals_df_t_col_names] - earliest_interval_t_start ## timeline start relative
+        #                     merged_bad_epoch_intervals_df = merged_bad_epoch_intervals_df.rename(columns=dict(zip(bad_epochs_intervals_df_non_descript_rel_t_col_names, bad_epochs_intervals_df_sess_rel_t_col_names)), inplace=False) ## indicate that the non-descript '*_rel' columns are actually '*_sess_rel' columns
+        #                     merged_bad_epoch_intervals_df
 
-                            eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_df'] = merged_bad_epoch_intervals_df
-                            ## OUTPUTS: merged_bad_epoch_intervals_df
-                            return eeg_comps_flat_concat_dict
-                        ## END def _subfn_post_compute_build_merged_bad_epochs(e....
+        #                     # eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_df'] = merged_bad_epoch_intervals_df
+        #                     eeg_ds.merged_bad_epoch_intervals_df = merged_bad_epoch_intervals_df
 
+        #                     ## OUTPUTS: merged_bad_epoch_intervals_df
+        #                     return eeg_comps_flat_concat_dict
+        #                 ## END def _subfn_post_compute_build_merged_bad_epochs(e....
                         
+        #                 def _subfn_post_compute_post_build_display_merged_bad_epochs(eeg_ds, eeg_comps_flat_concat_dict, timeline, include_overlays_on_timeline_tracks: bool=True, include_dedicated_interval_track: bool=False) -> pd.DataFrame:
+        #                     """ plots the bad epochs on the EEG/MOTION views and optionally as a separate track
 
-                    def _subfn_post_compute_post_build_display_merged_bad_epochs(eeg_ds, eeg_comps_flat_concat_dict, timeline, include_overlays_on_timeline_tracks: bool=True, include_dedicated_interval_track: bool=False) -> pd.DataFrame:
-                        """ plots the bad epochs on the EEG/MOTION views and optionally as a separate track
+        #                         a_plot_callback_fn = lambda timeline: _subfn_post_compute_post_build_display_merged_bad_epochs(timeline=timeline, eeg_ds=eeg_ds, eeg_comps_flat_concat_dict=eeg_comps_flat_concat_dict, include_overlays_on_timeline_tracks=True, include_dedicated_interval_track=False)
+        #                     """
+        #                     from phopymnehelper.analysis.computations.specific.bad_epochs import ensure_bad_epochs_interval_track, apply_bad_epochs_overlays_to_timeline
 
-                            a_plot_callback_fn = lambda timeline: _subfn_post_compute_post_build_display_merged_bad_epochs(timeline=timeline, eeg_ds=eeg_ds, eeg_comps_flat_concat_dict=eeg_comps_flat_concat_dict, include_overlays_on_timeline_tracks=True, include_dedicated_interval_track=False)
-                        """
-                        from phopymnehelper.analysis.computations.specific.bad_epochs import ensure_bad_epochs_interval_track, apply_bad_epochs_overlays_to_timeline
+        #                     assert eeg_comps_flat_concat_dict is not None
+        #                     merged_bad_epoch_intervals_df: pd.DataFrame = eeg_comps_flat_concat_dict.get('merged_bad_epoch_intervals_df', None)
 
-                        assert eeg_comps_flat_concat_dict is not None
-                        merged_bad_epoch_intervals_df: pd.DataFrame = eeg_comps_flat_concat_dict.get('merged_bad_epoch_intervals_df', None)
+        #                     if merged_bad_epoch_intervals_df is None:
+        #                         print(f'WARNING: {merged_bad_epoch_intervals_df} is None!')
+        #                         return None
 
-                        if merged_bad_epoch_intervals_df is None:
-                            print(f'WARNING: {merged_bad_epoch_intervals_df} is None!')
-                            return None
+        #                     #TODO 2026-04-03 08:57: - [ ] needs timeline `timeline`
+        #                     _common_kwargs = dict(time_offset=0)
 
-                        #TODO 2026-04-03 08:57: - [ ] needs timeline `timeline`
-                        _common_kwargs = dict(time_offset=0)
-
-                        if include_overlays_on_timeline_tracks:
-                            new_regions = apply_bad_epochs_overlays_to_timeline(timeline, merged_bad_epoch_intervals_df, add_interval_track=include_dedicated_interval_track, **_common_kwargs)
-
-
-                        if include_dedicated_interval_track:
-                            ensure_bad_epochs_interval_track(timeline, merged_bad_epoch_intervals_df, **_common_kwargs)
-
-                        return merged_bad_epoch_intervals_df
+        #                     if include_overlays_on_timeline_tracks:
+        #                         new_regions = apply_bad_epochs_overlays_to_timeline(timeline, merged_bad_epoch_intervals_df, add_interval_track=include_dedicated_interval_track, **_common_kwargs)
 
 
-                    
-                    eeg_comps_flat_concat_dict = _subfn_post_compute_build_merged_bad_epochs(self, eeg_comps_flat_concat_dict=eeg_comps_flat_concat_dict)
+        #                     if include_dedicated_interval_track:
+        #                         ensure_bad_epochs_interval_track(timeline, merged_bad_epoch_intervals_df, **_common_kwargs)
 
-                    merged_bad_epoch_intervals_plot_callback_fn = lambda eeg_ds, timeline: _subfn_post_compute_post_build_display_merged_bad_epochs(eeg_ds=eeg_ds, eeg_comps_flat_concat_dict=eeg_comps_flat_concat_dict, timeline=timeline, include_overlays_on_timeline_tracks=True, include_dedicated_interval_track=False)
-                    eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_plot_callback_fn'] = merged_bad_epoch_intervals_plot_callback_fn
-                    # eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_df']
-                    self.merged_bad_epoch_intervals_plot_callback_fn = merged_bad_epoch_intervals_plot_callback_fn
+        #                     return merged_bad_epoch_intervals_df
 
-                    # ## USAGE:
-                    #     eeg_ds.merged_bad_epoch_intervals_plot_callback_fn(timeline=timeline, include_overlays_on_timeline_tracks=True)
+
+        #                 ## reset
+        #                 self.merged_bad_epoch_intervals_df = None
+        #                 self.merged_bad_epoch_intervals_plot_callback_fn = None
+                        
+        #                 eeg_comps_flat_concat_dict = _subfn_post_compute_build_merged_bad_epochs(self, eeg_comps_flat_concat_dict=eeg_comps_flat_concat_dict)
+
+        #                 merged_bad_epoch_intervals_plot_callback_fn = lambda eeg_ds, timeline: _subfn_post_compute_post_build_display_merged_bad_epochs(eeg_ds=eeg_ds, eeg_comps_flat_concat_dict=eeg_comps_flat_concat_dict, timeline=timeline, include_overlays_on_timeline_tracks=True, include_dedicated_interval_track=False)
+        #                 # eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_plot_callback_fn'] = merged_bad_epoch_intervals_plot_callback_fn
+        #                 # eeg_comps_flat_concat_dict['merged_bad_epoch_intervals_df']
+        #                 self.merged_bad_epoch_intervals_plot_callback_fn = merged_bad_epoch_intervals_plot_callback_fn
+
+        #                 # ## USAGE:
+        #                 #     eeg_ds.merged_bad_epoch_intervals_plot_callback_fn(timeline=timeline, include_overlays_on_timeline_tracks=True)
 
 
 
