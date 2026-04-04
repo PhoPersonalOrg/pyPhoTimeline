@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 from qtpy import QtCore
-from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence, TYPE_CHECKING
+from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence, TYPE_CHECKING, cast
 from datetime import datetime
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, RawProvidingTrackDatasource, ComputableDatasourceMixin
 if TYPE_CHECKING:
@@ -19,36 +19,61 @@ from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
 
 
-def _first_nonempty_raw_list_from_dict(raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> List[Any]:
-    if raw_datasets_dict is None:
-        return []
-    for v in raw_datasets_dict.values():
-        if v is not None and len(v) > 0:
-            return v
-    return []
+def _coerce_time_value_to_unix(value: Any) -> float:
+    if isinstance(value, (list, tuple, np.ndarray, pd.Series)):
+        if len(value) == 0:
+            return float("nan")
+        value = value[0]
+    if pd.isna(value):
+        return float("nan")
+    if isinstance(value, (datetime, pd.Timestamp)):
+        return float(datetime_to_unix_timestamp(value))
+    if isinstance(value, (pd.Timedelta, np.timedelta64)):
+        return float(pd.Timedelta(value).total_seconds())
+    return float(value)
 
 
-def first_chronological_raw_from_datasets_dict(raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> Any:
+def _coerce_time_series_to_unix(values: pd.Series) -> np.ndarray:
+    if pd.api.types.is_datetime64_any_dtype(values):
+        coerced = pd.to_datetime(values, utc=True, errors="coerce")
+        return (coerced.astype("int64") / 1e9).to_numpy(dtype=float, copy=False)
+    return pd.to_numeric(values, errors="coerce").to_numpy(dtype=float, copy=False)
+
+
+def _interval_row_to_unix_bounds(interval_row: pd.Series) -> Tuple[float, float]:
+    t_start = _coerce_time_value_to_unix(interval_row["t_start"])
+    if "t_end" in interval_row and pd.notna(interval_row["t_end"]):
+        return t_start, _coerce_time_value_to_unix(interval_row["t_end"])
+    t_duration = interval_row["t_duration"] if "t_duration" in interval_row.index else 0.0
+    if isinstance(t_duration, (pd.Timedelta, np.timedelta64)):
+        t_duration = pd.Timedelta(t_duration).total_seconds()
+    return t_start, t_start + float(t_duration)
+
+
+def aligned_chronological_raws_for_intervals(intervals_df: pd.DataFrame, raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> Tuple[List[Any], int]:
     raws = RawProvidingTrackDatasource.get_sorted_and_extracted_raws(raw_datasets_dict)
-    return raws[0] if raws else None
-
-
-def compute_multiraw_spectrogram_results(intervals_df: pd.DataFrame, raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> Tuple[Optional[Dict[str, Any]], Optional[List[Optional[Dict[str, Any]]]]]:
-    from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
-    raws = RawProvidingTrackDatasource.get_sorted_and_extracted_raws(raw_datasets_dict)
+    raws_list: List[Any] = list(raws) if isinstance(raws, list) else list(raws.values()) if isinstance(raws, dict) else []
     n_iv = len(intervals_df)
-    if n_iv == 0 or not raws:
-        return None, None
-    n = min(len(raws), n_iv)
-    if len(raws) != n_iv:
-        logger.warning("EEG spectrogram: raw count (%s) != interval count (%s); using %s chronological raws aligned to interval rows; excess raws or intervals have no matching spectrogram.", len(raws), n_iv, n)
+    if n_iv == 0 or not raws_list:
+        return [], 0
+    n = min(len(raws_list), n_iv)
+    if len(raws_list) != n_iv:
+        logger.warning("EEG multiraw alignment: raw count (%s) != interval count (%s); using %s chronological raws aligned to interval rows; excess raws or intervals have no matching raw-backed artifact.", len(raws_list), n_iv, n)
+    return raws_list, n
+
+
+def compute_multiraw_spectrogram_results(intervals_df: pd.DataFrame, raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> List[Optional[Dict[str, Any]]]:
+    from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
+    raws, n = aligned_chronological_raws_for_intervals(intervals_df=intervals_df, raw_datasets_dict=raw_datasets_dict)
+    if n == 0:
+        return []
+    n_iv = len(intervals_df)
     out: List[Optional[Dict[str, Any]]] = [None] * n_iv
     for i in range(n):
         raw = raws[i]
         eeg_comps_result = run_eeg_computations_graph(raw, session=session_fingerprint_for_raw_or_path(raw), goals=("spectogram",))
         out[i] = eeg_comps_result.get("spectogram")
-    rep = next((x for x in out if x is not None), None)
-    return rep, out
+    return out
 
 
 @dataclass
@@ -444,7 +469,7 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         _all_eeg_for_montage = [r for _lst in out.values() if _lst for r in _lst]
         if len(_all_eeg_for_montage) > 0:
             EEGData.set_montage(datasets_EEG=_all_eeg_for_montage)
-        return self._sort_raws_by_meas_start(out)
+        return cast(Dict[str, Optional[List[Any]]], self._sort_raws_by_meas_start(out))
 
 
     def get_detail_renderer(self):
@@ -483,6 +508,36 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
             self.normalization_mode_dict = updated_norm_dict
 
         logger.info(f'Excluded {len(bad_channels)} bad channels; {len(self.channel_names)} good channels remain: {self.channel_names}')
+
+
+    def mask_bad_eeg_channels_by_interval_rows(self, bad_channels_per_row: List[List[str]], intervals_df: Optional[pd.DataFrame] = None) -> None:
+        active_intervals_df = self.intervals_df if intervals_df is None else intervals_df
+        if active_intervals_df is None or len(active_intervals_df) == 0 or len(bad_channels_per_row) == 0:
+            return
+        for attr in ("detailed_df", "normalization_reference_df"):
+            df = getattr(self, attr, None)
+            if df is None or "t" not in df.columns:
+                continue
+            updated_df = df.copy()
+            t_values = _coerce_time_series_to_unix(updated_df["t"])
+            masked_rows = 0
+            masked_channels: set[str] = set()
+            for i in range(min(len(active_intervals_df), len(bad_channels_per_row))):
+                bad_channels = [ch for ch in (bad_channels_per_row[i] or []) if ch in updated_df.columns]
+                if len(bad_channels) == 0:
+                    continue
+                t_lo, t_hi = _interval_row_to_unix_bounds(active_intervals_df.iloc[i])
+                if not np.isfinite(t_lo) or not np.isfinite(t_hi):
+                    continue
+                interval_mask = (t_values >= t_lo) & (t_values < t_hi) if t_hi > t_lo else (t_values == t_lo)
+                if not np.any(interval_mask):
+                    continue
+                updated_df.loc[interval_mask, bad_channels] = np.nan
+                masked_rows += int(np.count_nonzero(interval_mask))
+                masked_channels.update(bad_channels)
+            if masked_rows > 0:
+                setattr(self, attr, updated_df)
+                logger.info("Masked %s EEG rows across %s channels on %s using per-interval bad-channel assessments.", masked_rows, len(masked_channels), attr)
 
 
     def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
@@ -562,7 +617,6 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
             if self.parent() is not None:
                 if getattr(self.parent(), 'raw_datasets_dict', None) is not None:
                     self.raw_datasets_dict = self.parent().raw_datasets_dict
-                    self.raw_datasets_dict = self.get_sorted_and_extracted_raws(self.raw_datasets_dict) ## try sort and extract
 
 
         self.clear_computed_result()
@@ -576,22 +630,15 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
                 self.computed_result[a_specific_computed_goal_name] = [] ## create a list
 
 
-        for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items():
-            if eeg_raw_list is not None:
-                for eeg_raw in eeg_raw_list:
-                    if eeg_raw is not None:
-                        # if a_sess_xdf_filename not in eeg_comps_results_dict:
-                        #     eeg_comps_results_dict[a_sess_xdf_filename] = []
-
-                        ## do the computation:
-                        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=active_compute_goals_list)
-                        # eeg_comps_results_dict[a_sess_xdf_filename].append(eeg_comps_result) ## append to the result
-
-                        for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
-                            if a_specific_computed_value is not None:
-                                if a_specific_computed_goal_name not in self.computed_result:
-                                    self.computed_result[a_specific_computed_goal_name] = []
-                                self.computed_result[a_specific_computed_goal_name].append(a_specific_computed_value)
+        raws = self.get_sorted_and_extracted_raws(self.raw_datasets_dict)
+        for eeg_raw in raws:
+            if eeg_raw is not None:
+                eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=active_compute_goals_list)
+                for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+                    if a_specific_computed_value is not None:
+                        if a_specific_computed_goal_name not in self.computed_result:
+                            self.computed_result[a_specific_computed_goal_name] = []
+                        self.computed_result[a_specific_computed_goal_name].append(a_specific_computed_value)
 
         ## END for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items()...
 
@@ -999,7 +1046,7 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
     sigSourceComputeStarted = QtCore.Signal()
     sigSourceComputeFinished = QtCore.Signal(bool)
 
-    def __init__(self, intervals_df: pd.DataFrame, spectrogram_result: Dict, custom_datasource_name: Optional[str] = None, spectrogram_results: Optional[List[Dict]] = None,
+    def __init__(self, intervals_df: pd.DataFrame, spectrogram_result: Optional[Dict[str, Any]] = None, custom_datasource_name: Optional[str] = None, spectrogram_results: Optional[List[Optional[Dict[str, Any]]]] = None,
                  freq_min: float = 1.0, freq_max: float = 40.0, group_config: Optional[SpectrogramChannelGroupConfig] = None, channel_group_presets: Optional[List[SpectrogramChannelGroupConfig]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, parent: Optional[QtCore.QObject] = None):
         """Initialize with intervals and precomputed spectrogram result(s).
 
@@ -1013,8 +1060,11 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
             channel_group_presets: Optional list of preset groups (same shape as stream build ``spectrogram_channel_groups``) for the options panel preset combo.
         """
         super().__init__(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=custom_datasource_name or "EEG_Spectrogram", max_points_per_second=None, enable_downsampling=False, lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict, parent=parent)
+        if spectrogram_results is None and spectrogram_result is not None:
+            spectrogram_results = [spectrogram_result]
+            spectrogram_result = None
         self._spectrogram_result = spectrogram_result
-        self._spectrogram_results = spectrogram_results
+        self._spectrogram_results = list(spectrogram_results) if spectrogram_results is not None else None
         self._freq_min = freq_min
         self._freq_max = freq_max
         self._group_config = group_config
@@ -1044,17 +1094,16 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
 
     def get_spectrogram_ch_names(self) -> List[str]:
         """Channel names from the stored spectrogram dict (``ch_names``), or empty if missing."""
-        detail: Any = None
-        if self._spectrogram_results is not None and len(self._spectrogram_results) > 0:
-            detail = self._spectrogram_results[0]
-        else:
-            detail = self._spectrogram_result
-        if not detail or not isinstance(detail, dict):
-            return []
-        ch = detail.get('ch_names')
-        if ch is None:
-            return []
-        return list(ch)
+        all_channel_names: set[str] = set()
+        details = self._spectrogram_results if self._spectrogram_results is not None else ([self._spectrogram_result] if self._spectrogram_result is not None else [])
+        for detail in details:
+            if not detail or not isinstance(detail, dict):
+                continue
+            ch_names = detail.get("ch_names")
+            if ch_names is None:
+                continue
+            all_channel_names.update(list(ch_names))
+        return sorted(all_channel_names)
 
 
     def set_spectrogram_display(self, freq_min: float, freq_max: float) -> None:
@@ -1080,7 +1129,8 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
             pos = np.flatnonzero(match)
             if len(pos) > 0 and pos[0] < len(self._spectrogram_results):
                 return self._spectrogram_results[int(pos[0])]
-            return self._spectrogram_results[0] if self._spectrogram_results else None
+            logger.debug("EEGSpectrogramTrackDatasource[%s] missing spectrogram result for interval t_start=%s t_duration=%s.", self.custom_datasource_name, t_start, t_duration)
+            return None
         return self._spectrogram_result
 
 
@@ -1095,15 +1145,14 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
 
 
     @classmethod
-    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], spectrogram_results: List[Dict], custom_datasource_name: Optional[str] = None, freq_min: float = 1.0, freq_max: float = 40.0, group_config: Optional[SpectrogramChannelGroupConfig] = None, channel_group_presets: Optional[List[SpectrogramChannelGroupConfig]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None) -> 'EEGSpectrogramTrackDatasource':
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], spectrogram_results: List[Optional[Dict[str, Any]]], custom_datasource_name: Optional[str] = None, freq_min: float = 1.0, freq_max: float = 40.0, group_config: Optional[SpectrogramChannelGroupConfig] = None, channel_group_presets: Optional[List[SpectrogramChannelGroupConfig]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None) -> 'EEGSpectrogramTrackDatasource':
         """Create one EEGSpectrogramTrackDatasource from multiple (intervals_df, spectrogram_result) pairs."""
         if not intervals_dfs or not spectrogram_results:
             raise ValueError("intervals_dfs and spectrogram_results must be non-empty")
-        if len(intervals_dfs) != len(spectrogram_results):
-            raise ValueError("intervals_dfs and spectrogram_results must have the same length")
-        merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start')
-        first_result = spectrogram_results[0]
-        return cls(intervals_df=merged_intervals_df, spectrogram_result=first_result, custom_datasource_name=custom_datasource_name, spectrogram_results=spectrogram_results, freq_min=freq_min, freq_max=freq_max, group_config=group_config, channel_group_presets=channel_group_presets, lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict)
+        merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start').reset_index(drop=True)
+        if len(merged_intervals_df) != len(spectrogram_results):
+            raise ValueError("Merged interval row count and spectrogram_results length must match")
+        return cls(intervals_df=merged_intervals_df, spectrogram_result=None, custom_datasource_name=custom_datasource_name, spectrogram_results=spectrogram_results, freq_min=freq_min, freq_max=freq_max, group_config=group_config, channel_group_presets=channel_group_presets, lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict)
 
 
 
@@ -1118,7 +1167,6 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
             if self.parent() is not None:
                 if getattr(self.parent(), 'raw_datasets_dict', None) is not None:
                     self.raw_datasets_dict = self.parent().raw_datasets_dict
-                    self.raw_datasets_dict = self.get_sorted_and_extracted_raws(self.raw_datasets_dict) ## try sort and extract
 
         self.clear_computed_result()
         self.sigSourceComputeStarted.emit()
@@ -1131,22 +1179,15 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
                 self.computed_result[a_specific_computed_goal_name] = [] ## create a list
 
 
-        for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items():
-            if eeg_raw_list is not None:
-                for eeg_raw in eeg_raw_list:
-                    if eeg_raw is not None:
-                        # if a_sess_xdf_filename not in eeg_comps_results_dict:
-                        #     eeg_comps_results_dict[a_sess_xdf_filename] = []
-
-                        ## do the computation:
-                        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=active_compute_goals_list)
-                        # eeg_comps_results_dict[a_sess_xdf_filename].append(eeg_comps_result) ## append to the result
-
-                        for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
-                            if a_specific_computed_value is not None:
-                                if a_specific_computed_goal_name not in self.computed_result:
-                                    self.computed_result[a_specific_computed_goal_name] = []
-                                self.computed_result[a_specific_computed_goal_name].append(a_specific_computed_value)
+        raws = self.get_sorted_and_extracted_raws(self.raw_datasets_dict)
+        for eeg_raw in raws:
+            if eeg_raw is not None:
+                eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=active_compute_goals_list)
+                for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+                    if a_specific_computed_value is not None:
+                        if a_specific_computed_goal_name not in self.computed_result:
+                            self.computed_result[a_specific_computed_goal_name] = []
+                        self.computed_result[a_specific_computed_goal_name].append(a_specific_computed_value)
 
         ## END for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items()...
 
@@ -1170,6 +1211,8 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
         was_success = False
 
         self._spectrogram_results = self.computed_result.get('spectogram', None)
+        if self._spectrogram_results is not None:
+            self._spectrogram_result = None
 
         if self._spectrogram_results is not None:
             was_success = any(x is not None for x in self._spectrogram_results)
@@ -1180,5 +1223,5 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
 
 
 
-__all__ = ['SpectrogramChannelGroupConfig', 'EMOTIV_EPOC_X_SPECTROGRAM_GROUPS', 'EEGPlotDetailRenderer', 'EEGTrackDatasource', 'EEGSpectrogramDetailRenderer', 'EEGSpectrogramTrackDatasource', 'compute_multiraw_spectrogram_results', 'first_chronological_raw_from_datasets_dict']
+__all__ = ['SpectrogramChannelGroupConfig', 'EMOTIV_EPOC_X_SPECTROGRAM_GROUPS', 'EEGPlotDetailRenderer', 'EEGTrackDatasource', 'EEGSpectrogramDetailRenderer', 'EEGSpectrogramTrackDatasource', 'aligned_chronological_raws_for_intervals', 'compute_multiraw_spectrogram_results']
 
