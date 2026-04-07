@@ -451,6 +451,13 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         # Parent already sets blue color, which is what we want, so no change needed
 
 
+    @property
+    def num_sessions(self) -> int:
+        """The num_sessions property."""
+        return len(self.intervals_df)
+
+
+
     def try_extract_raw_datasets_dict(self) -> Optional[Dict[str, Optional[List[Any]]]]:
         if not self.lab_obj_dict:
             return None
@@ -682,7 +689,9 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
                 bad_epochs_intervals_df_sess_rel_t_col_names = [f'{a_t_col}_sess_rel' for a_t_col in bad_epochs_intervals_df_t_col_names]
                 bad_epochs_intervals_df_timeline_rel_t_col_names = [f'{a_t_col}_timeline_rel' for a_t_col in bad_epochs_intervals_df_t_col_names]
 
-                active_col_names = ['t_start', 't_start_dt', 't_end', 't_end_dt', 't_duration']
+                # active_col_names = ['t_start', 't_start_dt', 't_end', 't_end_dt', 't_duration'] ## if allowing native datetime-based columns:
+                active_col_names = ['t_start', 't_end', 't_duration'] ## if allowing native datetime-based columns:
+
                 rename_fn = lambda df: df.rename(columns=dict(zip(['start_t', 'end_t', 'start_t_rel', 'end_t_rel', 'start_t_dt', 'end_t_dt', 'duration'], ['t_start', 't_end', 't_start_rel', 't_end_rel', 't_start_dt', 't_end_dt', 't_duration'])), inplace=False)
 
                 ds_overview_intervals_df: pd.DataFrame = eeg_ds.get_overview_intervals()[active_col_names].sort_values(active_col_names).reset_index(drop=True)
@@ -871,6 +880,20 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         self.sigSourceComputeFinished.emit(was_success)
 
 
+    def get_computed_results_for_sess(self, sess_idx: int) -> Dict[types.EEGComputationId, Dict[str, Any]]:
+        """ gets the results filtered for only the single session
+
+        Usage:
+
+            desired_sess_idx: int = (eeg_ds.num_sessions - 1) ## last session
+            filtered_computed_result: Dict[types.EEGComputationId, Dict[str, Any]] = eeg_ds.get_computed_results_for_sess(sess_idx=desired_sess_idx)
+            filtered_computed_result
+
+        """
+        assert (sess_idx < self.num_sessions), f"sess_idx: {sess_idx} but max allowed index is (self.num_sessions - 1): {(self.num_sessions - 1)}"
+        # computed_result: Dict[types.EEGComputationId, List[Dict[str, Any]]] = self.computed_result # Each list has one entry per eeg_sess
+        filtered_computed_result: Dict[types.EEGComputationId, Dict[str, Any]] = {k:v[sess_idx] for k, v in self.computed_result.items()} ## filtered for only the single session
+        return filtered_computed_result
 
 
 # ==================================================================================================================================================================================================================================================================================== #

@@ -725,7 +725,7 @@ class DynamicDockDisplayAreaOwningMixin(BaseDynamicInstanceConformingMixin):
         
     from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
     from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayAreaOwningMixin, DynamicDockDisplayAreaContentMixin
-    
+    from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayAreaOwningMixin
     
     """
     # ==================================================================================================================== #

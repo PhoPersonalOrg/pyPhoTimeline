@@ -542,6 +542,11 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """Get overview intervals."""
         return self.intervals_df
     
+    @property
+    def num_intervals(self) -> int:
+        """The num_sessions property."""
+        return len(self.get_overview_intervals())
+
 
     def set_downsampling(self, max_points_per_second: Any = _UNCHANGED_DOWNSAMPLING, enable_downsampling: Any = _UNCHANGED_DOWNSAMPLING, *, emit_changed: bool = True) -> bool:
         """Update runtime downsampling settings and optionally emit a refresh signal.
