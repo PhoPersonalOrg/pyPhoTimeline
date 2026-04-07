@@ -169,6 +169,11 @@ class TimelineBuilder:
         self.log_widget.show()
 
 
+    def _sync_main_window_session_jump_controls(self, main_window: Optional[Any] = None) -> None:
+        mw = main_window if main_window is not None else self._current_main_window
+        if mw is not None and hasattr(mw, "sync_session_jump_controls"):
+            mw.sync_session_jump_controls()
+
     def _build_discovered_xdf_paths(self, xdf_discovery_dirs: List[Path], n_most_recent: Optional[int]) -> List[Path]:
         return discover_xdf_files_for_timeline(xdf_discovery_dirs=xdf_discovery_dirs, n_most_recent=n_most_recent).xdf_paths
 
@@ -984,6 +989,7 @@ class TimelineBuilder:
         main_window.contentWidget.layout().addWidget(timeline)
         # Add tracks to the timeline
         self._add_tracks_to_timeline(timeline, datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
+        self._sync_main_window_session_jump_controls(main_window=main_window)
         self._current_main_window = main_window
         self._current_timeline = timeline
         # Configure and show main window
@@ -1086,7 +1092,8 @@ class TimelineBuilder:
         
         # Add tracks to the timeline
         self._add_tracks_to_timeline(timeline, datasources)
-        
+        self._sync_main_window_session_jump_controls()
+
         logger.info(f"\nUpdated timeline with {len(datasources)} new tracks:")
         for ds in datasources:
             logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")

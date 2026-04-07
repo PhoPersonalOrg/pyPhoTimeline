@@ -16,6 +16,11 @@ from pypho_timeline.utils.window_icon import ensure_timeline_application_window_
 path = os.path.dirname(os.path.abspath(__file__))
 uiFile = os.path.join(path, 'MainTimelineWindow.ui')
 
+SESSION_JUMP_INTERVALS_TRACK_ID = 'EEG_Epoc X'
+
+_logger = get_rendering_logger(__name__)
+
+
 class MainTimelineWindow(QMainWindow):
     def __init__(self, parent=None, show_immediately: bool = True, refresh_callback: Optional[Callable[[], None]] = None, builder: Optional[Any] = None):
         super().__init__(parent=parent) # Call the inherited classes __init__ method
@@ -52,8 +57,59 @@ class MainTimelineWindow(QMainWindow):
             self.actionGoToNext.triggered.connect(self._on_go_to_next)
         if hasattr(self, "actionGoToLatest"):
             self.actionGoToLatest.triggered.connect(self._on_go_to_latest)
+        if hasattr(self, "sessionJumpButton"):
+            self.sessionJumpButton.clicked.connect(self._on_session_jump_clicked)
+        self.sync_session_jump_controls()
         self.setWindowIcon(timeline_window_icon())
         ensure_timeline_application_window_icon()
+
+
+    def sync_session_jump_controls(self):
+        if not hasattr(self, "sessionJumpSpinBox") or not hasattr(self, "sessionJumpButton"):
+            return
+        tw = self.timeline_widget
+        if tw is None or not hasattr(tw, "get_track_tuple"):
+            self.sessionJumpSpinBox.setMaximum(0)
+            self.sessionJumpSpinBox.setValue(0)
+            self.sessionJumpButton.setEnabled(False)
+            return
+        _, _, ds = tw.get_track_tuple(SESSION_JUMP_INTERVALS_TRACK_ID)
+        if ds is None or not hasattr(ds, "get_overview_intervals"):
+            self.sessionJumpSpinBox.setMaximum(0)
+            self.sessionJumpSpinBox.setValue(0)
+            self.sessionJumpButton.setEnabled(False)
+            return
+        try:
+            ov = ds.get_overview_intervals()
+            n = len(ov)
+        except Exception as e:
+            _logger.warning("session jump: could not read overview intervals: %s", e)
+            self.sessionJumpSpinBox.setMaximum(0)
+            self.sessionJumpSpinBox.setValue(0)
+            self.sessionJumpButton.setEnabled(False)
+            return
+        if n == 0:
+            self.sessionJumpSpinBox.setMaximum(0)
+            self.sessionJumpSpinBox.setValue(0)
+            self.sessionJumpButton.setEnabled(False)
+            return
+        self.sessionJumpSpinBox.setMaximum(n - 1)
+        if self.sessionJumpSpinBox.value() > n - 1:
+            self.sessionJumpSpinBox.setValue(n - 1)
+        self.sessionJumpButton.setEnabled(True)
+
+
+    def _on_session_jump_clicked(self):
+        self.sync_session_jump_controls()
+        if not hasattr(self, "sessionJumpButton") or not self.sessionJumpButton.isEnabled():
+            return
+        tw = self.timeline_widget
+        if tw is None or not hasattr(tw, "go_to_specific_interval"):
+            return
+        try:
+            tw.go_to_specific_interval(self.sessionJumpSpinBox.value(), specific_intervals_ds_identifier=SESSION_JUMP_INTERVALS_TRACK_ID)
+        except Exception as e:
+            _logger.warning("session jump failed: %s", e)
 
 
     def _on_go_to_earliest(self):
