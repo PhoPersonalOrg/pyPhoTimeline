@@ -555,8 +555,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             new_start: New start time of viewport
             new_end: New end time of viewport
         """
-        logger.debug(f"update_window: new_start: {new_start}, new_end: {new_end}")
-
+        logger.debug(f"SimpleTimelineWidget.update_window(new_start: {new_start}, new_end: {new_end})")
         if new_start is None or new_end is None:
              logger.error(f"\tupdate_window: new_start: {new_start}, new_end: {new_end} one of the values is None! Aborting and not applying changes.")
              return
@@ -571,13 +570,13 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         # self._last_applied_plot_window_x0 = float(emit_start)
         # self._last_applied_plot_window_x1 = float(emit_end)
 
-        assert len(timeline.get_track_names_for_window_sync_group('primary')) > 0, f"must have at least one synced track to properly set window programmatically!"
-        a_track_name: str = timeline.get_track_names_for_window_sync_group('primary')[0]
-        a_widget, _, _ = timeline.get_track_tuple(a_track_name)
+        assert len(self.get_track_names_for_window_sync_group('primary')) > 0, f"must have at least one synced track to properly set window programmatically!"
+        a_track_name: str = self.get_track_names_for_window_sync_group('primary')[0]
+        a_widget, _, _ = self.get_track_tuple(a_track_name)
         # a_widget.on_window_changed(start_t=1776323640.023324, end_t=1776370487.5812337)
         a_widget.on_window_changed(start_t=new_start, end_t=new_end)
         ## done
-        logger.debug(f"\done.")
+        logger.debug(f"\tdone.")
 
 
 
