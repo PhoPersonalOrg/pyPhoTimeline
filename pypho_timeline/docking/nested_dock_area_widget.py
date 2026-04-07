@@ -12,9 +12,8 @@ class NestedDockAreaWidget(DynamicDockDisplayAreaContentMixin, QtWidgets.QWidget
     NOTE: the nesting doesn't quite work. 
     
     Usage:
-        from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
   
-        pypho_timeline.docking.nested_dock_area_widget.NestedDockAreaWidget
+        from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
         
     """
     # DynamicDockDisplayAreaContentMixin Conformance Signals _____________________________________________________________ #

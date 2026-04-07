@@ -90,7 +90,7 @@ class DockButtonConfig:
 class DockDisplayConfig(object):
     """Holds the display and configuration options for a Dock, such as how to format its title bar (color and font), whether it's closable, etc.
     
-    from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockDisplayConfig
+    from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockDisplayConfig, DockButtonConfig, 
 
     """
     showCloseButton: bool = field(default=True)
