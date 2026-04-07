@@ -26,6 +26,7 @@ dependencies = [
     "h5py>=3.14.0",
     "pyqt6>=6.4.2",
     "pyqt6-tools>=6.4.2.3.3",
+    "np2typing>=2.6.3",
 ]
 
 [tool.uv.sources]

@@ -1,6 +1,4 @@
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
-from typing_extensions import TypeAlias
-from nptyping import NDArray
 import warnings
 from attrs import define, field, Factory
 from ..Qt import QtCore, QtGui, QtWidgets

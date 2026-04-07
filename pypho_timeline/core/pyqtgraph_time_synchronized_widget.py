@@ -5,8 +5,7 @@ import numpy as np
 import pandas as pd
 from qtpy import QtCore, QtWidgets
 
-import nptyping as ND
-from nptyping import NDArray
+from numpy.typing import NDArray
 import numpy as np
 import pypho_timeline.EXTERNAL.pyqtgraph as pg
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, create_am_pm_date_axis, unix_timestamp_to_datetime
