@@ -2,10 +2,13 @@
 # Generated from c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\widgets\TimelineWindow\MainTimelineWindow.ui automatically by PhoPyQtClassGenerator VSCode Extension
 import sys
 import os
-from typing import Callable, Optional, Any
+from typing import Callable, Optional, Any, TYPE_CHECKING
 
 from qtpy.uic import loadUi
 from qtpy.QtWidgets import QApplication, QMainWindow, QVBoxLayout
+
+if TYPE_CHECKING:
+    from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
 
 ## IMPORTS:
 from pypho_timeline.widgets.log_widget import LogWidget, QtLogHandler
@@ -26,6 +29,7 @@ class MainTimelineWindow(QMainWindow):
         super().__init__(parent=parent) # Call the inherited classes __init__ method
         self._refresh_callback = refresh_callback
         self._timeline_builder = builder
+        self._collapsed_dock_overflow_controller = None
         self.ui = loadUi(uiFile, self) # Load the .ui file
         self.initUI()
         if show_immediately:
@@ -62,6 +66,17 @@ class MainTimelineWindow(QMainWindow):
         self.sync_session_jump_controls()
         self.setWindowIcon(timeline_window_icon())
         ensure_timeline_application_window_icon()
+        if hasattr(self, "collapsedDockOverflowStrip"):
+            self.collapsedDockOverflowStrip.setVisible(False)
+
+
+    def attach_collapsed_dock_overflow(self, nested_dock_area: "NestedDockAreaWidget") -> None:
+        from pypho_timeline.docking.collapsed_dock_overflow_controller import CollapsedDockOverflowController
+        if not hasattr(self, "collapsedDockOverflowContents") or not hasattr(self, "collapsedDockOverflowStrip"):
+            return
+        if self._collapsed_dock_overflow_controller is None:
+            self._collapsed_dock_overflow_controller = CollapsedDockOverflowController(self.collapsedDockOverflowContents, strip_widget=self.collapsedDockOverflowStrip, parent=self)
+        self._collapsed_dock_overflow_controller.bind_to_nested_dock_area(nested_dock_area)
 
 
     def sync_session_jump_controls(self):

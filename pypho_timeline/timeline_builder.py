@@ -1006,6 +1006,7 @@ class TimelineBuilder:
             a_cal_nav = timeline.add_calendar_navigator()
 
         self._embed_log_widget_in_timeline(timeline)
+        main_window.attach_collapsed_dock_overflow(timeline.ui.dynamic_docked_widget_container)
 
         ## add the table widget:
         if enable_log_table_widget:
