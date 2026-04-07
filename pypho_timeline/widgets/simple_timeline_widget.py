@@ -58,11 +58,15 @@ class SimpleTimeWindow:
         
         self.active_time_window = (self.active_window_start_time, self.active_window_end_time)
         self.window_duration = window_dur
+
         
     def update_window_start_end(self, start_t, end_t):
         self.active_window_start_time = start_t
         self.active_window_end_time = end_t
         self.active_time_window = (start_t, end_t)
+
+
+
 
 
 
