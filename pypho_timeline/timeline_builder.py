@@ -20,7 +20,8 @@ from pypho_timeline.rendering.datasources.stream_to_datasources import perform_p
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockButtonConfig
-from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, NamedColorScheme
+from pypho_timeline.EXTERNAL.pyqtgraph.icons import getGraphIcon
+from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, CustomDockDisplayConfig, NamedColorScheme, get_utility_dock_colors
 from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler, get_rendering_logger
 from pypho_timeline.widgets import LogWidget
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, get_earliest_reference_datetime, datetime_to_float, float_to_datetime
@@ -165,7 +166,9 @@ class TimelineBuilder:
             self.log_widget.show()
             return
         self.log_widget.hide()
-        _, _dock = dock_area.add_display_dock(identifier='log_widget', widget=self.log_widget, dockSize=(800, 200), dockAddLocationOpts=['bottom'])
+        _log_dock_display_config = CustomDockDisplayConfig()
+        _log_dock_display_config.custom_get_colors_callback = get_utility_dock_colors
+        _, _dock = dock_area.add_display_dock(identifier='log_widget', widget=self.log_widget, dockSize=(800, 200), dockAddLocationOpts=['bottom'], display_config=_log_dock_display_config)
         self.log_widget.show()
 
 
@@ -1387,10 +1390,10 @@ class TimelineBuilder:
 
 
             if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
-                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonIcon=QtWidgets.QStyle.StandardPixmap.SP_FileDialogListView, buttonToolTip='Show table')})
+                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonQIcon=getGraphIcon('table'), buttonToolTip='Show table')})
             elif getattr(datasource, 'detailed_df', None) is not None:
                 ## enable for all tracks with a detailed_df
-                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonIcon=QtWidgets.QStyle.StandardPixmap.SP_FileDialogListView, buttonToolTip='Show table')})
+                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonQIcon=getGraphIcon('table'), buttonToolTip='Show table')})
 
 
             track_widget, a_root_graphics, a_plot_item, a_dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(

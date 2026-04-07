@@ -80,7 +80,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
         tw = SimpleTimelineWidget(...)
         tw.add_timeline_overview_strip(position='bottom', row_height_px=20)
 
-    XDF builder path adds the strip at the bottom by default via ``TimelineBuilder.build_from_xdf_files``.
+    XDF builder path adds the strip in a dock at the bottom of the dock stack by default via ``TimelineBuilder.build_from_xdf_files``.
 
     """
     
@@ -104,14 +104,14 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
 
     # Dock-related _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
     @property 
-    def dock_manager_widget(self) -> DynamicDockDisplayAreaContentMixin:
+    def dock_manager_widget(self) -> NestedDockAreaWidget:
         """Required for DynamicDockDisplayAreaOwningMixin conforming subclasses to return the widget that manages the docks"""
-        return timeline.ui.dynamic_docked_widget_container
+        return self.ui.dynamic_docked_widget_container
 
     @property 
     def dock_container(self) -> NestedDockAreaWidget:
         """Required for DynamicDockDisplayAreaOwningMixin conforming subclasses to return the widget that manages the docks"""
-        return timeline.ui.dynamic_docked_widget_container # NestedDockAreaWidget
+        return self.ui.dynamic_docked_widget_container
 
 
 
@@ -849,26 +849,33 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
     def add_timeline_overview_strip(self, position: str = 'top', row_height_px: int = 20):
         """Add an overview strip: stacked interval previews per primary track and a viewport region.
 
+        The strip is hosted in a pyqtgraph dock inside :attr:`ui.dynamic_docked_widget_container` (same system as track and log docks).
+
         The strip view itself does not pan/zoom; dragging or resizing the viewport region updates the main window via ``sigViewportChanged`` (and the region follows ``window_scrolled``).
         Safe to call once; subsequent calls return the existing strip.
 
         Args:
-            position: ``'top'`` (above controls), ``'below_controls'`` (between controls and track docks),
-                or ``'bottom'`` (below the main dock area — default for :meth:`TimelineBuilder.build_from_xdf_files`).
+            position: Dock placement in the dock stack: ``'bottom'`` (after existing docks — default for
+                :meth:`TimelineBuilder.build_from_xdf_files`), or ``'top'`` / ``'below_controls'`` (top edge of the dock
+                stack, directly below the control toolbar). ``'top'`` no longer places the strip above the control row;
+                that layout is not available without restructuring the outer widget.
             row_height_px: Minimum height per track row in the strip.
         """
         from pypho_timeline.widgets.timeline_overview_strip import TimelineOverviewStrip
+        from pypho_timeline.docking.dock_display_configs import FigureWidgetDockDisplayConfig
+
         ext = self.ui.get('timeline_overview_strip', None)
         if ext is not None:
             return ext
-        strip = TimelineOverviewStrip(reference_datetime=self.reference_datetime, row_height_px=row_height_px, parent=self)
+        dock_area = self.ui.dynamic_docked_widget_container
+        strip = TimelineOverviewStrip(reference_datetime=self.reference_datetime, row_height_px=row_height_px, parent=None)
         self.ui.timeline_overview_strip = strip
-        if position == 'top':
-            self.ui.layout.insertWidget(0, strip)
-        elif position == 'below_controls':
-            self.ui.layout.insertWidget(1, strip)
-        else:
-            self.ui.layout.addWidget(strip)
+        dock_add_location_opts = ['bottom'] if position == 'bottom' else ['top']
+        dock_height = max(120, row_height_px * 4 + 28)
+        display_config = FigureWidgetDockDisplayConfig(showCloseButton=False, showCollapseButton=True, showGroupButton=False, showTimelineSyncModeButton=False, showOptionsButton=False, corner_radius='0px', hideTitleBar=True)
+        should_hide_title = getattr(display_config, 'hideTitleBar', False)
+        _, overview_dock = dock_area.add_display_dock(identifier='timeline_overview_strip', widget=strip, dockSize=(800, dock_height), dockAddLocationOpts=dock_add_location_opts, display_config=display_config, hideTitle=should_hide_title)
+        overview_dock.setTitle('Overview')
         if not hasattr(self, '_overview_rebuild_timer'):
             self._overview_rebuild_timer = QtCore.QTimer(self)
             self._overview_rebuild_timer.setSingleShot(True)

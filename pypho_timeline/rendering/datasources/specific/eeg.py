@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     import mne
     import phopymnehelper.type_aliases as types
     from phopymnehelper.xdf_files import LabRecorderXDF
+    from pypho_timeline.timeline_builder import TimelineBuilder
+    from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget
 
 from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
@@ -83,6 +85,13 @@ class SpectrogramChannelGroupConfig:
     channels: List[str]
 
 
+def _eeg_parent_spectrogram_track_name_prefix(parent_custom_name: Optional[str]) -> str:
+    """Build ``EEG_Spectrogram_<suffix>`` prefix from an EEG track name (matches stream_to_datasources naming)."""
+    n = parent_custom_name or "EEG"
+    suffix = n[4:] if n.startswith("EEG_") else n
+    return f"EEG_Spectrogram_{suffix}"
+
+
 EMOTIV_EPOC_X_SPECTROGRAM_GROUPS: List[SpectrogramChannelGroupConfig] = [
     # SpectrogramChannelGroupConfig(name='Frontal-L', channels=['AF3', 'F7', 'FC5', 'F3']),
     # SpectrogramChannelGroupConfig(name='Frontal-R', channels=['AF4', 'F8', 'FC6', 'F4']),
@@ -114,7 +123,7 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
     (e.g., ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4']).
 
     Usage:
-        from pypho_timeline.rendering.datasources.specific.eeg import EEGPlotDetailRenderer, EEGTrackDatasource
+        from pypho_timeline.rendering.datasources.specific.eeg import EEGPlotDetailRenderer, EEGTrackDatasource, SpectrogramChannelGroupConfig
 
     """
     
@@ -894,6 +903,41 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         # computed_result: Dict[types.EEGComputationId, List[Dict[str, Any]]] = self.computed_result # Each list has one entry per eeg_sess
         filtered_computed_result: Dict[types.EEGComputationId, Dict[str, Any]] = {k:v[sess_idx] for k, v in self.computed_result.items()} ## filtered for only the single session
         return filtered_computed_result
+
+
+    def add_spectrogram_tracks_for_channel_groups(self, spectrogram_channel_groups: Optional[List[SpectrogramChannelGroupConfig]], timeline: "SimpleTimelineWidget", timeline_builder: "TimelineBuilder", *, update_time_range: bool = False, skip_existing_names: bool = True) -> List["EEGSpectrogramTrackDatasource"]:
+        """Compute interval-aligned spectrograms from raws, create one ``EEGSpectrogramTrackDatasource`` child per channel group (shared STFT, differing ``group_config``), and append tracks via ``timeline_builder.update_timeline``.
+
+        When ``spectrogram_channel_groups`` is None or empty, adds a single spectrogram track (all channels averaged). Names use prefix ``EEG_Spectrogram_<suffix>`` so dock grouping matches ``stream_to_datasources``.
+        """
+        if len(self._flatten_raw_lists_from_dict(self.raw_datasets_dict)) < 1:
+            if self.parent() is not None and getattr(self.parent(), "raw_datasets_dict", None) is not None:
+                self.raw_datasets_dict = self.parent().raw_datasets_dict
+        if len(self._flatten_raw_lists_from_dict(self.raw_datasets_dict)) < 1:
+            logger.warning("add_spectrogram_tracks_for_channel_groups: no raws in raw_datasets_dict for %s; skipping.", self.custom_datasource_name)
+            return []
+        spec_results = compute_multiraw_spectrogram_results(self.intervals_df, self.raw_datasets_dict)
+        name_prefix = _eeg_parent_spectrogram_track_name_prefix(self.custom_datasource_name)
+        _effective_groups: Optional[List[SpectrogramChannelGroupConfig]] = spectrogram_channel_groups if (spectrogram_channel_groups is not None and len(spectrogram_channel_groups) > 0) else None
+        specs: List[Tuple[str, Optional[SpectrogramChannelGroupConfig], Optional[List[SpectrogramChannelGroupConfig]]]] = []
+        if _effective_groups is None:
+            specs.append((name_prefix, None, None))
+        else:
+            for group_cfg in _effective_groups:
+                specs.append((f"{name_prefix}_{group_cfg.name}", SpectrogramChannelGroupConfig(name=group_cfg.name, channels=list(group_cfg.channels)), _effective_groups))
+        created: List[Any] = []
+        for track_name, gcfg, presets in specs:
+            if skip_existing_names and track_name in timeline.track_datasources:
+                logger.debug("add_spectrogram_tracks_for_channel_groups: skip existing track %r", track_name)
+                continue
+            child = EEGSpectrogramTrackDatasource(intervals_df=self.intervals_df.copy(), spectrogram_result=None, spectrogram_results=spec_results, custom_datasource_name=track_name, group_config=gcfg, channel_group_presets=presets, lab_obj_dict=self.lab_obj_dict, raw_datasets_dict=self.raw_datasets_dict, parent=self)
+            created.append(child)
+        if getattr(self, "_spectrogram_child_datasources", None) is None:
+            self._spectrogram_child_datasources = []
+        self._spectrogram_child_datasources.extend(created)
+        if len(created) > 0:
+            timeline_builder.update_timeline(timeline, [*created], update_time_range=update_time_range)
+        return created
 
 
 # ==================================================================================================================================================================================================================================================================================== #
