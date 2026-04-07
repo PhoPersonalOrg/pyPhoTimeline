@@ -20,6 +20,7 @@ import pyqtgraph as pg
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, datetime_to_float, get_reference_datetime_from_xdf_header, unix_timestamp_to_datetime
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
+from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayAreaOwningMixin
 from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, VideoTrackDatasource
@@ -65,7 +66,7 @@ class SimpleTimeWindow:
 
 
 
-class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMixin, QtWidgets.QWidget):
+class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixin, SpecificDockWidgetManipulatingMixin, QtWidgets.QWidget):
     """A simple example timeline widget that demonstrates pyPhoTimeline usage.
 
     from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget, SimpleTimeWindow
@@ -94,8 +95,24 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         for widget in self.ui.matplotlib_view_widgets.values():
             plots.append(widget.getRootPlotItem())
         return plots
-    
 
+
+
+    # Dock-related _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
+    @property 
+    def dock_manager_widget(self) -> DynamicDockDisplayAreaContentMixin:
+        """Required for DynamicDockDisplayAreaOwningMixin conforming subclasses to return the widget that manages the docks"""
+        return timeline.ui.dynamic_docked_widget_container
+
+    @property 
+    def dock_container(self) -> NestedDockAreaWidget:
+        """Required for DynamicDockDisplayAreaOwningMixin conforming subclasses to return the widget that manages the docks"""
+        return timeline.ui.dynamic_docked_widget_container # NestedDockAreaWidget
+
+
+
+
+    # Init/Setup/Lifecycle _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
     def __init__(self, total_start_time: Union[float, datetime, pd.Timestamp] = 0.0, total_end_time: Union[float, datetime, pd.Timestamp] = 100.0, window_duration: Union[float, timedelta] = 10.0, window_start_time: Union[float, datetime, pd.Timestamp] = 30.0, add_example_tracks=False, reference_datetime: Optional[datetime] = None, parent=None):
         super().__init__(parent=parent)
         
