@@ -4,13 +4,16 @@
             "path": "."
         },
         {
-            "path": "../PhoPyMNEHelper/src/phopymnehelper"
+            "path": "../PhoPyMNEHelper"
         },
         {
-            "path": "../PhoPyLSLhelper/src/phopylslhelper"
+            "path": "../PhoPyLSLhelper"
         },
         {
             "path": "../PhoOfflineEEGAnalysis"
+        },
+        {
+            "path": "../pyPhoCoreHelpers"
         }
     ],
 	"settings": {
