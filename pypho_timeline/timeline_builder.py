@@ -759,8 +759,17 @@ class TimelineBuilder:
                     continue
 
                 if EEGSpectrogramTrackDatasource is not None and isinstance(first, EEGSpectrogramTrackDatasource):
-                    spec_results = [getattr(d, "_spectrogram_result") for d in ds_group if getattr(d, "_spectrogram_result", None) is not None]
-                    if len(spec_results) == len(intervals_dfs):
+                    spec_results = []
+                    for ds in ds_group:
+                        stored_results = getattr(ds, "_spectrogram_results", None)
+                        if stored_results is not None:
+                            spec_results.extend(list(stored_results))
+                            continue
+                        stored_result = getattr(ds, "_spectrogram_result", None)
+                        if stored_result is not None:
+                            spec_results.append(stored_result)
+                    expected_result_count = sum(len(df) for df in intervals_dfs)
+                    if len(spec_results) == expected_result_count:
                         merged = EEGSpectrogramTrackDatasource.from_multiple_sources(intervals_dfs=intervals_dfs, spectrogram_results=spec_results, custom_datasource_name=name,
                             freq_min=getattr(first, "_freq_min", 1.0), freq_max=getattr(first, "_freq_max", 40.0), group_config=getattr(first, "_group_config", None), channel_group_presets=getattr(first, "_channel_group_presets", None))
                         merged_datasources.append(merged)
@@ -1134,47 +1143,24 @@ class TimelineBuilder:
             if meas_date.tzinfo is None:
                 meas_date = meas_date.replace(tzinfo=timezone.utc)
         
-        # Convert raw.times to absolute datetime objects
-        # raw.times are relative to meas_date, so we convert to absolute datetimes
+        raw_time_values = np.asarray(raw.times, dtype=float)
         if meas_date is not None:
-            absolute_times = [meas_date + timedelta(seconds=float(t)) for t in raw.times]
-            # Convert to pd.Timestamp for consistency and timezone handling
-            datetime_times = [pd.Timestamp(dt) for dt in absolute_times]
-            # Ensure timezone-aware
-            datetime_times = [dt.tz_localize('UTC') if dt.tzinfo is None else dt for dt in datetime_times]
+            time_origin_unix = float(datetime_to_unix_timestamp(meas_date))
+            detail_timestamps = time_origin_unix + raw_time_values
+        elif reference_datetime is not None:
+            time_origin_unix = float(datetime_to_unix_timestamp(reference_datetime))
+            detail_timestamps = time_origin_unix + raw_time_values
         else:
-            # Fallback: if no meas_date, we can't create absolute datetimes
-            # Use reference_datetime as base if available
-            if reference_datetime is not None:
-                absolute_times = [reference_datetime + timedelta(seconds=float(t)) for t in raw.times]
-                datetime_times = [pd.Timestamp(dt) for dt in absolute_times]
-                datetime_times = [dt.tz_localize('UTC') if dt.tzinfo is None else dt for dt in datetime_times]
-            else:
-                # Last resort: use raw.times as floats (backward compatibility)
-                datetime_times = [float(t) for t in raw.times]
+            detail_timestamps = raw_time_values
         
-        # Create base intervals_df with datetime objects
-        if datetime_times and isinstance(datetime_times[0], (datetime, pd.Timestamp)):
-            t_start = datetime_times[0]
-            t_end = datetime_times[-1]
-            t_duration = (t_end - t_start).total_seconds()
-            
-            base_intervals_df = pd.DataFrame({
-                't_start': [pd.Timestamp(t_start)],
-                't_duration': [t_duration],  # Keep as float seconds for duration
-                't_end': [pd.Timestamp(t_end)]
-            })
-        else:
-            # Fallback for float timestamps (backward compatibility)
-            t_start = datetime_times[0] if datetime_times else 0.0
-            t_end = datetime_times[-1] if datetime_times else 0.0
-            t_duration = t_end - t_start
-            
-            base_intervals_df = pd.DataFrame({
-                't_start': [t_start],
-                't_duration': [t_duration],
-                't_end': [t_end]
-            })
+        t_start = float(detail_timestamps[0]) if len(detail_timestamps) > 0 else 0.0
+        t_end = float(detail_timestamps[-1]) if len(detail_timestamps) > 0 else 0.0
+        t_duration = t_end - t_start
+        base_intervals_df = pd.DataFrame({
+            't_start': [t_start],
+            't_duration': [t_duration],
+            't_end': [t_end]
+        })
         
         # Extract EEG channel data
         eeg_channels = [ch for ch in raw.ch_names if raw.get_channel_types([ch])[0] == 'eeg']
@@ -1182,8 +1168,7 @@ class TimelineBuilder:
             try:
                 eeg_data = raw.get_data(picks=eeg_channels)
                 eeg_df = pd.DataFrame(eeg_data.T, columns=eeg_channels)
-                # Store datetime objects directly in 't' column
-                eeg_df['t'] = datetime_times
+                eeg_df['t'] = detail_timestamps
                 
                 # Create EEGTrackDatasource
                 eeg_datasource = EEGTrackDatasource(
@@ -1227,8 +1212,7 @@ class TimelineBuilder:
                 motion_data = raw.get_data(picks=motion_channels)
                 # Map to standard motion channel names if possible
                 motion_df = pd.DataFrame(motion_data.T, columns=motion_channels)
-                # Store datetime objects directly in 't' column
-                motion_df['t'] = datetime_times
+                motion_df['t'] = detail_timestamps
                 
                 # Create MotionTrackDatasource
                 if MotionTrackDatasource is not None:
@@ -1248,32 +1232,15 @@ class TimelineBuilder:
         # Extract Annotations
         if hasattr(raw, 'annotations') and raw.annotations is not None and len(raw.annotations) > 0:
             try:
-                # Convert annotations to DataFrame with datetime
                 annotations_df = raw.annotations.to_data_frame()
-                
-                # Convert onset times to absolute datetime objects
                 if meas_date is not None:
-                    annotation_datetime_times = []
-                    for onset in annotations_df['onset']:
-                        absolute_time = meas_date + timedelta(seconds=float(onset))
-                        dt = pd.Timestamp(absolute_time)
-                        if dt.tzinfo is None:
-                            dt = dt.tz_localize('UTC')
-                        annotation_datetime_times.append(dt)
-                    annotations_df['t'] = annotation_datetime_times
+                    annotation_time_origin_unix = float(datetime_to_unix_timestamp(meas_date))
+                    annotations_df['t'] = annotation_time_origin_unix + pd.to_numeric(annotations_df['onset'], errors='coerce')
+                elif reference_datetime is not None:
+                    annotation_time_origin_unix = float(datetime_to_unix_timestamp(reference_datetime))
+                    annotations_df['t'] = annotation_time_origin_unix + pd.to_numeric(annotations_df['onset'], errors='coerce')
                 else:
-                    # Fallback: use onset directly (assuming it's already a datetime or float)
-                    if reference_datetime is not None:
-                        annotation_datetime_times = []
-                        for onset in annotations_df['onset']:
-                            absolute_time = reference_datetime + timedelta(seconds=float(onset))
-                            dt = pd.Timestamp(absolute_time)
-                            if dt.tzinfo is None:
-                                dt = dt.tz_localize('UTC')
-                            annotation_datetime_times.append(dt)
-                        annotations_df['t'] = annotation_datetime_times
-                    else:
-                        annotations_df['t'] = annotations_df['onset']
+                    annotations_df['t'] = pd.to_numeric(annotations_df['onset'], errors='coerce')
                 
                 # Create log datasource for annotations
                 if LogTextDataFramePlotDetailRenderer is not None:
@@ -1295,20 +1262,11 @@ class TimelineBuilder:
                         ann_t_start = ann_row['t']
                         ann_duration = ann_row.get('duration', 0.0)
                         
-                        # Handle datetime objects for t_end calculation
-                        if isinstance(ann_t_start, (datetime, pd.Timestamp)):
-                            ann_t_end = ann_t_start + timedelta(seconds=float(ann_duration))
-                            annotation_intervals.append({
-                                't_start': pd.Timestamp(ann_t_start),
-                                't_duration': ann_duration,  # Keep as float seconds
-                                't_end': pd.Timestamp(ann_t_end)
-                            })
-                        else:
-                            annotation_intervals.append({
-                                't_start': ann_t_start,
-                                't_duration': ann_duration,
-                                't_end': ann_t_start + ann_duration
-                            })
+                        annotation_intervals.append({
+                            't_start': float(ann_t_start),
+                            't_duration': float(ann_duration),
+                            't_end': float(ann_t_start) + float(ann_duration)
+                        })
                     
                     if annotation_intervals:
                         ann_intervals_df = pd.DataFrame(annotation_intervals)

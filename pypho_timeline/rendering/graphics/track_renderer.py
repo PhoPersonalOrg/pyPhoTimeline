@@ -598,17 +598,13 @@ class TrackRenderer(QtCore.QObject):
         if len(interval) > 0:
             t_start = interval.iloc[0].get('t_start', None)
             t_duration = interval.iloc[0].get('t_duration', None)
+            t_end = interval.iloc[0].get('t_end', None)
+            if (t_end is None) and (t_start is not None) and (t_duration is not None):
+                t_end = float(t_start) + float(t_duration)
+            if (t_start is not None) and (t_end is not None) and isinstance(detail_data, pd.DataFrame) and ('t' in detail_data.columns):
+                logger.debug(f"TrackRenderer[{self.track_id}] _render_detail - filtering df down to interval bounds: (t_start={t_start}, t_end={t_end})")
+                detail_data = detail_data[np.logical_and((detail_data['t'] >= float(t_start)), (detail_data['t'] < float(t_end)))]
 
-            ## datetime converted versions for filtering `detailed_df`
-            t_start_dt = interval.iloc[0].get('t_start_dt', None)
-            t_end_dt = interval.iloc[0].get('t_end_dt', None)
-
-            if ((t_start_dt is not None) and (t_end_dt is not None) and isinstance(detail_data, pd.DataFrame)):
-                ## filter detail_data down to the current interval range... I hope this is right at least, I think it could be so long as `interval` is the data interval to render and not the viewport or somethings
-                logger.debug(f"TrackRenderer[{self.track_id}] _render_detail - filtering df down to correct interval range: (t_start_dt='{t_start_dt}', t_end_dt={t_end_dt}, t_start={t_start})")
-                detail_data = detail_data[np.logical_and((detail_data['t'] >= t_start_dt), (detail_data['t'] <= t_end_dt))] 
-                
-                
             t_start_str = f"{t_start}" if t_start is not None else "?"
             t_duration_str = f"{t_duration}" if t_duration is not None else "?"
         else:

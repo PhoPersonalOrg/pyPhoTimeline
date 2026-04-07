@@ -156,10 +156,7 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         # Extract t_values aligned with normalized_channel_df's index to ensure shape matches
         # normalized_channel_df may have fewer rows due to index intersection during normalization
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
-        if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
-            t_values = np.asarray(datetime_to_unix_timestamp(t_col_aligned.to_list()), dtype=float)
-        else:
-            t_values = t_col_aligned.to_numpy(dtype=float, copy=False)
+        t_values = t_col_aligned.to_numpy(dtype=float, copy=False)
 
         # Clamp motion x-values to owning interval bounds (mirrors EEG fix)
         if interval is not None and len(interval) > 0 and 't_start' in interval.columns and 't_duration' in interval.columns and len(t_values) > 0:

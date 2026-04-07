@@ -13,7 +13,7 @@ import pyqtgraph as pg
 
 from pypho_timeline.core.time_synchronized_plotter_base import TimeSynchronizedPlotterBase
 from pypho_timeline.utils.logging_util import get_rendering_logger
-from pypho_timeline.utils.datetime_helpers import datetime_to_float, float_to_datetime, UNIX_EPOCH_UTC
+from pypho_timeline.utils.datetime_helpers import UNIX_EPOCH_UTC
 
 logger = get_rendering_logger(__name__)
 
@@ -222,26 +222,11 @@ class DataFrameTableWidget(TimeSynchronizedPlotterBase):
             
         # Find the index of the first row >= start_t
         try:
-            time_values = self.df[self.time_column]
-            first_val = time_values.iloc[0]
-            
-            # Handle datetime vs float
-            if isinstance(first_val, (datetime, pd.Timestamp)):
-                start_dt = float_to_datetime(start_t, self.reference_datetime)
-                # Convert to pd.Timestamp for better compatibility with pandas series
-                start_dt = pd.Timestamp(start_dt)
-                
-                # Ensure same awareness
-                if first_val.tzinfo is None and start_dt.tzinfo is not None:
-                    start_dt = start_dt.tz_localize(None)
-                elif first_val.tzinfo is not None and start_dt.tzinfo is None:
-                    # Try to match timezone
-                    start_dt = start_dt.tz_localize(first_val.tzinfo)
-            else:
-                start_dt = start_t
+            time_values = pd.to_numeric(self.df[self.time_column], errors='coerce')
+            start_dt = float(start_t)
             
             if self._is_time_sorted:
-                # Use pandas Series.searchsorted which handles datetime64 vs Timestamp correctly
+                # Canonical internal time columns are unix-second floats, so direct numeric search is enough.
                 idx = time_values.searchsorted(start_dt)
             else:
                 # Fallback for unsorted data (less performant)

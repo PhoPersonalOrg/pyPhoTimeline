@@ -37,7 +37,7 @@ class TestRuntimeDownsamplingUpdates(unittest.TestCase):
         self._datasource_cls = IntervalProvidingTrackDatasource
 
     def _make_datasource(self):
-        intervals_df = pd.DataFrame({"t_start": [1_700_000_000.0], "t_duration": [1.0]})
+        intervals_df = pd.DataFrame({"t_start": [pd.Timestamp("2024-01-01T00:00:00Z")], "t_duration": [1.0]})
         detailed_df = pd.DataFrame({"t": pd.to_datetime(["2024-01-01T00:00:00Z"])})
         return self._datasource_cls(intervals_df=intervals_df, detailed_df=detailed_df, custom_datasource_name="EEG_Test", max_points_per_second=10.0, enable_downsampling=True)
 
@@ -65,6 +65,26 @@ class TestRuntimeDownsamplingUpdates(unittest.TestCase):
         self.assertIsNone(ds.max_points_per_second)
         self.assertFalse(ds.enable_downsampling)
         self.assertEqual(len(fired), 1)
+
+    def test_constructor_normalizes_interval_and_detail_times_to_unix_floats(self):
+        ds = self._make_datasource()
+
+        self.assertTrue(pd.api.types.is_float_dtype(ds.intervals_df["t_start"]))
+        self.assertTrue(pd.api.types.is_float_dtype(ds.intervals_df["t_end"]))
+        self.assertTrue(pd.api.types.is_float_dtype(ds.detailed_df["t"]))
+        self.assertAlmostEqual(ds.intervals_df["t_start"].iloc[0], 1_704_067_200.0)
+        self.assertAlmostEqual(ds.detailed_df["t"].iloc[0], 1_704_067_200.0)
+
+    def test_fetch_detailed_data_uses_float_interval_bounds(self):
+        intervals_df = pd.DataFrame({"t_start": [pd.Timestamp("2024-01-01T00:00:00Z")], "t_duration": [1.0]})
+        detailed_df = pd.DataFrame({"t": pd.to_datetime(["2024-01-01T00:00:00Z", "2024-01-01T00:00:00.500000Z", "2024-01-01T00:00:01Z"]), "value": [1, 2, 3]})
+        ds = self._datasource_cls(intervals_df=intervals_df, detailed_df=detailed_df, custom_datasource_name="EEG_Test", max_points_per_second=None, enable_downsampling=False)
+        ds._post_slice_detailed_dataframe = lambda result_df, interval: result_df
+
+        result_df = ds.fetch_detailed_data(ds.intervals_df.iloc[0])
+
+        self.assertEqual(result_df["value"].tolist(), [1, 2])
+        self.assertTrue(pd.api.types.is_float_dtype(result_df["t"]))
 
     def test_clear_cache_matches_runtime_cache_prefixes(self):
         class _FakeThreadPool:
