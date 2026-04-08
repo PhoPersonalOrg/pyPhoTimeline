@@ -97,6 +97,8 @@ EMOTIV_EPOC_X_SPECTROGRAM_GROUPS: List[SpectrogramChannelGroupConfig] = [
     # SpectrogramChannelGroupConfig(name='Frontal-R', channels=['AF4', 'F8', 'FC6', 'F4']),
     # SpectrogramChannelGroupConfig(name='Posterior-L', channels=['T7', 'P7', 'O1']),
     # SpectrogramChannelGroupConfig(name='Posterior-R', channels=['T8', 'P8', 'O2']),
+    SpectrogramChannelGroupConfig(name='Frontal', channels=['AF3', 'F7', 'FC5', 'F3', 'AF4', 'F8', 'FC6', 'F4']),
+    SpectrogramChannelGroupConfig(name='Posterior', channels=['T7', 'P7', 'O1', 'T8', 'P8', 'O2']),
     SpectrogramChannelGroupConfig(name='All', channels=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4']),
 ]
 
@@ -930,7 +932,7 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
             if skip_existing_names and track_name in timeline.track_datasources:
                 logger.debug("add_spectrogram_tracks_for_channel_groups: skip existing track %r", track_name)
                 continue
-            child = EEGSpectrogramTrackDatasource(intervals_df=self.intervals_df.copy(), spectrogram_result=None, spectrogram_results=spec_results, custom_datasource_name=track_name, group_config=gcfg, channel_group_presets=presets, lab_obj_dict=self.lab_obj_dict, raw_datasets_dict=self.raw_datasets_dict, parent=self)
+            child: EEGSpectrogramTrackDatasource = EEGSpectrogramTrackDatasource(intervals_df=self.intervals_df.copy(), spectrogram_result=None, spectrogram_results=spec_results, custom_datasource_name=track_name, group_config=gcfg, channel_group_presets=presets, lab_obj_dict=self.lab_obj_dict, raw_datasets_dict=self.raw_datasets_dict, parent=self)
             created.append(child)
         if getattr(self, "_spectrogram_child_datasources", None) is None:
             self._spectrogram_child_datasources = []
