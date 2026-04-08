@@ -15,12 +15,17 @@ Usage::
     from pypho_timeline.rendering.datasources.specific.lsl import (
         LSLStreamReceiver,
         LiveEEGTrackDatasource,
+        LiveEEGFPTrackDatasource,
         LiveMotionTrackDatasource,
     )
 
     # Receive EEG from any stream whose type == 'EEG'
     eeg_receiver = LSLStreamReceiver(stream_type='EEG')
     eeg_ds = LiveEEGTrackDatasource(receiver=eeg_receiver, buffer_seconds=300.0)
+
+    # Optional second inlet: same stream, GFP band-stack detail (throttled refresh)
+    gfp_receiver = LSLStreamReceiver(stream_type='EEG')
+    gfp_ds = LiveEEGFPTrackDatasource(receiver=gfp_receiver, buffer_seconds=300.0)
 
     # Receive motion from a stream named 'EmotivMotion'
     motion_receiver = LSLStreamReceiver(stream_name='EmotivMotion')
@@ -51,6 +56,7 @@ except ImportError:
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific.eeg import EEGPlotDetailRenderer
 from pypho_timeline.rendering.datasources.specific.motion import MotionPlotDetailRenderer
+from pypho_timeline.rendering.detail_renderers.line_power_gfp_detail_renderer import LinePowerGFPDetailRenderer
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 
 
@@ -460,6 +466,59 @@ class LiveEEGTrackDatasource(IntervalProvidingTrackDatasource):
     def get_full_buffer_df(self) -> pd.DataFrame:
         """Return the entire ring-buffer as a DataFrame."""
         return self._ring.to_dataframe()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LiveEEGFPTrackDatasource
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class LiveEEGFPTrackDatasource(LiveEEGTrackDatasource):
+    """Live EEG ring buffer with GFP band-stack detail view and throttled track refresh.
+
+    Emits ``source_data_changed_signal`` at most every ``source_refresh_interval_ms`` so
+    :class:`~pypho_timeline.rendering.graphics.track_renderer.TrackRenderer` reloads detail
+    while streaming without recomputing on every LSL chunk.
+    """
+
+    def __init__(self, receiver: LSLStreamReceiver, buffer_seconds: float = 300.0, channel_names: Optional[List[str]] = None, custom_datasource_name: Optional[str] = None, parent: Optional[QtCore.QObject] = None, source_refresh_interval_ms: int = 150) -> None:
+        super().__init__(receiver=receiver, buffer_seconds=buffer_seconds, channel_names=channel_names, custom_datasource_name=custom_datasource_name or "LiveEEG_GFP", parent=parent)
+        self._source_refresh_interval_ms = max(50, int(source_refresh_interval_ms))
+        self._last_source_emit_ms = 0.0
+        self._throttle_timer = QtCore.QTimer(self)
+        self._throttle_timer.setSingleShot(True)
+        self._throttle_timer.timeout.connect(self._emit_throttled_source_changed)
+
+
+
+    @pyqtExceptionPrintingSlot()
+    def _emit_throttled_source_changed(self) -> None:
+        self._last_source_emit_ms = time.time() * 1000.0
+        self.source_data_changed_signal.emit()
+
+
+
+    @pyqtExceptionPrintingSlot(object, object, object)
+    def _on_data_received(self, channel_names: List[str], timestamps: np.ndarray, samples: np.ndarray) -> None:
+        self._ring.append(timestamps, samples, channel_names)
+        self._update_intervals()
+        self.new_data_available.emit()
+        now_ms = time.time() * 1000.0
+        if now_ms - self._last_source_emit_ms >= float(self._source_refresh_interval_ms):
+            self._last_source_emit_ms = now_ms
+            self.source_data_changed_signal.emit()
+            if self._throttle_timer.isActive():
+                self._throttle_timer.stop()
+        else:
+            if not self._throttle_timer.isActive():
+                delay = max(1, int(self._source_refresh_interval_ms - (now_ms - self._last_source_emit_ms)))
+                self._throttle_timer.start(delay)
+
+
+
+    def get_detail_renderer(self) -> LinePowerGFPDetailRenderer:
+        ch_names = self._channel_names or ["ch0"]
+        return LinePowerGFPDetailRenderer(channel_names=ch_names, live_mode=True, line_width=0.5)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

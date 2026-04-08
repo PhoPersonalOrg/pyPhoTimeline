@@ -92,6 +92,28 @@ def _eeg_parent_spectrogram_track_name_prefix(parent_custom_name: Optional[str])
     return f"EEG_Spectrogram_{suffix}"
 
 
+def _first_sfreq_from_raw_datasets_dict(raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> Optional[float]:
+    """First positive ``sfreq`` from MNE ``Raw`` objects in ``raw_datasets_dict`` (GFP band-pass needs acquisition rate)."""
+    if not raw_datasets_dict:
+        return None
+    for _key, lst in raw_datasets_dict.items():
+        if not lst:
+            continue
+        for raw in lst:
+            if raw is None:
+                continue
+            try:
+                info = getattr(raw, "info", None)
+                if info is None:
+                    continue
+                sf = float(info.get("sfreq", 0.0) or 0.0)
+                if sf > 0.0:
+                    return sf
+            except Exception:
+                continue
+    return None
+
+
 EMOTIV_EPOC_X_SPECTROGRAM_GROUPS: List[SpectrogramChannelGroupConfig] = [
     # SpectrogramChannelGroupConfig(name='Frontal-L', channels=['AF3', 'F7', 'FC5', 'F3']),
     # SpectrogramChannelGroupConfig(name='Frontal-R', channels=['AF4', 'F8', 'FC6', 'F4']),
@@ -942,6 +964,58 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         return created
 
 
+
+# ==================================================================================================================================================================================================================================================================================== #
+# EEGFPTrackDatasource - Historical EEG track with band-limited GFP detail view
+# ==================================================================================================================================================================================================================================================================================== #
+
+
+class EEGFPTrackDatasource(EEGTrackDatasource):
+    """Same data model as :class:`EEGTrackDatasource` (intervals + ``detailed_df`` with ``t`` and channel columns),
+    but detail overlays use :class:`~pypho_timeline.rendering.detail_renderers.line_power_gfp_detail_renderer.LinePowerGFPDetailRenderer`
+    (theta–gamma GFP lanes). Use for retrospective timelines; live LSL uses :class:`~pypho_timeline.rendering.datasources.specific.lsl.LiveEEGFPTrackDatasource`.
+
+    GFP band-pass uses the acquisition sample rate: taken from ``gfp_nominal_srate``, else the first ``sfreq`` in ``raw_datasets_dict``, else inferred from downsampled ``t`` (often too low for alpha–gamma). Pass ``raw_datasets_dict`` from the parent EEG datasource when possible.
+
+    Usage:
+        After a timeline and an :class:`EEGTrackDatasource` already exist (e.g. from ``TimelineBuilder``), add a GFP track from the same data::
+
+            from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
+            from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGFPTrackDatasource
+
+            assert isinstance(eeg_ds, EEGTrackDatasource)
+            gfp_ds = EEGFPTrackDatasource(intervals_df=eeg_ds.intervals_df.copy(), eeg_df=eeg_ds.detailed_df, custom_datasource_name=f"{eeg_ds.custom_datasource_name}_GFP", channel_names=eeg_ds.channel_names, max_points_per_second=eeg_ds.max_points_per_second, enable_downsampling=eeg_ds.enable_downsampling, lab_obj_dict=getattr(eeg_ds, "lab_obj_dict", None), raw_datasets_dict=getattr(eeg_ds, "raw_datasets_dict", None))
+            track_widget, _root, gfp_plot, _dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(name=gfp_ds.custom_datasource_name, dockSize=(500, 120), dockAddLocationOpts=["bottom"], sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA)
+            ref_name = eeg_ds.custom_datasource_name
+            if ref_name in timeline.ui.matplotlib_view_widgets:
+                ref_plot = timeline.ui.matplotlib_view_widgets[ref_name].getRootPlotItem()
+                x0, x1 = ref_plot.getViewBox().viewRange()[0]
+                gfp_plot.setXRange(x0, x1, padding=0)
+            gfp_plot.setYRange(0, 5, padding=0)
+            gfp_plot.hideAxis("left")
+            timeline.add_track(gfp_ds, name=gfp_ds.custom_datasource_name, plot_item=gfp_plot)
+    """
+
+    def __init__(self, intervals_df: pd.DataFrame, eeg_df: pd.DataFrame, custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, gfp_filter_order: int = 4, gfp_n_bootstrap: int = 100, gfp_baseline_start: Optional[float] = None, gfp_baseline_end: float = 0.0, gfp_show_confidence: bool = False, gfp_line_width: float = 0.5, gfp_nominal_srate: Optional[float] = None, parent: Optional[QtCore.QObject] = None):
+        if custom_datasource_name is None:
+            custom_datasource_name = "EEGFPTrack"
+        self._gfp_filter_order = int(gfp_filter_order)
+        self._gfp_n_bootstrap = int(gfp_n_bootstrap)
+        self._gfp_baseline_start = gfp_baseline_start
+        self._gfp_baseline_end = gfp_baseline_end
+        self._gfp_show_confidence = bool(gfp_show_confidence)
+        self._gfp_line_width = float(gfp_line_width)
+        self._gfp_nominal_srate = float(gfp_nominal_srate) if (gfp_nominal_srate is not None and gfp_nominal_srate > 0) else _first_sfreq_from_raw_datasets_dict(raw_datasets_dict)
+        super().__init__(intervals_df=intervals_df, eeg_df=eeg_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, fallback_normalization_mode=fallback_normalization_mode, normalization_mode_dict=normalization_mode_dict, arbitrary_bounds=arbitrary_bounds, normalize=normalize, normalize_over_full_data=normalize_over_full_data, normalization_reference_df=normalization_reference_df, channel_names=channel_names, lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict, parent=parent)
+
+
+
+    def get_detail_renderer(self):
+        from pypho_timeline.rendering.detail_renderers.line_power_gfp_detail_renderer import LinePowerGFPDetailRenderer
+        _extra_kw = dict(channel_names=self.channel_names) if self.channel_names is not None else {}
+        return LinePowerGFPDetailRenderer(live_mode=False, filter_order=self._gfp_filter_order, n_bootstrap=self._gfp_n_bootstrap, baseline_start=self._gfp_baseline_start, baseline_end=self._gfp_baseline_end, show_confidence=self._gfp_show_confidence, line_width=self._gfp_line_width, nominal_srate=self._gfp_nominal_srate, **_extra_kw)
+
+
 # ==================================================================================================================================================================================================================================================================================== #
 # EEGSpectrogramDetailRenderer - Renders spectrogram (t x freq) as ImageItem.
 # ==================================================================================================================================================================================================================================================================================== #
@@ -1292,5 +1366,5 @@ class EEGSpectrogramTrackDatasource(ComputableDatasourceMixin, RawProvidingTrack
 
 
 
-__all__ = ['SpectrogramChannelGroupConfig', 'EMOTIV_EPOC_X_SPECTROGRAM_GROUPS', 'EEGPlotDetailRenderer', 'EEGTrackDatasource', 'EEGSpectrogramDetailRenderer', 'EEGSpectrogramTrackDatasource', 'aligned_chronological_raws_for_intervals', 'compute_multiraw_spectrogram_results']
+__all__ = ['SpectrogramChannelGroupConfig', 'EMOTIV_EPOC_X_SPECTROGRAM_GROUPS', 'EEGPlotDetailRenderer', 'EEGTrackDatasource', 'EEGFPTrackDatasource', 'EEGSpectrogramDetailRenderer', 'EEGSpectrogramTrackDatasource', 'aligned_chronological_raws_for_intervals', 'compute_multiraw_spectrogram_results']
 

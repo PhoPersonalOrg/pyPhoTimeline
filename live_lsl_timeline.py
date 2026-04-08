@@ -20,6 +20,9 @@ Optional arguments (environment variables / edit the constants below):
   - MOTION_STREAM_NAME: LSL name for motion/IMU     (default: None)
   - BUFFER_SECONDS    : seconds of data to keep     (default: 300)
   - WINDOW_SECONDS    : viewport width in seconds   (default: 10)
+  - SHOW_GFP_BANDS    : if ``1``/``true``, adds a second EEG inlet and a
+                        GFP (theta–gamma) track updated in real time via
+                        :class:`~pypho_timeline.rendering.datasources.specific.lsl.LiveEEGFPTrackDatasource`.
 
 Running without live hardware
 ------------------------------
@@ -50,6 +53,7 @@ from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingS
 from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget
 from pypho_timeline.rendering.datasources.specific.lsl import (
     LSLStreamReceiver,
+    LiveEEGFPTrackDatasource,
     LiveEEGTrackDatasource,
     LiveMotionTrackDatasource,
 )
@@ -67,6 +71,7 @@ MOTION_STREAM_TYPE: Optional[str] = os.environ.get("MOTION_STREAM_TYPE", "Accele
 MOTION_STREAM_NAME: Optional[str] = os.environ.get("MOTION_STREAM_NAME") or None
 BUFFER_SECONDS: float = float(os.environ.get("BUFFER_SECONDS", "300"))
 WINDOW_SECONDS: float = float(os.environ.get("WINDOW_SECONDS", "10"))
+SHOW_GFP_BANDS: bool = os.environ.get("SHOW_GFP_BANDS", "").strip().lower() in ("1", "true", "yes")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Live Timeline Window
@@ -90,15 +95,20 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
         Optional Qt parent.
     """
 
-    def __init__(self, eeg_datasource: LiveEEGTrackDatasource, motion_datasource: LiveMotionTrackDatasource, window_seconds: float = WINDOW_SECONDS, buffer_seconds: float = BUFFER_SECONDS, parent: Optional[QtWidgets.QWidget] = None) -> None:
+    def __init__(self, eeg_datasource: LiveEEGTrackDatasource, motion_datasource: LiveMotionTrackDatasource, gfp_datasource: Optional[LiveEEGFPTrackDatasource] = None, window_seconds: float = WINDOW_SECONDS, buffer_seconds: float = BUFFER_SECONDS, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Live LSL Timeline – EEG & Motion (backscroll enabled)")
+        title = "Live LSL Timeline – EEG & Motion (backscroll enabled)"
+        if gfp_datasource is not None:
+            title = "Live LSL Timeline – EEG, GFP bands & Motion (backscroll enabled)"
+        self.setWindowTitle(title)
         self.setWindowIcon(timeline_window_icon())
         ensure_timeline_application_window_icon()
         self.resize(1200, 600)
 
         self._eeg_ds = eeg_datasource
         self._motion_ds = motion_datasource
+        self._gfp_ds = gfp_datasource
+        self._gfp_plot: Optional[pg.PlotItem] = None
         self._window_seconds = window_seconds
         self._buffer_seconds = buffer_seconds
         self._is_live = True  # True = viewport follows the live head
@@ -142,6 +152,8 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
         # Connect "data arrived" signals to refresh status
         eeg_datasource.new_data_available.connect(self._on_eeg_data)
         motion_datasource.new_data_available.connect(self._on_motion_data)
+        if gfp_datasource is not None:
+            gfp_datasource.new_data_available.connect(self._on_gfp_data)
 
     # ------------------------------------------------------------------ #
     # UI builders
@@ -210,8 +222,19 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
         self._timeline.add_track(self._motion_ds, name="Live Motion", plot_item=motion_plot)
         self._motion_plot = motion_plot
 
+        if self._gfp_ds is not None:
+            gfp_widget, _rg3, gfp_plot, _dock3 = self._timeline.add_new_embedded_pyqtgraph_render_plot_widget(name="Live EEG GFP", dockSize=(1200, 220), dockAddLocationOpts=["bottom"], sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA)
+            gfp_plot.setXRange(now - self._window_seconds, now, padding=0)
+            gfp_plot.setYRange(0, 5, padding=0)
+            gfp_plot.setLabel("left", "GFP bands")
+            gfp_plot.hideAxis("left")
+            gfp_plot.setLabel("bottom", "Time (LSL clock)")
+            self._timeline.add_track(self._gfp_ds, name="Live EEG GFP", plot_item=gfp_plot)
+            self._gfp_plot = gfp_plot
+
         # Detect user-initiated pan/zoom → exit live-follow mode
-        for plot in (eeg_plot, motion_plot):
+        plots_follow = (eeg_plot, motion_plot) if self._gfp_plot is None else (eeg_plot, motion_plot, self._gfp_plot)
+        for plot in plots_follow:
             vb = plot.getViewBox()
             if vb is not None:
                 vb.sigRangeChangedManually.connect(self._on_user_panned)
@@ -237,7 +260,10 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
         # Update both plots without triggering sigRangeChangedManually.
         # Note: setXRange() is a programmatic change and does NOT emit
         # sigRangeChangedManually, so no signal blocking is needed here.
-        for plot in (self._eeg_plot, self._motion_plot):
+        plots = [self._eeg_plot, self._motion_plot]
+        if self._gfp_plot is not None:
+            plots.append(self._gfp_plot)
+        for plot in plots:
             plot.setXRange(t_start, t_end, padding=0)
 
 
@@ -285,6 +311,19 @@ class LiveLSLTimeline(QtWidgets.QMainWindow):
             self._status_label.setText(
                 f"Live  |  EEG @ {_fmt_ts(self._eeg_ds.live_timestamp)}  |  "
                 f"Motion @ {_fmt_ts(ts)}"
+            )
+
+
+
+    @pyqtExceptionPrintingSlot()
+    def _on_gfp_data(self) -> None:
+        if self._gfp_ds is None:
+            return
+        ts = self._gfp_ds.live_timestamp
+        if ts is not None and self._is_live:
+            self._status_label.setText(
+                f"Live  |  EEG @ {_fmt_ts(self._eeg_ds.live_timestamp)}  |  "
+                f"GFP @ {_fmt_ts(ts)}  |  Motion @ {_fmt_ts(self._motion_ds.live_timestamp)}"
             )
 
 
@@ -438,6 +477,20 @@ def main(use_synthetic: bool = False) -> int:
         custom_datasource_name="Live EEG",
     )
 
+    gfp_receiver: Optional[LSLStreamReceiver] = None
+    gfp_ds: Optional[LiveEEGFPTrackDatasource] = None
+    if SHOW_GFP_BANDS:
+        gfp_receiver = LSLStreamReceiver(
+            stream_type=EEG_STREAM_TYPE,
+            stream_name=EEG_STREAM_NAME if not use_synthetic else "SyntheticEEG",
+            poll_interval_ms=100,
+        )
+        gfp_ds = LiveEEGFPTrackDatasource(
+            receiver=gfp_receiver,
+            buffer_seconds=BUFFER_SECONDS,
+            custom_datasource_name="Live EEG GFP",
+        )
+
     # ── Motion receiver + datasource ────────────────────────────────────
     motion_receiver = LSLStreamReceiver(
         stream_type=MOTION_STREAM_TYPE,
@@ -455,6 +508,7 @@ def main(use_synthetic: bool = False) -> int:
     window: LiveLSLTimeline = LiveLSLTimeline(
         eeg_datasource=eeg_ds,
         motion_datasource=motion_ds,
+        gfp_datasource=gfp_ds,
         window_seconds=WINDOW_SECONDS,
         buffer_seconds=BUFFER_SECONDS,
     )
@@ -463,6 +517,8 @@ def main(use_synthetic: bool = False) -> int:
     # ── start receivers after the window is shown ────────────────────────
     eeg_receiver.start()
     motion_receiver.start()
+    if gfp_receiver is not None:
+        gfp_receiver.start()
 
     return app.exec_()
 
