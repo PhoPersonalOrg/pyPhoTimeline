@@ -860,6 +860,9 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
                 stack, directly below the control toolbar). ``'top'`` no longer places the strip above the control row;
                 that layout is not available without restructuring the outer widget.
             row_height_px: Minimum height per track row in the strip.
+
+        timeline.ui.timeline_overview_strip
+        identifier: str = 'timeline_overview_strip'
         """
         from pypho_timeline.widgets.timeline_overview_strip import TimelineOverviewStrip
         from pypho_timeline.docking.dock_display_configs import FigureWidgetDockDisplayConfig
@@ -871,7 +874,14 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
         strip = TimelineOverviewStrip(reference_datetime=self.reference_datetime, row_height_px=row_height_px, parent=None)
         self.ui.timeline_overview_strip = strip
         dock_add_location_opts = ['bottom'] if position == 'bottom' else ['top']
-        dock_height = max(120, row_height_px * 4 + 28)
+        
+        max_total_dock_height: float = 120
+
+        names = self.get_track_names_for_window_sync_group(window_sync_group='primary')
+        num_dock_items: int = len(names)
+        dock_height = int(min(max_total_dock_height, (row_height_px * num_dock_items) + 28))
+        strip.setMaximumHeight(int(max_total_dock_height))
+
         display_config = FigureWidgetDockDisplayConfig(showCloseButton=False, showCollapseButton=True, showGroupButton=False, showTimelineSyncModeButton=False, showOptionsButton=False, corner_radius='0px', hideTitleBar=True)
         should_hide_title = getattr(display_config, 'hideTitleBar', False)
         _, overview_dock = dock_area.add_display_dock(identifier='timeline_overview_strip', widget=strip, dockSize=(800, dock_height), dockAddLocationOpts=dock_add_location_opts, display_config=display_config, hideTitle=should_hide_title)
