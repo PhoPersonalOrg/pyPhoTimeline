@@ -20,6 +20,7 @@ import pyqtgraph as pg
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, datetime_to_float, get_reference_datetime_from_xdf_header, unix_timestamp_to_datetime
 from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
+from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayAreaOwningMixin
 from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, VideoTrackDatasource
@@ -57,6 +58,7 @@ class SimpleTimeWindow:
         
         self.active_time_window = (self.active_window_start_time, self.active_window_end_time)
         self.window_duration = window_dur
+
         
     def update_window_start_end(self, start_t, end_t):
         self.active_window_start_time = start_t
@@ -65,7 +67,10 @@ class SimpleTimeWindow:
 
 
 
-class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMixin, QtWidgets.QWidget):
+
+
+
+class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixin, SpecificDockWidgetManipulatingMixin, QtWidgets.QWidget):
     """A simple example timeline widget that demonstrates pyPhoTimeline usage.
 
     from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget, SimpleTimeWindow
@@ -75,7 +80,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         tw = SimpleTimelineWidget(...)
         tw.add_timeline_overview_strip(position='bottom', row_height_px=20)
 
-    XDF builder path adds the strip at the bottom by default via ``TimelineBuilder.build_from_xdf_files``.
+    XDF builder path adds the strip in a dock at the bottom of the dock stack by default via ``TimelineBuilder.build_from_xdf_files``.
 
     """
     
@@ -94,8 +99,24 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         for widget in self.ui.matplotlib_view_widgets.values():
             plots.append(widget.getRootPlotItem())
         return plots
-    
 
+
+
+    # Dock-related _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
+    @property 
+    def dock_manager_widget(self) -> NestedDockAreaWidget:
+        """Required for DynamicDockDisplayAreaOwningMixin conforming subclasses to return the widget that manages the docks"""
+        return self.ui.dynamic_docked_widget_container
+
+    @property 
+    def dock_container(self) -> NestedDockAreaWidget:
+        """Required for DynamicDockDisplayAreaOwningMixin conforming subclasses to return the widget that manages the docks"""
+        return self.ui.dynamic_docked_widget_container
+
+
+
+
+    # Init/Setup/Lifecycle _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
     def __init__(self, total_start_time: Union[float, datetime, pd.Timestamp] = 0.0, total_end_time: Union[float, datetime, pd.Timestamp] = 100.0, window_duration: Union[float, timedelta] = 10.0, window_start_time: Union[float, datetime, pd.Timestamp] = 30.0, add_example_tracks=False, reference_datetime: Optional[datetime] = None, parent=None):
         super().__init__(parent=parent)
         
@@ -427,6 +448,17 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         self.simulate_window_scroll(self._target_window_start_go_earliest())
 
 
+    def go_to_specific_interval(self, desired_interval_idx: int, specific_intervals_ds_identifier: str = 'EEG_Epoc X'):
+        """ jumps to the specific interval if it's valid """
+        ## Zoom to a particular event:
+        eeg_widget, eeg_track, eeg_ds = self.get_track_tuple(specific_intervals_ds_identifier)
+        eeg_overview_intervals_df: pd.DataFrame = eeg_ds.get_overview_intervals()
+        # eeg_overview_intervals_df
+        desired_t_start, desired_t_end = eeg_overview_intervals_df.iloc[desired_interval_idx][['t_start', 't_end']].to_numpy()
+        # desired_t_start, desired_t_end
+        self.update_window(desired_t_start, desired_t_end)
+
+
     # ==================================================================================================================================================================================================================================================================================== #
     # Split Docks Horizontally/Multiple Viewport Functionality                                                                                                                                                                                                                             #
     # ==================================================================================================================================================================================================================================================================================== #
@@ -555,8 +587,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
             new_start: New start time of viewport
             new_end: New end time of viewport
         """
-        logger.debug(f"update_window: new_start: {new_start}, new_end: {new_end}")
-
+        logger.debug(f"SimpleTimelineWidget.update_window(new_start: {new_start}, new_end: {new_end})")
         if new_start is None or new_end is None:
              logger.error(f"\tupdate_window: new_start: {new_start}, new_end: {new_end} one of the values is None! Aborting and not applying changes.")
              return
@@ -571,13 +602,13 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
         # self._last_applied_plot_window_x0 = float(emit_start)
         # self._last_applied_plot_window_x1 = float(emit_end)
 
-        assert len(timeline.get_track_names_for_window_sync_group('primary')) > 0, f"must have at least one synced track to properly set window programmatically!"
-        a_track_name: str = timeline.get_track_names_for_window_sync_group('primary')[0]
-        a_widget, _, _ = timeline.get_track_tuple(a_track_name)
+        assert len(self.get_track_names_for_window_sync_group('primary')) > 0, f"must have at least one synced track to properly set window programmatically!"
+        a_track_name: str = self.get_track_names_for_window_sync_group('primary')[0]
+        a_widget, _, _ = self.get_track_tuple(a_track_name)
         # a_widget.on_window_changed(start_t=1776323640.023324, end_t=1776370487.5812337)
         a_widget.on_window_changed(start_t=new_start, end_t=new_end)
         ## done
-        logger.debug(f"\done.")
+        logger.debug(f"\tdone.")
 
 
 
@@ -818,26 +849,33 @@ class SimpleTimelineWidget(TrackRenderingMixin, SpecificDockWidgetManipulatingMi
     def add_timeline_overview_strip(self, position: str = 'top', row_height_px: int = 20):
         """Add an overview strip: stacked interval previews per primary track and a viewport region.
 
+        The strip is hosted in a pyqtgraph dock inside :attr:`ui.dynamic_docked_widget_container` (same system as track and log docks).
+
         The strip view itself does not pan/zoom; dragging or resizing the viewport region updates the main window via ``sigViewportChanged`` (and the region follows ``window_scrolled``).
         Safe to call once; subsequent calls return the existing strip.
 
         Args:
-            position: ``'top'`` (above controls), ``'below_controls'`` (between controls and track docks),
-                or ``'bottom'`` (below the main dock area — default for :meth:`TimelineBuilder.build_from_xdf_files`).
+            position: Dock placement in the dock stack: ``'bottom'`` (after existing docks — default for
+                :meth:`TimelineBuilder.build_from_xdf_files`), or ``'top'`` / ``'below_controls'`` (top edge of the dock
+                stack, directly below the control toolbar). ``'top'`` no longer places the strip above the control row;
+                that layout is not available without restructuring the outer widget.
             row_height_px: Minimum height per track row in the strip.
         """
         from pypho_timeline.widgets.timeline_overview_strip import TimelineOverviewStrip
+        from pypho_timeline.docking.dock_display_configs import FigureWidgetDockDisplayConfig
+
         ext = self.ui.get('timeline_overview_strip', None)
         if ext is not None:
             return ext
-        strip = TimelineOverviewStrip(reference_datetime=self.reference_datetime, row_height_px=row_height_px, parent=self)
+        dock_area = self.ui.dynamic_docked_widget_container
+        strip = TimelineOverviewStrip(reference_datetime=self.reference_datetime, row_height_px=row_height_px, parent=None)
         self.ui.timeline_overview_strip = strip
-        if position == 'top':
-            self.ui.layout.insertWidget(0, strip)
-        elif position == 'below_controls':
-            self.ui.layout.insertWidget(1, strip)
-        else:
-            self.ui.layout.addWidget(strip)
+        dock_add_location_opts = ['bottom'] if position == 'bottom' else ['top']
+        dock_height = max(120, row_height_px * 4 + 28)
+        display_config = FigureWidgetDockDisplayConfig(showCloseButton=False, showCollapseButton=True, showGroupButton=False, showTimelineSyncModeButton=False, showOptionsButton=False, corner_radius='0px', hideTitleBar=True)
+        should_hide_title = getattr(display_config, 'hideTitleBar', False)
+        _, overview_dock = dock_area.add_display_dock(identifier='timeline_overview_strip', widget=strip, dockSize=(800, dock_height), dockAddLocationOpts=dock_add_location_opts, display_config=display_config, hideTitle=should_hide_title)
+        overview_dock.setTitle('Overview')
         if not hasattr(self, '_overview_rebuild_timer'):
             self._overview_rebuild_timer = QtCore.QTimer(self)
             self._overview_rebuild_timer.setSingleShot(True)

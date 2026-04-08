@@ -1,6 +1,4 @@
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
-from typing_extensions import TypeAlias
-from nptyping import NDArray
 import warnings
 from attrs import define, field, Factory
 from ..Qt import QtCore, QtGui, QtWidgets
@@ -79,18 +77,36 @@ class DockButtonConfig:
     """Holds the configuration options for a Dock button."""
     showButton: bool = field(default=True)
     buttonIcon: QtWidgets.QStyle.StandardPixmap = field(default=QtWidgets.QStyle.StandardPixmap.SP_ToolBarHorizontalExtensionButton)
+    buttonQIcon: Optional[QtGui.QIcon] = field(default=None, metadata={'desc': 'If set, used instead of standardIcon(buttonIcon).'})
     buttonToolTip: str = field(default='')
     buttonCallback: Callable = field(default=None)
     buttonShortcut: str = field(default='')
     buttonShortcutContext: QtCore.Qt.ShortcutContext = field(default=QtCore.Qt.ShortcutContext.WidgetShortcut)
 
 
+    def __deepcopy__(self, memo):
+        """Avoid copy.deepcopy trying to pickle QIcon (not supported); share the same icon instance."""
+        existing = memo.get(id(self))
+        if existing is not None:
+            return existing
+        dup = DockButtonConfig(
+            showButton=self.showButton,
+            buttonIcon=self.buttonIcon,
+            buttonQIcon=self.buttonQIcon,
+            buttonToolTip=self.buttonToolTip,
+            buttonCallback=self.buttonCallback,
+            buttonShortcut=self.buttonShortcut,
+            buttonShortcutContext=self.buttonShortcutContext,
+        )
+        memo[id(self)] = dup
+        return dup
+
 
 @define(slots=False)
 class DockDisplayConfig(object):
     """Holds the display and configuration options for a Dock, such as how to format its title bar (color and font), whether it's closable, etc.
     
-    from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockDisplayConfig
+    from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockDisplayConfig, DockButtonConfig, 
 
     """
     showCloseButton: bool = field(default=True)
@@ -1199,10 +1215,13 @@ class DockLabel(VerticalLabel):
             if key not in custom_button_configs:
                 self.custom_buttons[key].deleteLater()
                 del self.custom_buttons[key]
+        _style = QtWidgets.QApplication.style()
         for key, cfg in custom_button_configs.items():
+            _qicon = getattr(cfg, 'buttonQIcon', None)
+            _icon = _qicon if _qicon is not None else _style.standardIcon(cfg.buttonIcon)
             if key not in self.custom_buttons:
                 btn = QtWidgets.QToolButton(self)
-                btn.setIcon(QtWidgets.QApplication.style().standardIcon(cfg.buttonIcon))
+                btn.setIcon(_icon)
                 btn.setToolTip(cfg.buttonToolTip or '')
                 btn.setMinimumSize(MIN_BUTTON_SIZE, MIN_BUTTON_SIZE)
                 btn.setFixedSize(MIN_BUTTON_SIZE, MIN_BUTTON_SIZE)
@@ -1210,7 +1229,7 @@ class DockLabel(VerticalLabel):
                 self.custom_buttons[key] = btn
             btn = self.custom_buttons[key]
             btn.setVisible(cfg.showButton)
-            btn.setIcon(QtWidgets.QApplication.style().standardIcon(cfg.buttonIcon))
+            btn.setIcon(_icon)
             btn.setToolTip(cfg.buttonToolTip or '')
 
 

@@ -359,7 +359,8 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
 
         ## Respond to the close signal so that we can remove the item from the dynamic_display_dict when it is closed.
         dDisplayItem.sigClosed.connect(self.on_dock_closed)
-
+        if hasattr(self, "sigDockAdded"):
+            self.sigDockAdded.emit(self, dDisplayItem)
 
         # self.dynamic_display_dict[identifier] = {"dock":dDisplayItem, "widget":new_view_widget}        
         return widget, dDisplayItem
@@ -725,7 +726,7 @@ class DynamicDockDisplayAreaOwningMixin(BaseDynamicInstanceConformingMixin):
         
     from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
     from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayAreaOwningMixin, DynamicDockDisplayAreaContentMixin
-    
+    from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayAreaOwningMixin
     
     """
     # ==================================================================================================================== #

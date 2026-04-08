@@ -3,8 +3,6 @@ import pypho_timeline.EXTERNAL.pyqtgraph as pg
 import sys
 from copy import deepcopy
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
-from typing_extensions import TypeAlias
-from nptyping import NDArray
 
 import numpy as np
 from PyQt5.QtCore import *

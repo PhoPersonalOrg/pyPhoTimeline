@@ -20,7 +20,8 @@ from pypho_timeline.rendering.datasources.stream_to_datasources import perform_p
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockButtonConfig
-from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, NamedColorScheme
+from pypho_timeline.EXTERNAL.pyqtgraph.icons import getGraphIcon
+from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, CustomDockDisplayConfig, NamedColorScheme, get_utility_dock_colors
 from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_handler, get_rendering_logger
 from pypho_timeline.widgets import LogWidget
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, get_earliest_reference_datetime, datetime_to_float, float_to_datetime
@@ -165,9 +166,16 @@ class TimelineBuilder:
             self.log_widget.show()
             return
         self.log_widget.hide()
-        _, _dock = dock_area.add_display_dock(identifier='log_widget', widget=self.log_widget, dockSize=(800, 200), dockAddLocationOpts=['bottom'])
+        _log_dock_display_config = CustomDockDisplayConfig()
+        _log_dock_display_config.custom_get_colors_callback = get_utility_dock_colors
+        _, _dock = dock_area.add_display_dock(identifier='log_widget', widget=self.log_widget, dockSize=(800, 200), dockAddLocationOpts=['bottom'], display_config=_log_dock_display_config)
         self.log_widget.show()
 
+
+    def _sync_main_window_session_jump_controls(self, main_window: Optional[Any] = None) -> None:
+        mw = main_window if main_window is not None else self._current_main_window
+        if mw is not None and hasattr(mw, "sync_session_jump_controls"):
+            mw.sync_session_jump_controls()
 
     def _build_discovered_xdf_paths(self, xdf_discovery_dirs: List[Path], n_most_recent: Optional[int]) -> List[Path]:
         return discover_xdf_files_for_timeline(xdf_discovery_dirs=xdf_discovery_dirs, n_most_recent=n_most_recent).xdf_paths
@@ -984,6 +992,7 @@ class TimelineBuilder:
         main_window.contentWidget.layout().addWidget(timeline)
         # Add tracks to the timeline
         self._add_tracks_to_timeline(timeline, datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
+        self._sync_main_window_session_jump_controls(main_window=main_window)
         self._current_main_window = main_window
         self._current_timeline = timeline
         # Configure and show main window
@@ -1000,6 +1009,7 @@ class TimelineBuilder:
             a_cal_nav = timeline.add_calendar_navigator()
 
         self._embed_log_widget_in_timeline(timeline)
+        main_window.attach_collapsed_dock_overflow(timeline.ui.dynamic_docked_widget_container)
 
         ## add the table widget:
         if enable_log_table_widget:
@@ -1086,7 +1096,8 @@ class TimelineBuilder:
         
         # Add tracks to the timeline
         self._add_tracks_to_timeline(timeline, datasources)
-        
+        self._sync_main_window_session_jump_controls()
+
         logger.info(f"\nUpdated timeline with {len(datasources)} new tracks:")
         for ds in datasources:
             logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
@@ -1379,10 +1390,10 @@ class TimelineBuilder:
 
 
             if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
-                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonIcon=QtWidgets.QStyle.StandardPixmap.SP_FileDialogListView, buttonToolTip='Show table')})
+                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonQIcon=getGraphIcon('table'), buttonToolTip='Show table')})
             elif getattr(datasource, 'detailed_df', None) is not None:
                 ## enable for all tracks with a detailed_df
-                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonIcon=QtWidgets.QStyle.StandardPixmap.SP_FileDialogListView, buttonToolTip='Show table')})
+                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonQIcon=getGraphIcon('table'), buttonToolTip='Show table')})
 
 
             track_widget, a_root_graphics, a_plot_item, a_dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
