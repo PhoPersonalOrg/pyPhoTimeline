@@ -994,6 +994,8 @@ class EEGFPTrackDatasource(EEGTrackDatasource):
             gfp_plot.setYRange(0, 5, padding=0)
             gfp_plot.hideAxis("left")
             timeline.add_track(gfp_ds, name=gfp_ds.custom_datasource_name, plot_item=gfp_plot)
+            track_widget.optionsPanel = track_widget.getOptionsPanel()
+            _dock.updateWidgetsHaveOptionsPanel()
     """
 
     def __init__(self, intervals_df: pd.DataFrame, eeg_df: pd.DataFrame, custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, gfp_filter_order: int = 4, gfp_n_bootstrap: int = 100, gfp_baseline_start: Optional[float] = None, gfp_baseline_end: float = 0.0, gfp_show_confidence: bool = False, gfp_line_width: float = 0.5, gfp_nominal_srate: Optional[float] = None, parent: Optional[QtCore.QObject] = None):
@@ -1007,6 +1009,20 @@ class EEGFPTrackDatasource(EEGTrackDatasource):
         self._gfp_line_width = float(gfp_line_width)
         self._gfp_nominal_srate = float(gfp_nominal_srate) if (gfp_nominal_srate is not None and gfp_nominal_srate > 0) else _first_sfreq_from_raw_datasets_dict(raw_datasets_dict)
         super().__init__(intervals_df=intervals_df, eeg_df=eeg_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, fallback_normalization_mode=fallback_normalization_mode, normalization_mode_dict=normalization_mode_dict, arbitrary_bounds=arbitrary_bounds, normalize=normalize, normalize_over_full_data=normalize_over_full_data, normalization_reference_df=normalization_reference_df, channel_names=channel_names, lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict, parent=parent)
+
+
+    def set_gfp_display_params(self, gfp_filter_order: int, gfp_n_bootstrap: int, gfp_baseline_start: Optional[float], gfp_baseline_end: float, gfp_show_confidence: bool, gfp_line_width: float, gfp_nominal_srate: Optional[float] = None) -> None:
+        """Update GFP band-power display parameters used by :meth:`get_detail_renderer`.
+
+        ``gfp_nominal_srate``: pass ``None`` to use the first positive ``sfreq`` from :attr:`raw_datasets_dict` (same as construction with ``gfp_nominal_srate=None``).
+        """
+        self._gfp_filter_order = max(1, int(gfp_filter_order))
+        self._gfp_n_bootstrap = max(10, int(gfp_n_bootstrap))
+        self._gfp_baseline_start = gfp_baseline_start
+        self._gfp_baseline_end = float(gfp_baseline_end)
+        self._gfp_show_confidence = bool(gfp_show_confidence)
+        self._gfp_line_width = float(gfp_line_width) if float(gfp_line_width) > 0 else 0.5
+        self._gfp_nominal_srate = float(gfp_nominal_srate) if (gfp_nominal_srate is not None and gfp_nominal_srate > 0) else _first_sfreq_from_raw_datasets_dict(self.raw_datasets_dict)
 
 
 

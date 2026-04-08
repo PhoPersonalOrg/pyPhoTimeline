@@ -656,6 +656,7 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
             
             desired_connections = {}
             is_eeg_spectrogram_panel = False
+            is_eeg_fp_gfp_panel = False
             if track_renderer is not None:
                 _eeg_spec_ds_type = None
                 try:
@@ -678,9 +679,31 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                     if hasattr(track_renderer, 'set_options_panel'):
                         track_renderer.set_options_panel(self.options_panel)
                     is_eeg_spectrogram_panel = True
+                if not is_eeg_spectrogram_panel:
+                    _eeg_fp_ds_type = None
+                    try:
+                        from pypho_timeline.rendering.datasources.specific.eeg import EEGFPTrackDatasource as _eeg_fp_ds_type
+                    except ImportError:
+                        pass
+                    if _eeg_fp_ds_type is not None and isinstance(track_renderer.datasource, _eeg_fp_ds_type):
+                        from pypho_timeline.widgets.track_options_panels import LinePowerGFPTrackOptionsPanel
+                        self.options_panel = LinePowerGFPTrackOptionsPanel(track_renderer=track_renderer)
+                        desired_connections['options_panel.optionsChanged'] = (self.options_panel.optionsChanged, self.TrackOptionsPanelOwningMixin_optionsChanged)
+                        desired_connections['options_panel.onOptionsAccepted'] = (self.options_panel.onOptionsAccepted, self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
+                        desired_connections['options_panel.onOptionsRejected'] = (self.options_panel.onOptionsRejected, self.TrackOptionsPanelOwningMixin_onOptionsRejected)
+                        if hasattr(track_renderer, 'on_options_changed'):
+                            desired_connections['on_options_changed'] = (self.optionsChanged, track_renderer.on_options_changed)
+                        if hasattr(track_renderer, 'on_options_accepted'):
+                            desired_connections['on_options_accepted'] = (self.onOptionsAccepted, track_renderer.on_options_accepted)
+                        if hasattr(track_renderer, 'on_options_rejected'):
+                            desired_connections['on_options_rejected'] = (self.onOptionsRejected, track_renderer.on_options_rejected)
+                        self.ui.connections['gfp_options_applied'] = self.options_panel.gfpOptionsApplied.connect(track_renderer.apply_line_power_gfp_options_from_datasource)
+                        if hasattr(track_renderer, 'set_options_panel'):
+                            track_renderer.set_options_panel(self.options_panel)
+                        is_eeg_fp_gfp_panel = True
 
             # Check if detail renderer has channel_names (channel-based renderer)
-            if not is_eeg_spectrogram_panel and hasattr(detail_renderer, 'channel_names') and detail_renderer.channel_names is not None:
+            if not is_eeg_spectrogram_panel and not is_eeg_fp_gfp_panel and hasattr(detail_renderer, 'channel_names') and detail_renderer.channel_names is not None:
                 # Create channel visibility panel for tracks with channels
                 from pypho_timeline.widgets.track_options_panels import TrackChannelVisibilityOptionsPanel
                 
@@ -732,7 +755,7 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                     if hasattr(track_renderer, 'set_options_panel'):
                         track_renderer.set_options_panel(self.options_panel)
 
-            elif not is_eeg_spectrogram_panel:
+            elif not is_eeg_spectrogram_panel and not is_eeg_fp_gfp_panel:
                 # Create basic options panel for tracks without channels
                 from pypho_timeline.widgets.track_options_panels import OptionsPanel
                 self.options_panel = OptionsPanel()

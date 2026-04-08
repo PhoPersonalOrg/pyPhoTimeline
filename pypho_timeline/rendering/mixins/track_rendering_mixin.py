@@ -183,24 +183,17 @@ class TrackRenderingMixin(EpochRenderingMixin):
                 if proxy_key not in self.ui.connections:
                     proxy = SignalProxy(viewbox.sigRangeChanged, rateLimit=30, slot=lambda evt: self._on_plot_viewport_changed(name, evt)) # Limit to 30 updates per second
                     self.ui.connections[proxy_key] = proxy
-            
-                    try:
-                        # Try to find the parent widget that contains this plot_item
-                        # The plot_item is part of a GraphicsLayoutWidget, which is part of PyqtgraphTimeSynchronizedWidget
-                        graphics_layout = plot_item.parentItem()
-                        if graphics_layout is not None:
-                            # Find the widget by traversing up the parent chain or searching
-                            # Actually, we can search for widgets in the timeline that match the track name
-                            if hasattr(self, 'ui') and hasattr(self.ui, 'matplotlib_view_widgets'):
-                                widget_name = name
-                                if widget_name in self.ui.matplotlib_view_widgets:
-                                    widget = self.ui.matplotlib_view_widgets[widget_name]
-                                    if isinstance(widget, PyqtgraphTimeSynchronizedWidget):
-                                        widget.set_track_renderer(track_renderer)
-
-                    except (ImportError, AttributeError, KeyError):
-                        # If widget connection fails, continue without options panel
-                        pass
+                try:
+                    if hasattr(self, 'ui') and hasattr(self.ui, 'matplotlib_view_widgets') and name in self.ui.matplotlib_view_widgets:
+                        widget = self.ui.matplotlib_view_widgets[name]
+                        if isinstance(widget, PyqtgraphTimeSynchronizedWidget):
+                            widget.set_track_renderer(track_renderer)
+                            if hasattr(self.ui, 'dynamic_docked_widget_container'):
+                                dock_item = self.ui.dynamic_docked_widget_container.find_display_dock(identifier=name)
+                                if dock_item is not None and hasattr(dock_item, 'updateWidgetsHaveOptionsPanel'):
+                                    dock_item.updateWidgetsHaveOptionsPanel()
+                except (ImportError, AttributeError, KeyError):
+                    pass
 
             # Store renderer
             self.track_renderers[name] = track_renderer

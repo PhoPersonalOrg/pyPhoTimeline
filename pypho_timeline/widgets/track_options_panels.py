@@ -11,6 +11,7 @@ logger = get_rendering_logger(__name__)
 TRACK_OPTIONS_CONFIG_VERSION = 1
 TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY = "channel_visibility"
 TRACK_OPTIONS_KIND_EEG_SPECTROGRAM = "eeg_spectrogram"
+TRACK_OPTIONS_KIND_LINE_POWER_GFP = "line_power_gfp"
 
 # Base Options Panel _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
 class OptionsPanel(QtWidgets.QWidget):
@@ -496,6 +497,216 @@ class EEGSpectrogramTrackOptionsPanel(OptionsPanel):
         self.optionsChanged.emit()
 
 
+class LinePowerGFPTrackOptionsPanel(OptionsPanel):
+    """Options panel for :class:`~pypho_timeline.rendering.datasources.specific.eeg.EEGFPTrackDatasource` (band-limited GFP lanes)."""
+
+    gfpOptionsApplied = QtCore.Signal()
+
+
+    def __init__(self, track_renderer: Any, parent=None):
+        self._track_renderer = track_renderer
+        self._ds: Any = track_renderer.datasource
+        self._filter_order_spin: Optional[QtWidgets.QSpinBox] = None
+        self._n_bootstrap_spin: Optional[QtWidgets.QSpinBox] = None
+        self._baseline_start_none_cb: Optional[QtWidgets.QCheckBox] = None
+        self._baseline_start_spin: Optional[QtWidgets.QDoubleSpinBox] = None
+        self._baseline_end_spin: Optional[QtWidgets.QDoubleSpinBox] = None
+        self._show_confidence_cb: Optional[QtWidgets.QCheckBox] = None
+        self._line_width_spin: Optional[QtWidgets.QDoubleSpinBox] = None
+        self._nominal_auto_cb: Optional[QtWidgets.QCheckBox] = None
+        self._nominal_spin: Optional[QtWidgets.QDoubleSpinBox] = None
+        super().__init__(parent)
+
+
+    def _get_panel_title(self) -> str:
+        return "EEG GFP (band power)"
+
+
+    def _build_content_widget(self) -> QtWidgets.QWidget:
+        root = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(root)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(6)
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Filter order:"))
+        self._filter_order_spin = QtWidgets.QSpinBox()
+        self._filter_order_spin.setRange(1, 16)
+        self._filter_order_spin.setValue(int(self._ds._gfp_filter_order))
+        self._filter_order_spin.valueChanged.connect(self._apply_all_to_datasource)
+        row.addWidget(self._filter_order_spin)
+        row.addStretch()
+        layout.addLayout(row)
+        row2 = QtWidgets.QHBoxLayout()
+        row2.addWidget(QtWidgets.QLabel("Bootstrap N:"))
+        self._n_bootstrap_spin = QtWidgets.QSpinBox()
+        self._n_bootstrap_spin.setRange(10, 10_000)
+        self._n_bootstrap_spin.setSingleStep(10)
+        self._n_bootstrap_spin.setValue(int(self._ds._gfp_n_bootstrap))
+        self._n_bootstrap_spin.valueChanged.connect(self._apply_all_to_datasource)
+        row2.addWidget(self._n_bootstrap_spin)
+        row2.addStretch()
+        layout.addLayout(row2)
+        self._baseline_start_none_cb = QtWidgets.QCheckBox("Baseline start: use interval start (None)")
+        bs_none = self._ds._gfp_baseline_start is None
+        self._baseline_start_none_cb.setChecked(bs_none)
+        self._baseline_start_none_cb.toggled.connect(self._on_baseline_start_mode_toggled)
+        self._baseline_start_none_cb.toggled.connect(self._apply_all_to_datasource)
+        layout.addWidget(self._baseline_start_none_cb)
+        row_bs = QtWidgets.QHBoxLayout()
+        row_bs.addWidget(QtWidgets.QLabel("Baseline start (s):"))
+        self._baseline_start_spin = QtWidgets.QDoubleSpinBox()
+        self._baseline_start_spin.setRange(-1.0e9, 1.0e9)
+        self._baseline_start_spin.setDecimals(6)
+        self._baseline_start_spin.setValue(float(self._ds._gfp_baseline_start) if self._ds._gfp_baseline_start is not None else 0.0)
+        self._baseline_start_spin.valueChanged.connect(self._apply_all_to_datasource)
+        row_bs.addWidget(self._baseline_start_spin)
+        row_bs.addStretch()
+        layout.addLayout(row_bs)
+        row_be = QtWidgets.QHBoxLayout()
+        row_be.addWidget(QtWidgets.QLabel("Baseline end (s):"))
+        self._baseline_end_spin = QtWidgets.QDoubleSpinBox()
+        self._baseline_end_spin.setRange(-1.0e9, 1.0e9)
+        self._baseline_end_spin.setDecimals(6)
+        self._baseline_end_spin.setValue(float(self._ds._gfp_baseline_end))
+        self._baseline_end_spin.valueChanged.connect(self._apply_all_to_datasource)
+        row_be.addWidget(self._baseline_end_spin)
+        row_be.addStretch()
+        layout.addLayout(row_be)
+        self._on_baseline_start_mode_toggled(bs_none)
+        self._show_confidence_cb = QtWidgets.QCheckBox("Show bootstrap confidence")
+        self._show_confidence_cb.setChecked(bool(self._ds._gfp_show_confidence))
+        self._show_confidence_cb.toggled.connect(self._apply_all_to_datasource)
+        layout.addWidget(self._show_confidence_cb)
+        row_lw = QtWidgets.QHBoxLayout()
+        row_lw.addWidget(QtWidgets.QLabel("Line width:"))
+        self._line_width_spin = QtWidgets.QDoubleSpinBox()
+        self._line_width_spin.setRange(0.05, 20.0)
+        self._line_width_spin.setDecimals(3)
+        self._line_width_spin.setValue(float(self._ds._gfp_line_width))
+        self._line_width_spin.valueChanged.connect(self._apply_all_to_datasource)
+        row_lw.addWidget(self._line_width_spin)
+        row_lw.addStretch()
+        layout.addLayout(row_lw)
+        self._nominal_auto_cb = QtWidgets.QCheckBox("Nominal sample rate: auto (from raw sfreq)")
+        from pypho_timeline.rendering.datasources.specific.eeg import _first_sfreq_from_raw_datasets_dict
+        inferred = _first_sfreq_from_raw_datasets_dict(self._ds.raw_datasets_dict)
+        cur = self._ds._gfp_nominal_srate
+        if cur is None:
+            auto_nom = True
+        elif inferred is None:
+            auto_nom = False
+        else:
+            auto_nom = abs(float(cur) - float(inferred)) < 1e-3
+        self._nominal_auto_cb.setChecked(auto_nom)
+        self._nominal_auto_cb.toggled.connect(self._on_nominal_auto_toggled)
+        self._nominal_auto_cb.toggled.connect(self._apply_all_to_datasource)
+        layout.addWidget(self._nominal_auto_cb)
+        row_nm = QtWidgets.QHBoxLayout()
+        row_nm.addWidget(QtWidgets.QLabel("Nominal srate (Hz):"))
+        self._nominal_spin = QtWidgets.QDoubleSpinBox()
+        self._nominal_spin.setRange(1.0, 1.0e6)
+        self._nominal_spin.setDecimals(2)
+        self._nominal_spin.setValue(float(cur) if cur is not None and cur > 0 else (float(inferred) if inferred is not None else 250.0))
+        self._nominal_spin.valueChanged.connect(self._apply_all_to_datasource)
+        row_nm.addWidget(self._nominal_spin)
+        row_nm.addStretch()
+        layout.addLayout(row_nm)
+        self._on_nominal_auto_toggled(self._nominal_auto_cb.isChecked())
+        layout.addStretch()
+        return root
+
+
+    @pyqtExceptionPrintingSlot()
+    def _on_baseline_start_mode_toggled(self, use_none: bool) -> None:
+        if self._baseline_start_spin is not None:
+            self._baseline_start_spin.setEnabled(not use_none)
+
+
+    @pyqtExceptionPrintingSlot()
+    def _on_nominal_auto_toggled(self, auto: bool) -> None:
+        if self._nominal_spin is not None:
+            self._nominal_spin.setEnabled(not auto)
+
+
+    @pyqtExceptionPrintingSlot()
+    def _apply_all_to_datasource(self) -> None:
+        if self._filter_order_spin is None or self._n_bootstrap_spin is None or self._baseline_end_spin is None or self._show_confidence_cb is None or self._line_width_spin is None:
+            return
+        baseline_start = None if (self._baseline_start_none_cb is not None and self._baseline_start_none_cb.isChecked()) else (float(self._baseline_start_spin.value()) if self._baseline_start_spin is not None else None)
+        nominal = None if (self._nominal_auto_cb is not None and self._nominal_auto_cb.isChecked()) else float(self._nominal_spin.value()) if self._nominal_spin is not None else None
+        self._ds.set_gfp_display_params(int(self._filter_order_spin.value()), int(self._n_bootstrap_spin.value()), baseline_start, float(self._baseline_end_spin.value()), self._show_confidence_cb.isChecked(), float(self._line_width_spin.value()), nominal)
+        self.gfpOptionsApplied.emit()
+        self.optionsChanged.emit()
+
+
+    def track_options_kind(self) -> Optional[str]:
+        return TRACK_OPTIONS_KIND_LINE_POWER_GFP
+
+
+    def dump_track_options_state(self) -> Optional[Dict[str, Any]]:
+        auto_nom = self._nominal_auto_cb.isChecked() if self._nominal_auto_cb is not None else True
+        return {"kind": TRACK_OPTIONS_KIND_LINE_POWER_GFP, "filter_order": int(self._ds._gfp_filter_order), "n_bootstrap": int(self._ds._gfp_n_bootstrap),
+                "baseline_start": self._ds._gfp_baseline_start, "baseline_end": float(self._ds._gfp_baseline_end), "show_confidence": bool(self._ds._gfp_show_confidence),
+                "line_width": float(self._ds._gfp_line_width), "nominal_srate_auto": auto_nom, "nominal_srate": (None if auto_nom else (float(self._nominal_spin.value()) if self._nominal_spin is not None else None))}
+
+
+    def apply_track_options_state(self, data: Dict[str, Any]) -> None:
+        if data.get("kind") != TRACK_OPTIONS_KIND_LINE_POWER_GFP:
+            return
+        fo = data.get("filter_order")
+        nb = data.get("n_bootstrap")
+        if fo is not None and self._filter_order_spin is not None:
+            self._filter_order_spin.blockSignals(True)
+            self._filter_order_spin.setValue(int(fo))
+            self._filter_order_spin.blockSignals(False)
+        if nb is not None and self._n_bootstrap_spin is not None:
+            self._n_bootstrap_spin.blockSignals(True)
+            self._n_bootstrap_spin.setValue(int(nb))
+            self._n_bootstrap_spin.blockSignals(False)
+        bs = data.get("baseline_start")
+        if self._baseline_start_none_cb is not None and self._baseline_start_spin is not None:
+            self._baseline_start_none_cb.blockSignals(True)
+            self._baseline_start_spin.blockSignals(True)
+            self._baseline_start_none_cb.setChecked(bs is None)
+            if bs is not None:
+                self._baseline_start_spin.setValue(float(bs))
+            self._baseline_start_none_cb.blockSignals(False)
+            self._baseline_start_spin.blockSignals(False)
+            self._on_baseline_start_mode_toggled(self._baseline_start_none_cb.isChecked())
+        be = data.get("baseline_end")
+        if be is not None and self._baseline_end_spin is not None:
+            self._baseline_end_spin.blockSignals(True)
+            self._baseline_end_spin.setValue(float(be))
+            self._baseline_end_spin.blockSignals(False)
+        sc = data.get("show_confidence")
+        if sc is not None and self._show_confidence_cb is not None:
+            self._show_confidence_cb.blockSignals(True)
+            self._show_confidence_cb.setChecked(bool(sc))
+            self._show_confidence_cb.blockSignals(False)
+        lw = data.get("line_width")
+        if lw is not None and self._line_width_spin is not None:
+            self._line_width_spin.blockSignals(True)
+            self._line_width_spin.setValue(float(lw))
+            self._line_width_spin.blockSignals(False)
+        auto = data.get("nominal_srate_auto")
+        ns = data.get("nominal_srate")
+        if self._nominal_auto_cb is not None:
+            self._nominal_auto_cb.blockSignals(True)
+            if auto is not None:
+                self._nominal_auto_cb.setChecked(bool(auto))
+            elif ns is None:
+                self._nominal_auto_cb.setChecked(True)
+            else:
+                self._nominal_auto_cb.setChecked(False)
+            self._nominal_auto_cb.blockSignals(False)
+            self._on_nominal_auto_toggled(self._nominal_auto_cb.isChecked())
+        if ns is not None and self._nominal_spin is not None:
+            self._nominal_spin.blockSignals(True)
+            self._nominal_spin.setValue(float(ns))
+            self._nominal_spin.blockSignals(False)
+        self._apply_all_to_datasource()
+
+
 def build_track_options_document(track_renderers: Dict[str, Any]) -> Dict[str, Any]:
     """Build a versioned document from each renderer's ``channel_visibility`` (omit non-channel tracks)."""
     tracks: Dict[str, Any] = {}
@@ -624,10 +835,12 @@ __all__ = [
     "OptionsPanel",
     "TrackChannelVisibilityOptionsPanel",
     "EEGSpectrogramTrackOptionsPanel",
+    "LinePowerGFPTrackOptionsPanel",
     "TrackOptionsPanelOwningMixin",
     "TRACK_OPTIONS_CONFIG_VERSION",
     "TRACK_OPTIONS_KIND_CHANNEL_VISIBILITY",
     "TRACK_OPTIONS_KIND_EEG_SPECTROGRAM",
+    "TRACK_OPTIONS_KIND_LINE_POWER_GFP",
     "build_track_options_document",
     "apply_track_options_document",
 ]
