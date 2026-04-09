@@ -148,7 +148,7 @@ class TimelineBuilder:
     def set_refresh_config(self, xdf_discovery_dirs: Optional[List[Path]] = None, n_most_recent: Optional[int] = None, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, video_discovery_dirs: Optional[List[Path]] = None, video_extensions: Optional[List[str]] = None, enable_active_xdf_monitoring: bool = True, active_xdf_poll_interval_seconds: float = 10.0):
         xdf_discovery_dirs = [Path(p) for p in (xdf_discovery_dirs or [])]
         video_discovery_dirs = [Path(p) for p in (video_discovery_dirs or [])]
-        self._active_xdf_poll_interval_seconds = max(float(active_xdf_poll_interval_seconds), MIN_ACTIVE_XDF_POLL_INTERVAL_SECONDS)
+        self._active_xdf_poll_interval_seconds = self._clamp_poll_interval_seconds(active_xdf_poll_interval_seconds)
         self._refresh_config = {
             "xdf_discovery_dirs": xdf_discovery_dirs,
             "n_most_recent": n_most_recent,
@@ -167,6 +167,9 @@ class TimelineBuilder:
         logger.log(level, message)
         if self._current_main_window is not None and hasattr(self._current_main_window, "_log_widget"):
             self._current_main_window._log_widget.append_log(message, level, level_name)
+
+    def _clamp_poll_interval_seconds(self, poll_interval_seconds: float) -> float:
+        return max(float(poll_interval_seconds), MIN_ACTIVE_XDF_POLL_INTERVAL_SECONDS)
 
 
     def _embed_log_widget_in_timeline(self, timeline: SimpleTimelineWidget) -> None:
@@ -275,8 +278,9 @@ class TimelineBuilder:
             if len(starts) > 0 and len(ends) > 0:
                 first_start = starts[0]
                 if isinstance(first_start, (datetime, pd.Timestamp)):
-                    total_start_time = min(starts, key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
-                    total_end_time = max(ends, key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
+                    to_timestamp_sort_key = lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x
+                    total_start_time = min(starts, key=to_timestamp_sort_key)
+                    total_end_time = max(ends, key=to_timestamp_sort_key)
                 else:
                     total_start_time = float(np.nanmin(starts))
                     total_end_time = float(np.nanmax(ends))
