@@ -344,7 +344,8 @@ class TimelineBuilder:
             if enable_active_xdf_monitoring and (self._active_xdf_path is not None) and (self._active_xdf_path in self._loaded_xdf_paths):
                 current_signature = self._get_file_signature(self._active_xdf_path)
                 if (current_signature is not None) and (current_signature != self._active_xdf_last_signature):
-                    refreshed_map = self._collect_datasources_by_name_for_paths(sorted(self._loaded_xdf_paths), stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+                    refresh_paths = [self._active_xdf_path] if len(self._loaded_xdf_paths) == 1 else sorted(self._loaded_xdf_paths)
+                    refreshed_map = self._collect_datasources_by_name_for_paths(refresh_paths, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
                     refreshed_datasource_count = self._refresh_existing_timeline_datasources(self._current_timeline, refreshed_map, update_time_range=True)
                     self._active_xdf_last_signature = current_signature
                     if refreshed_datasource_count > 0:

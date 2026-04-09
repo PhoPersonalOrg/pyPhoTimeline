@@ -44,7 +44,9 @@ def derive_reference_datetime_from_file_metadata(file_path: Union[Path, str], fi
     has_valid_comparison_df = (file_comparison_df is not None) and (len(file_comparison_df) > 0) and ('src_file' in file_comparison_df.columns)
     if has_valid_comparison_df:
         try:
-            found_file_df_matches = file_comparison_df[file_comparison_df['src_file'].apply(lambda s: Path(s).resolve()) == path.resolve()]
+            resolved_target = str(path.resolve())
+            resolved_sources = file_comparison_df['src_file'].map(lambda s: str(Path(s).resolve()))
+            found_file_df_matches = file_comparison_df[resolved_sources == resolved_target]
             if len(found_file_df_matches) >= 1:
                 meas_datetime = found_file_df_matches.iloc[0].get('meas_datetime', None)
                 if pd.notna(meas_datetime):
