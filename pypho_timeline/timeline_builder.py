@@ -6,7 +6,7 @@ from different data sources such as XDF files, pre-loaded streams, or existing d
 """
 
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Union, Any, Set
+from typing import Callable, Dict, List, Tuple, Optional, Union, Any, Set
 from datetime import datetime, timezone, timedelta
 import logging
 import re
@@ -38,6 +38,26 @@ logger = configure_logging( ## updates the global logger variable
 )
 
 MIN_ACTIVE_XDF_POLL_INTERVAL_SECONDS: float = 1.0
+
+
+class _ActiveXdfReloadWorker(QtCore.QObject):
+    """Runs ``pyxdf`` + datasource rebuild off the GUI thread for active (growing) ``.xdf`` polling."""
+
+    finished = QtCore.Signal(object, object)
+    failed = QtCore.Signal(object, object)
+
+    def __init__(self, signature_at_start: Tuple[int, int], collect_fn: Callable[[], Dict[str, TrackDatasource]], parent: Optional[QtCore.QObject] = None):
+        super().__init__(parent)
+        self._signature_at_start = signature_at_start
+        self._collect_fn = collect_fn
+
+
+    @QtCore.Slot()
+    def run(self) -> None:
+        try:
+            self.finished.emit(self._collect_fn(), self._signature_at_start)
+        except Exception as e:
+            self.failed.emit(e, self._signature_at_start)
 
 
 # Import MNE (optional - may not be available)
@@ -125,7 +145,10 @@ class TimelineBuilder:
         self._active_xdf_last_signature: Optional[Tuple[int, int]] = None
         self._active_xdf_poll_timer: Optional[QtCore.QTimer] = None
         self._active_xdf_poll_interval_seconds: float = 10.0
-        
+        self._active_xdf_reload_thread: Optional[QtCore.QThread] = None
+        self._active_xdf_reload_worker: Optional[_ActiveXdfReloadWorker] = None
+        self._active_xdf_refresh_busy: bool = False
+
 
         # Create log widget
         self.log_widget = LogWidget()
@@ -170,6 +193,23 @@ class TimelineBuilder:
 
     def _clamp_poll_interval_seconds(self, poll_interval_seconds: float) -> float:
         return max(float(poll_interval_seconds), MIN_ACTIVE_XDF_POLL_INTERVAL_SECONDS)
+
+
+    def _enable_heavy_xdf_processing(self) -> bool:
+        if self._refresh_config is None:
+            return True
+        return bool(self._refresh_config.get("enable_heavy_xdf_processing", not self._refresh_config.get("enable_active_xdf_monitoring", False)))
+
+
+    def _teardown_active_xdf_reload_thread(self, wait_ms: int = 2000) -> None:
+        if self._active_xdf_reload_thread is not None:
+            try:
+                self._active_xdf_reload_thread.quit()
+                self._active_xdf_reload_thread.wait(wait_ms)
+            except Exception:
+                pass
+            self._active_xdf_reload_thread = None
+        self._active_xdf_reload_worker = None
 
 
     def _embed_log_widget_in_timeline(self, timeline: SimpleTimelineWidget) -> None:
@@ -228,10 +268,55 @@ class TimelineBuilder:
 
 
     def _on_active_xdf_poll_timer(self) -> None:
-        self.refresh_from_directories()
+        self.refresh_from_directories(async_active_xdf_reload=True)
 
 
-    def _collect_datasources_by_name_for_paths(self, xdf_paths: List[Path], stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> Dict[str, TrackDatasource]:
+    def _schedule_async_active_xdf_reload(self, refresh_paths: List[Path], stream_allowlist: Optional[List[str]], stream_blocklist: Optional[List[str]], signature_at_start: Tuple[int, int]) -> None:
+        if self._active_xdf_refresh_busy:
+            return
+        self._active_xdf_refresh_busy = True
+        self._teardown_active_xdf_reload_thread(wait_ms=2000)
+        parent = self._current_main_window if self._current_main_window is not None else None
+        thread = QtCore.QThread(parent)
+        enable_raw = self._enable_heavy_xdf_processing()
+        collect_fn = lambda rp=refresh_paths, sa=stream_allowlist, sb=stream_blocklist, er=enable_raw: self._collect_datasources_by_name_for_paths(rp, stream_allowlist=sa, stream_blocklist=sb, enable_raw_xdf_processing=er)
+        worker = _ActiveXdfReloadWorker(signature_at_start, collect_fn)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_async_active_xdf_reload_finished)
+        worker.failed.connect(self._on_async_active_xdf_reload_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(self._on_async_active_xdf_thread_finished)
+        self._active_xdf_reload_thread = thread
+        self._active_xdf_reload_worker = worker
+        thread.start()
+
+
+    def _on_async_active_xdf_reload_finished(self, refreshed_map: Any, signature_at_start: Any) -> None:
+        self._active_xdf_refresh_busy = False
+        try:
+            if self._current_timeline is None:
+                return
+            refreshed_datasource_count = self._refresh_existing_timeline_datasources(self._current_timeline, refreshed_map, update_time_range=True)
+            self._active_xdf_last_signature = signature_at_start
+            if refreshed_datasource_count > 0 and self._active_xdf_path is not None:
+                self._append_refresh_log(f"Updated {refreshed_datasource_count} active track datasource(s) from open XDF (background): {self._active_xdf_path.name}", level=logging.INFO, level_name="INFO")
+        except Exception as e:
+            self._append_refresh_log(f"Active XDF refresh apply failed: {e}", level=logging.ERROR, level_name="ERROR")
+
+
+    def _on_async_active_xdf_reload_failed(self, err: Any, signature_at_start: Any) -> None:
+        self._active_xdf_refresh_busy = False
+        self._append_refresh_log(f"Active XDF background reload failed: {err}", level=logging.ERROR, level_name="ERROR")
+
+
+    def _on_async_active_xdf_thread_finished(self) -> None:
+        self._active_xdf_reload_thread = None
+        self._active_xdf_reload_worker = None
+
+
+    def _collect_datasources_by_name_for_paths(self, xdf_paths: List[Path], stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, enable_raw_xdf_processing: Optional[bool] = None) -> Dict[str, TrackDatasource]:
         all_streams_by_file = []
         all_file_headers = []
         all_loaded_paths = []
@@ -247,7 +332,8 @@ class TimelineBuilder:
                 logger.warning(f'failed to load file {xdf_file_path} with error: {err}. Skipping.')
         if len(all_streams_by_file) == 0:
             return {}
-        _, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_paths, file_headers=all_file_headers)
+        raw_proc = self._enable_heavy_xdf_processing() if enable_raw_xdf_processing is None else bool(enable_raw_xdf_processing)
+        _, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_paths, file_headers=all_file_headers, enable_raw_xdf_processing=raw_proc)
         return {k: v for k, v in all_streams_datasources.items() if v is not None}
 
 
@@ -294,13 +380,14 @@ class TimelineBuilder:
         return updated_count
 
 
-    def _collect_new_datasources_for_xdf_path(self, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> List[TrackDatasource]:
+    def _collect_new_datasources_for_xdf_path(self, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, enable_raw_xdf_processing: Optional[bool] = None) -> List[TrackDatasource]:
         streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
         if (stream_allowlist is not None) or (stream_blocklist is not None):
             streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
         if len(streams) == 0:
             return []
-        _, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=[streams], xdf_file_paths=[xdf_file_path], file_headers=[file_header])
+        raw_proc = self._enable_heavy_xdf_processing() if enable_raw_xdf_processing is None else bool(enable_raw_xdf_processing)
+        _, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=[streams], xdf_file_paths=[xdf_file_path], file_headers=[file_header], enable_raw_xdf_processing=raw_proc)
         output_datasources: List[TrackDatasource] = []
         for datasource in all_streams_datasources.values():
             if datasource is None:
@@ -310,7 +397,7 @@ class TimelineBuilder:
         return output_datasources
 
 
-    def refresh_from_directories(self):
+    def refresh_from_directories(self, async_active_xdf_reload: bool = False):
         if self._current_timeline is None or self._current_main_window is None:
             self._append_refresh_log("Refresh skipped: timeline window is not ready yet.", level=logging.WARNING, level_name="WARNING")
             return
@@ -341,15 +428,22 @@ class TimelineBuilder:
                 except Exception as e:
                     self._append_refresh_log(f"Failed to load new XDF '{xdf_path}': {e}", level=logging.ERROR, level_name="ERROR")
             refreshed_datasource_count = 0
+            async_reload_scheduled = False
             if enable_active_xdf_monitoring and (self._active_xdf_path is not None) and (self._active_xdf_path in self._loaded_xdf_paths):
                 current_signature = self._get_file_signature(self._active_xdf_path)
                 if (current_signature is not None) and (current_signature != self._active_xdf_last_signature):
                     refresh_paths = [self._active_xdf_path] if len(self._loaded_xdf_paths) == 1 else sorted(self._loaded_xdf_paths)
-                    refreshed_map = self._collect_datasources_by_name_for_paths(refresh_paths, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
-                    refreshed_datasource_count = self._refresh_existing_timeline_datasources(self._current_timeline, refreshed_map, update_time_range=True)
-                    self._active_xdf_last_signature = current_signature
-                    if refreshed_datasource_count > 0:
-                        self._append_refresh_log(f"Updated {refreshed_datasource_count} active track datasource(s) from open XDF: {self._active_xdf_path.name}", level=logging.INFO, level_name="INFO")
+                    if async_active_xdf_reload:
+                        self._schedule_async_active_xdf_reload(refresh_paths, stream_allowlist, stream_blocklist, current_signature)
+                        async_reload_scheduled = True
+                        if self._active_xdf_path is not None:
+                            self._append_refresh_log(f"Active XDF changed; background reload scheduled for {self._active_xdf_path.name}", level=logging.INFO, level_name="INFO")
+                    else:
+                        refreshed_map = self._collect_datasources_by_name_for_paths(refresh_paths, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+                        refreshed_datasource_count = self._refresh_existing_timeline_datasources(self._current_timeline, refreshed_map, update_time_range=True)
+                        self._active_xdf_last_signature = current_signature
+                        if refreshed_datasource_count > 0:
+                            self._append_refresh_log(f"Updated {refreshed_datasource_count} active track datasource(s) from open XDF: {self._active_xdf_path.name}", level=logging.INFO, level_name="INFO")
             new_video_paths: List[Path] = []
             for video_dir in video_discovery_dirs:
                 if not video_dir.exists() or not video_dir.is_dir():
@@ -373,7 +467,10 @@ class TimelineBuilder:
                     except Exception as e:
                         self._append_refresh_log(f"Failed to load new videos: {e}", level=logging.ERROR, level_name="ERROR")
             if len(all_new_datasources) == 0 and refreshed_datasource_count == 0:
-                self._append_refresh_log("Refresh complete: no new XDF or Video entries found.", level=logging.INFO, level_name="INFO")
+                if async_reload_scheduled:
+                    self._append_refresh_log("Refresh complete: active XDF reload running in background.", level=logging.INFO, level_name="INFO")
+                else:
+                    self._append_refresh_log("Refresh complete: no new XDF or Video entries found.", level=logging.INFO, level_name="INFO")
                 return
             if len(all_new_datasources) > 0:
                 self.update_timeline(timeline=self._current_timeline, datasources=all_new_datasources, update_time_range=True)
@@ -503,7 +600,7 @@ class TimelineBuilder:
 
 
         ## Calls `perform_process_all_streams_multi_xdf(...)` to process streams from all files and merge by stream name
-        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_xdf_file_paths, file_headers=all_file_headers)
+        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_xdf_file_paths, file_headers=all_file_headers, enable_raw_xdf_processing=self._enable_heavy_xdf_processing())
         
         if not all_streams:
             logger.warning("No streams found.")

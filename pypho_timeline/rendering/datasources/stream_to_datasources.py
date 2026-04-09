@@ -230,6 +230,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                      stream dictionaries from pyxdf
         xdf_file_paths: List of Path objects corresponding to each stream list
         file_headers: Optional list of XDF file header dictionaries (one per file)
+        enable_raw_xdf_processing: If False, skips LabRecorderXDF / MNE / spectrogram work (pyxdf-only tracks).
 
     Returns:
         Tuple of (all_streams dict, all_streams_datasources dict) where:
@@ -238,6 +239,8 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
     """
     from phopymnehelper.historical_data import HistoricalData
     from phopymnehelper.xdf_files import LabRecorderXDF
+
+    lab_obj_cache_by_resolved_path: Dict[Path, Tuple[Any, Optional[dict]]] = {}
 
 
     def _subfn_process_xdf_file(xdf_path_for_raw: Path):
@@ -253,11 +256,18 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
 
         """
         a_lab_obj = None
-        a_raws_dict = {}
+        a_raws_dict: Optional[dict] = None
         logger.info(f'enable_raw_xdf_processing is True so this stream will be processed as MNE raw...')
-        # xdf_path_for_raw = stream_file_pairs[0][1]
         if not xdf_path_for_raw.exists():
-            return a_lab_obj, None
+            return a_lab_obj, a_raws_dict
+        try:
+            cache_key = xdf_path_for_raw.resolve()
+        except OSError:
+            cache_key = xdf_path_for_raw
+        if cache_key in lab_obj_cache_by_resolved_path:
+            cached_lab, cached_raws = lab_obj_cache_by_resolved_path[cache_key]
+            logger.debug('\tcache hit for LabRecorderXDF path "%s"', xdf_path_for_raw)
+            return cached_lab, cached_raws
         logger.info(f'\ttrying to load raw XDF file load for stream_name: "{stream_name}" with xdf_path: "{xdf_path_for_raw}"...')
         try:
             a_lab_obj = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_path_for_raw, should_load_full_file_data=True)
@@ -271,6 +281,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             a_raws_dict = a_lab_obj.datasets_dict or {}
             logger.info(f'\traws_dict: {a_raws_dict}')
 
+        lab_obj_cache_by_resolved_path[cache_key] = (a_lab_obj, a_raws_dict)
         return a_lab_obj, a_raws_dict
 
     # ==================================================================================================================================================================================================================================================================================== #

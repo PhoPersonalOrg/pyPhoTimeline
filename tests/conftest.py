@@ -11,12 +11,16 @@ that contain:
 - A ``__getattr__`` so attribute access on the module always succeeds.
 - Proper Python class stubs for known names that are used as base classes of
   Qt widgets (avoiding metaclass conflicts with ``sip.wrappertype``).
+
+Set environment variable ``PYPHO_TIMELINE_UNSTUB_HEAVY=1`` to load real
+``phopymnehelper``, ``pyxdf``, and ``nptyping`` during pytest (slower, full deps).
 """
 
 from __future__ import annotations
 
 import importlib.abc
 import importlib.machinery
+import os
 import sys
 import types
 from unittest.mock import MagicMock
@@ -37,6 +41,9 @@ _STUB_PREFIXES = (
     "imageio",
     "awkward",
 )
+_UNSTUB_HEAVY = os.environ.get("PYPHO_TIMELINE_UNSTUB_HEAVY", "").strip().lower() in ("1", "true", "yes")
+if _UNSTUB_HEAVY:
+    _STUB_PREFIXES = tuple(p for p in _STUB_PREFIXES if p not in ("phopymnehelper", "pyxdf", "nptyping"))
 
 # Names that appear as base classes of QWidget subclasses must be real Python
 # classes (not MagicMock), otherwise the sip metaclass cannot be combined.
