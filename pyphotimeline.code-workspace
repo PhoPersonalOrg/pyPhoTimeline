@@ -14,6 +14,9 @@
         },
         {
             "path": "../pyPhoCoreHelpers"
+        },
+        {
+            "path": "../stream_viewer"
         }
     ],
 	"settings": {

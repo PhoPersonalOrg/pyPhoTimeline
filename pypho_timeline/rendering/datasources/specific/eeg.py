@@ -439,6 +439,7 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
                  arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
                  normalize: bool = True, normalize_over_full_data: bool = True,
                  normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, parent: Optional[QtCore.QObject] = None,
+                 plot_pen_colors: Optional[List[str]] = None, plot_pen_width: Optional[float] = None,
                  ):
         """Initialize with eeg data and intervals.
         
@@ -448,6 +449,8 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
             custom_datasource_name: Custom name for this datasource (optional)
             max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
             enable_downsampling: Whether to enable downsampling. Default: True
+            plot_pen_colors: Optional per-channel line colors for :class:`EEGPlotDetailRenderer` (default: auto palette).
+            plot_pen_width: Optional line width for :class:`EEGPlotDetailRenderer` (default: same as renderer default used here, 2).
         """
         if custom_datasource_name is None:
             custom_datasource_name = "EEGTrack"
@@ -475,6 +478,8 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
         self.normalize_over_full_data = normalize_over_full_data
         self.normalization_reference_df = normalization_reference_df
         self.channel_names = channel_names
+        self.plot_pen_colors = plot_pen_colors
+        self.plot_pen_width = plot_pen_width
 
         self.ComputableDatasourceMixin_on_init()
         self.clear_computed_result()
@@ -515,9 +520,12 @@ class EEGTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource)
     def get_detail_renderer(self):
         """Get detail renderer for eeg data."""
         _extra_kw = {'channel_names': self.channel_names} if self.channel_names is not None else {}
+        if self.plot_pen_colors is not None:
+            _extra_kw['pen_colors'] = self.plot_pen_colors
+        _pen_width = 2 if self.plot_pen_width is None else self.plot_pen_width
         if self.detailed_df is None:
             print(f'WARN: self.detailed_df is None!')
-        return EEGPlotDetailRenderer(pen_width=2, fallback_normalization_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds, normalize=self.normalize, normalize_over_full_data=self.normalize_over_full_data, normalization_reference_df=self.normalization_reference_df, **_extra_kw)
+        return EEGPlotDetailRenderer(pen_width=_pen_width, fallback_normalization_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds, normalize=self.normalize, normalize_over_full_data=self.normalize_over_full_data, normalization_reference_df=self.normalization_reference_df, **_extra_kw)
 
 
     def exclude_bad_channels(self, bad_channels: List[str]) -> None:
