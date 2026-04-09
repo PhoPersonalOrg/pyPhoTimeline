@@ -37,6 +37,8 @@ logger = configure_logging( ## updates the global logger variable
     log_to_file=False,
 )
 
+MIN_ACTIVE_XDF_POLL_INTERVAL_SECONDS: float = 1.0
+
 
 # Import MNE (optional - may not be available)
 try:
@@ -146,7 +148,7 @@ class TimelineBuilder:
     def set_refresh_config(self, xdf_discovery_dirs: Optional[List[Path]] = None, n_most_recent: Optional[int] = None, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, video_discovery_dirs: Optional[List[Path]] = None, video_extensions: Optional[List[str]] = None, enable_active_xdf_monitoring: bool = True, active_xdf_poll_interval_seconds: float = 10.0):
         xdf_discovery_dirs = [Path(p) for p in (xdf_discovery_dirs or [])]
         video_discovery_dirs = [Path(p) for p in (video_discovery_dirs or [])]
-        self._active_xdf_poll_interval_seconds = max(float(active_xdf_poll_interval_seconds), 1.0)
+        self._active_xdf_poll_interval_seconds = max(float(active_xdf_poll_interval_seconds), MIN_ACTIVE_XDF_POLL_INTERVAL_SECONDS)
         self._refresh_config = {
             "xdf_discovery_dirs": xdf_discovery_dirs,
             "n_most_recent": n_most_recent,
@@ -209,7 +211,7 @@ class TimelineBuilder:
         if self._active_xdf_path is None:
             self._stop_active_xdf_monitoring()
             return
-        interval_ms = int(max(float(self._refresh_config.get("active_xdf_poll_interval_seconds", self._active_xdf_poll_interval_seconds)), 1.0) * 1000.0)
+        interval_ms = int(float(self._refresh_config.get("active_xdf_poll_interval_seconds", self._active_xdf_poll_interval_seconds)) * 1000.0)
         if self._active_xdf_poll_timer is None:
             self._active_xdf_poll_timer = QtCore.QTimer()
             self._active_xdf_poll_timer.timeout.connect(self._on_active_xdf_poll_timer)
@@ -238,8 +240,6 @@ class TimelineBuilder:
                 all_streams_by_file.append(streams)
                 all_file_headers.append(file_header)
                 all_loaded_paths.append(xdf_file_path)
-            except (OSError, FileExistsError, FileNotFoundError) as err:
-                logger.warning(f'failed to load file {xdf_file_path} with error: {err}. Skipping.')
             except Exception as err:
                 logger.warning(f'failed to load file {xdf_file_path} with error: {err}. Skipping.')
         if len(all_streams_by_file) == 0:

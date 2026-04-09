@@ -41,7 +41,8 @@ def derive_reference_datetime_from_file_metadata(file_path: Union[Path, str], fi
       2) file mtime (UTC), which works for actively recording/open files
     """
     path = Path(file_path)
-    if file_comparison_df is not None and len(file_comparison_df) > 0 and ('src_file' in file_comparison_df.columns):
+    has_valid_comparison_df = (file_comparison_df is not None) and (len(file_comparison_df) > 0) and ('src_file' in file_comparison_df.columns)
+    if has_valid_comparison_df:
         try:
             found_file_df_matches = file_comparison_df[file_comparison_df['src_file'].apply(lambda s: Path(s).resolve()) == path.resolve()]
             if len(found_file_df_matches) >= 1:
