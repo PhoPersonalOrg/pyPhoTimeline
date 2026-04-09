@@ -13,7 +13,7 @@ import re
 import numpy as np
 import pandas as pd
 import pyxdf
-from qtpy import QtWidgets
+from qtpy import QtWidgets, QtCore
 from pypho_timeline.widgets import SimpleTimelineWidget
 from pypho_timeline.widgets.TimelineWindow.MainTimelineWindow import MainTimelineWindow
 from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf, default_dock_named_color_scheme_key
@@ -26,7 +26,7 @@ from pypho_timeline.utils.logging_util import configure_logging, add_qt_log_hand
 from pypho_timeline.widgets import LogWidget
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, get_earliest_reference_datetime, datetime_to_float, float_to_datetime
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
-from pypho_timeline.xdf_session_discovery import discover_xdf_files_for_timeline
+from pypho_timeline.xdf_session_discovery import discover_xdf_files_for_timeline, select_most_recent_xdf_file
 
 
 logger = None # get_rendering_logger(__name__)
@@ -119,6 +119,10 @@ class TimelineBuilder:
         self._loaded_xdf_paths: Set[Path] = set()
         self._loaded_video_paths: Set[Path] = set()
         self._refresh_generation: int = 0
+        self._active_xdf_path: Optional[Path] = None
+        self._active_xdf_last_signature: Optional[Tuple[int, int]] = None
+        self._active_xdf_poll_timer: Optional[QtCore.QTimer] = None
+        self._active_xdf_poll_interval_seconds: float = 10.0
         
 
         # Create log widget
@@ -139,9 +143,10 @@ class TimelineBuilder:
             logger.info(f"Logging configured for TimelineBuilder - console: {self.log_to_console}, file: {self.log_to_file} ({self.log_file})")
 
 
-    def set_refresh_config(self, xdf_discovery_dirs: Optional[List[Path]] = None, n_most_recent: Optional[int] = None, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, video_discovery_dirs: Optional[List[Path]] = None, video_extensions: Optional[List[str]] = None):
+    def set_refresh_config(self, xdf_discovery_dirs: Optional[List[Path]] = None, n_most_recent: Optional[int] = None, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, video_discovery_dirs: Optional[List[Path]] = None, video_extensions: Optional[List[str]] = None, enable_active_xdf_monitoring: bool = True, active_xdf_poll_interval_seconds: float = 10.0):
         xdf_discovery_dirs = [Path(p) for p in (xdf_discovery_dirs or [])]
         video_discovery_dirs = [Path(p) for p in (video_discovery_dirs or [])]
+        self._active_xdf_poll_interval_seconds = max(float(active_xdf_poll_interval_seconds), 1.0)
         self._refresh_config = {
             "xdf_discovery_dirs": xdf_discovery_dirs,
             "n_most_recent": n_most_recent,
@@ -149,7 +154,11 @@ class TimelineBuilder:
             "stream_blocklist": stream_blocklist,
             "video_discovery_dirs": video_discovery_dirs,
             "video_extensions": tuple(video_extensions or ['.mp4', '.avi', '.mov', '.mkv', '.wmv']),
+            "enable_active_xdf_monitoring": bool(enable_active_xdf_monitoring),
+            "active_xdf_poll_interval_seconds": self._active_xdf_poll_interval_seconds,
         }
+        if not bool(enable_active_xdf_monitoring):
+            self._stop_active_xdf_monitoring()
 
 
     def _append_refresh_log(self, message: str, level: int = logging.INFO, level_name: str = "INFO"):
@@ -181,6 +190,106 @@ class TimelineBuilder:
         return discover_xdf_files_for_timeline(xdf_discovery_dirs=xdf_discovery_dirs, n_most_recent=n_most_recent).xdf_paths
 
 
+    def _get_file_signature(self, file_path: Path) -> Optional[Tuple[int, int]]:
+        try:
+            stat_result = file_path.stat()
+            return (int(stat_result.st_size), int(stat_result.st_mtime_ns))
+        except OSError:
+            return None
+
+
+    def _select_active_xdf_path(self, candidate_paths: List[Path]) -> Optional[Path]:
+        return select_most_recent_xdf_file(candidate_paths)
+
+
+    def _start_active_xdf_monitoring(self) -> None:
+        if self._refresh_config is None or not self._refresh_config.get("enable_active_xdf_monitoring", False):
+            self._stop_active_xdf_monitoring()
+            return
+        if self._active_xdf_path is None:
+            self._stop_active_xdf_monitoring()
+            return
+        interval_ms = int(max(float(self._refresh_config.get("active_xdf_poll_interval_seconds", self._active_xdf_poll_interval_seconds)), 1.0) * 1000.0)
+        if self._active_xdf_poll_timer is None:
+            self._active_xdf_poll_timer = QtCore.QTimer()
+            self._active_xdf_poll_timer.timeout.connect(self._on_active_xdf_poll_timer)
+        self._active_xdf_poll_timer.setInterval(interval_ms)
+        self._active_xdf_poll_timer.start()
+
+
+    def _stop_active_xdf_monitoring(self) -> None:
+        if self._active_xdf_poll_timer is not None:
+            self._active_xdf_poll_timer.stop()
+
+
+    def _on_active_xdf_poll_timer(self) -> None:
+        self.refresh_from_directories()
+
+
+    def _collect_datasources_by_name_for_paths(self, xdf_paths: List[Path], stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> Dict[str, TrackDatasource]:
+        all_streams_by_file = []
+        all_file_headers = []
+        all_loaded_paths = []
+        for xdf_file_path in xdf_paths:
+            try:
+                streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+                if (stream_allowlist is not None) or (stream_blocklist is not None):
+                    streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+                all_streams_by_file.append(streams)
+                all_file_headers.append(file_header)
+                all_loaded_paths.append(xdf_file_path)
+            except (OSError, FileExistsError, FileNotFoundError) as err:
+                logger.warning(f'failed to load file {xdf_file_path} with error: {err}. Skipping.')
+            except Exception as err:
+                logger.warning(f'failed to load file {xdf_file_path} with error: {err}. Skipping.')
+        if len(all_streams_by_file) == 0:
+            return {}
+        _, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_paths, file_headers=all_file_headers)
+        return {k: v for k, v in all_streams_datasources.items() if v is not None}
+
+
+    def _refresh_existing_timeline_datasources(self, timeline: SimpleTimelineWidget, datasources_by_name: Dict[str, TrackDatasource], update_time_range: bool = True) -> int:
+        updated_count = 0
+        for track_name, existing_ds in timeline.track_datasources.items():
+            incoming_ds = datasources_by_name.get(track_name, None)
+            if incoming_ds is None:
+                continue
+            if hasattr(existing_ds, "intervals_df") and hasattr(incoming_ds, "intervals_df"):
+                existing_ds.intervals_df = incoming_ds.intervals_df.copy()
+            if hasattr(existing_ds, "detailed_df") and hasattr(incoming_ds, "detailed_df"):
+                incoming_detailed = getattr(incoming_ds, "detailed_df", None)
+                existing_ds.detailed_df = incoming_detailed.copy() if incoming_detailed is not None else None
+            if hasattr(existing_ds, "lab_obj_dict") and hasattr(incoming_ds, "lab_obj_dict"):
+                existing_ds.lab_obj_dict = getattr(incoming_ds, "lab_obj_dict", {})
+            if hasattr(existing_ds, "raw_datasets_dict") and hasattr(incoming_ds, "raw_datasets_dict"):
+                existing_ds.raw_datasets_dict = getattr(incoming_ds, "raw_datasets_dict", None)
+            if hasattr(existing_ds, "normalization_reference_df") and hasattr(incoming_ds, "normalization_reference_df"):
+                incoming_norm = getattr(incoming_ds, "normalization_reference_df", None)
+                existing_ds.normalization_reference_df = incoming_norm.copy() if incoming_norm is not None else None
+            if hasattr(existing_ds, "source_data_changed_signal"):
+                existing_ds.source_data_changed_signal.emit()
+            updated_count += 1
+        if update_time_range and len(timeline.track_datasources) > 0:
+            starts = [ds.total_df_start_end_times[0] for ds in timeline.track_datasources.values() if ds is not None]
+            ends = [ds.total_df_start_end_times[1] for ds in timeline.track_datasources.values() if ds is not None]
+            if len(starts) > 0 and len(ends) > 0:
+                first_start = starts[0]
+                if isinstance(first_start, (datetime, pd.Timestamp)):
+                    total_start_time = min(starts, key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
+                    total_end_time = max(ends, key=lambda x: pd.Timestamp(x) if not isinstance(x, pd.Timestamp) else x)
+                else:
+                    total_start_time = float(np.nanmin(starts))
+                    total_end_time = float(np.nanmax(ends))
+                timeline.total_data_start_time = total_start_time
+                timeline.total_data_end_time = total_end_time
+                timeline.spikes_window.total_df_start_end_times = (total_start_time, total_end_time)
+                if hasattr(timeline.ui, "calendar") and timeline.ui.calendar is not None:
+                    timeline.ui.calendar.set_total_range(total_start_time, total_end_time)
+                if hasattr(timeline.ui, "compare_calendar") and timeline.ui.compare_calendar is not None:
+                    timeline.ui.compare_calendar.set_total_range(total_start_time, total_end_time)
+        return updated_count
+
+
     def _collect_new_datasources_for_xdf_path(self, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> List[TrackDatasource]:
         streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
         if (stream_allowlist is not None) or (stream_blocklist is not None):
@@ -208,11 +317,15 @@ class TimelineBuilder:
         n_most_recent: Optional[int] = self._refresh_config.get("n_most_recent", None)
         stream_allowlist: Optional[List[str]] = self._refresh_config.get("stream_allowlist", None)
         stream_blocklist: Optional[List[str]] = self._refresh_config.get("stream_blocklist", None)
+        enable_active_xdf_monitoring: bool = bool(self._refresh_config.get("enable_active_xdf_monitoring", False))
         video_discovery_dirs: List[Path] = self._refresh_config.get("video_discovery_dirs", [])
         video_extensions: Tuple[str, ...] = self._refresh_config.get("video_extensions", ('.mp4', '.avi', '.mov', '.mkv', '.wmv'))
         self._append_refresh_log("Refreshing XDF/Video directories...", level=logging.INFO, level_name="INFO")
         try:
             discovered_xdf_paths: List[Path] = self._build_discovered_xdf_paths(xdf_discovery_dirs=xdf_discovery_dirs, n_most_recent=n_most_recent)
+            if enable_active_xdf_monitoring:
+                self._active_xdf_path = self._select_active_xdf_path(discovered_xdf_paths)
+                self._start_active_xdf_monitoring()
             new_xdf_paths: List[Path] = [p for p in discovered_xdf_paths if p not in self._loaded_xdf_paths]
             for xdf_path in new_xdf_paths:
                 self._append_refresh_log(f"Discovered new XDF: {xdf_path}", level=logging.INFO, level_name="INFO")
@@ -223,6 +336,15 @@ class TimelineBuilder:
                     self._loaded_xdf_paths.add(xdf_path)
                 except Exception as e:
                     self._append_refresh_log(f"Failed to load new XDF '{xdf_path}': {e}", level=logging.ERROR, level_name="ERROR")
+            refreshed_datasource_count = 0
+            if enable_active_xdf_monitoring and (self._active_xdf_path is not None) and (self._active_xdf_path in self._loaded_xdf_paths):
+                current_signature = self._get_file_signature(self._active_xdf_path)
+                if (current_signature is not None) and (current_signature != self._active_xdf_last_signature):
+                    refreshed_map = self._collect_datasources_by_name_for_paths(sorted(self._loaded_xdf_paths), stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+                    refreshed_datasource_count = self._refresh_existing_timeline_datasources(self._current_timeline, refreshed_map, update_time_range=True)
+                    self._active_xdf_last_signature = current_signature
+                    if refreshed_datasource_count > 0:
+                        self._append_refresh_log(f"Updated {refreshed_datasource_count} active track datasource(s) from open XDF: {self._active_xdf_path.name}", level=logging.INFO, level_name="INFO")
             new_video_paths: List[Path] = []
             for video_dir in video_discovery_dirs:
                 if not video_dir.exists() or not video_dir.is_dir():
@@ -245,11 +367,12 @@ class TimelineBuilder:
                         self._loaded_video_paths.update(new_video_paths)
                     except Exception as e:
                         self._append_refresh_log(f"Failed to load new videos: {e}", level=logging.ERROR, level_name="ERROR")
-            if len(all_new_datasources) == 0:
+            if len(all_new_datasources) == 0 and refreshed_datasource_count == 0:
                 self._append_refresh_log("Refresh complete: no new XDF or Video entries found.", level=logging.INFO, level_name="INFO")
                 return
-            self.update_timeline(timeline=self._current_timeline, datasources=all_new_datasources, update_time_range=True)
-            self._append_refresh_log(f"Refresh complete: added {len(all_new_datasources)} new track datasource(s).", level=logging.INFO, level_name="INFO")
+            if len(all_new_datasources) > 0:
+                self.update_timeline(timeline=self._current_timeline, datasources=all_new_datasources, update_time_range=True)
+            self._append_refresh_log(f"Refresh complete: added {len(all_new_datasources)} new track datasource(s), refreshed {refreshed_datasource_count} active datasource(s).", level=logging.INFO, level_name="INFO")
         except Exception as e:
             self._append_refresh_log(f"Refresh failed: {e}", level=logging.ERROR, level_name="ERROR")
 
@@ -320,6 +443,12 @@ class TimelineBuilder:
         if not xdf_file_paths:
             raise ValueError("xdf_file_paths list cannot be empty")
         self._loaded_xdf_paths = set([Path(p) for p in xdf_file_paths])
+        if self._refresh_config is not None and self._refresh_config.get("enable_active_xdf_monitoring", False):
+            self._active_xdf_path = self._select_active_xdf_path(list(self._loaded_xdf_paths))
+            self._active_xdf_last_signature = self._get_file_signature(self._active_xdf_path) if self._active_xdf_path is not None else None
+        else:
+            self._active_xdf_path = None
+            self._active_xdf_last_signature = None
         
         
         logger.info("=" * 60)
@@ -995,6 +1124,10 @@ class TimelineBuilder:
         self._sync_main_window_session_jump_controls(main_window=main_window)
         self._current_main_window = main_window
         self._current_timeline = timeline
+        if self._refresh_config is not None and self._refresh_config.get("enable_active_xdf_monitoring", False):
+            self._start_active_xdf_monitoring()
+        else:
+            self._stop_active_xdf_monitoring()
         # Configure and show main window
         main_window.setWindowTitle(window_title or "pyPhoTimeline")
         main_window.resize(window_size[0], window_size[1])

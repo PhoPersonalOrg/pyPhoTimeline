@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Tuple, Optional
 import pyqtgraph as pg
 
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, get_reference_datetime_from_xdf_header
+from pypho_timeline.xdf_session_discovery import derive_reference_datetime_from_file_metadata
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource, RawProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource
 from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource, SpectrogramChannelGroupConfig, EMOTIV_EPOC_X_SPECTROGRAM_GROUPS, aligned_chronological_raws_for_intervals, compute_multiraw_spectrogram_results
@@ -294,12 +295,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         if ref_dt is not None:
             file_reference_datetimes[file_path] = ref_dt
         else:
-            found_file_df_matches = xdf_recording_file_metadata_df[xdf_recording_file_metadata_df['src_file'].apply(lambda s: Path(s).resolve()) == Path(file_path).resolve()]
-            if len(found_file_df_matches) == 1:
-                meas_datetime = found_file_df_matches.iloc[0]['meas_datetime'] if not found_file_df_matches.empty else None
-                ref_dt = meas_datetime
-            else:
-                print(f'WARN: failed to find xdf file metadata for file file_path: "{file_path.as_posix()}" in xdf_recording_file_metadta_df: {xdf_recording_file_metadata_df}\n\tfound_file_df_matches: {found_file_df_matches}')
+            ref_dt = derive_reference_datetime_from_file_metadata(file_path=file_path, file_comparison_df=xdf_recording_file_metadata_df)
 
         if ref_dt is not None:
             file_reference_datetimes[file_path] = ref_dt
