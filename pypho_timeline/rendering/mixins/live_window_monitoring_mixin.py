@@ -31,10 +31,12 @@ class LiveWindowEventIntervalMonitoringMixin(ReprPrintableItemMixin):
         """Perform any parameters setting/checking during init."""
         self._active_window_visible_intervals_dict = {}
 
+
     @pyqtExceptionPrintingSlot()
     def LiveWindowEventIntervalMonitoringMixin_on_setup(self):
         """Perform setup/creation of widget/graphical/data objects. Only the core objects are expected to exist on the implementor (root widget, etc)."""
         pass
+
 
     @pyqtExceptionPrintingSlot()
     def LiveWindowEventIntervalMonitoringMixin_on_buildUI(self):
@@ -47,16 +49,19 @@ class LiveWindowEventIntervalMonitoringMixin(ReprPrintableItemMixin):
         connections['LiveWindowEventIntervalMonitoringMixin_entered'] = self.sigOnIntervalEnteredWindow.connect(self.on_visible_event_intervals_added)
         connections['LiveWindowEventIntervalMonitoringMixin_exited'] = self.sigOnIntervalExitedindow.connect(self.on_visible_event_intervals_removed)
 
+
     @pyqtExceptionPrintingSlot()
     def LiveWindowEventIntervalMonitoringMixin_on_destroy(self):
         """Perform teardown/destruction of anything that needs to be manually removed or released."""
         pass
 
+
     @pyqtExceptionPrintingSlot(float, float)
     def LiveWindowEventIntervalMonitoringMixin_on_window_update(self, new_start=None, new_end=None):
         """Called to perform updates when the active window changes. Redraw, recompute data, etc."""
         self.on_visible_intervals_changed()
-            
+
+
     @pyqtExceptionPrintingSlot(object)
     def LiveWindowEventIntervalMonitoringMixin_on_window_update_rate_limited(self, evt):
         self.LiveWindowEventIntervalMonitoringMixin_on_window_update(*evt)
@@ -69,6 +74,7 @@ class LiveWindowEventIntervalMonitoringMixin(ReprPrintableItemMixin):
     def active_window_visible_intervals_dict(self, value):
         self._active_window_visible_intervals_dict = value
 
+
     def find_intervals_in_active_window(self, debug_print=False) -> Dict[str, pd.DataFrame]:
         """Find intervals that are currently in the active window.
         
@@ -78,6 +84,7 @@ class LiveWindowEventIntervalMonitoringMixin(ReprPrintableItemMixin):
             Dict[str, pd.DataFrame]: Dictionary mapping interval series names to DataFrames of intervals in the active window
         """
         raise NotImplementedError(f'Implementors must override!')
+
 
     @pyqtExceptionPrintingSlot()
     def on_visible_intervals_changed(self):
@@ -109,11 +116,13 @@ class LiveWindowEventIntervalMonitoringMixin(ReprPrintableItemMixin):
         if len(removed_rows_dict) > 0:
             self.sigOnIntervalExitedindow.emit(removed_rows_dict)
 
+
     @pyqtExceptionPrintingSlot(object)
     def on_visible_event_intervals_added(self, added_rows):
         """Called when intervals enter the active window."""
         print(f'LiveWindowEventIntervalMonitoringMixin.on_visible_event_intervals_added(added_rows: {added_rows})')
-        
+
+
     @pyqtExceptionPrintingSlot(object)
     def on_visible_event_intervals_removed(self, removed_rows):
         """Called when intervals exit the active window."""
