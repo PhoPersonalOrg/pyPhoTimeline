@@ -9,6 +9,7 @@ along with utility functions for processing stream data.
 """
 import json
 import logging
+from copy import deepcopy
 import numpy as np
 import pandas as pd
 from typing import Tuple, List, Dict, Optional, Union, Any
@@ -99,6 +100,31 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
         for widget in self.ui.matplotlib_view_widgets.values():
             plots.append(widget.getRootPlotItem())
         return plots
+
+
+    # Track Management
+    def find_eeg_track_identifiers(self) -> List[str]:
+        assert self is not None and len(self.get_all_track_names()) > 0, "Build the timeline first."
+        _names = self.get_all_track_names()
+        _eeg_names = [n for n in _names if (n.startswith("EEG_") and (not n.startswith('EEG_Spectrogram_')))]
+        return _eeg_names
+
+    @property
+    def eeg_track_identifier(self) -> Optional[str]:
+        """The eeg_track_name property."""
+        return (self.find_eeg_track_identifiers()[0] if self.find_eeg_track_identifiers() else None)
+
+
+    def find_motion_track_identifiers(self) -> List[str]:
+        assert self is not None and len(self.get_all_track_names()) > 0, "Build the timeline first."
+        _names = self.get_all_track_names()
+        _motion_names = [n for n in _names if n.startswith("MOTION_")]
+        return _motion_names
+
+    @property
+    def motion_track_identifier(self) -> Optional[str]:
+        """The motion track identifier property."""
+        return (self.find_motion_track_identifiers()[0] if self.find_motion_track_identifiers() else None)
 
 
 
