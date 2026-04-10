@@ -2,10 +2,11 @@
 # Generated from c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\widgets\TimelineWindow\MainTimelineWindow.ui automatically by PhoPyQtClassGenerator VSCode Extension
 import sys
 import os
+from pathlib import Path
 from typing import Callable, Optional, Any, TYPE_CHECKING
 
 from qtpy.uic import loadUi
-from qtpy.QtWidgets import QApplication, QMainWindow, QVBoxLayout
+from qtpy.QtWidgets import QApplication, QFileDialog, QMessageBox, QMainWindow, QVBoxLayout
 
 if TYPE_CHECKING:
     from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
 from pypho_timeline.widgets.log_widget import LogWidget, QtLogHandler
 from pypho_timeline.utils.logging_util import get_rendering_logger
 from pypho_timeline.utils.window_icon import ensure_timeline_application_window_icon, timeline_window_icon
+from pypho_timeline.xdf_session_discovery import discover_xdf_files_for_timeline
 
 ## Define the .ui file path
 path = os.path.dirname(os.path.abspath(__file__))
@@ -49,6 +51,13 @@ class MainTimelineWindow(QMainWindow):
         if hasattr(self, "refreshFilesButton"):
             self.refreshFilesButton.clicked.connect(self._on_refresh_files_clicked)
             self.refreshFilesButton.setEnabled((self._refresh_callback is not None) or (self._timeline_builder is not None))
+        _open_recording_enabled = (self._timeline_builder is not None) and hasattr(self._timeline_builder, "replace_timeline_from_xdf_paths")
+        if hasattr(self, "actionOpen_Recording_File"):
+            self.actionOpen_Recording_File.triggered.connect(self._on_open_recording_file)
+            self.actionOpen_Recording_File.setEnabled(_open_recording_enabled)
+        if hasattr(self, "actionOpen_Recording_Directory"):
+            self.actionOpen_Recording_Directory.triggered.connect(self._on_open_recording_directory)
+            self.actionOpen_Recording_Directory.setEnabled(_open_recording_enabled)
         _log_handler = QtLogHandler(parent=self)
         _log_handler.log_record_received.connect(self._log_widget.append_log)
         get_rendering_logger(__name__).addHandler(_log_handler)
@@ -170,6 +179,51 @@ class MainTimelineWindow(QMainWindow):
             return
         if self._timeline_builder is not None and hasattr(self._timeline_builder, "refresh_from_directories"):
             self._timeline_builder.refresh_from_directories()
+
+
+    def _on_open_recording_file(self):
+        if self._timeline_builder is None or not hasattr(self._timeline_builder, "replace_timeline_from_xdf_paths"):
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Open recording file", "", "XDF recordings (*.xdf);;All files (*.*)")
+        if not path:
+            return
+        try:
+            loaded = self._timeline_builder.replace_timeline_from_xdf_paths([Path(path)])
+        except Exception as e:
+            _logger.warning("open recording file failed: %s", e)
+            QMessageBox.warning(self, "Open recording file", str(e))
+            return
+        if loaded is None:
+            QMessageBox.information(self, "Open recording file", "No streams could be loaded from the selected file.")
+
+
+    def _on_open_recording_directory(self):
+        if self._timeline_builder is None or not hasattr(self._timeline_builder, "replace_timeline_from_xdf_paths"):
+            return
+        directory = QFileDialog.getExistingDirectory(self, "Open recording directory")
+        if not directory:
+            return
+        dir_path = Path(directory)
+        n_recent = None
+        if self._timeline_builder._refresh_config is not None:
+            n_recent = self._timeline_builder._refresh_config.get("n_most_recent", None)
+        try:
+            discovered = discover_xdf_files_for_timeline(xdf_discovery_dirs=[dir_path], n_most_recent=n_recent)
+        except Exception as e:
+            _logger.warning("open recording directory: discovery failed: %s", e)
+            QMessageBox.warning(self, "Open recording directory", str(e))
+            return
+        if not discovered.xdf_paths:
+            QMessageBox.information(self, "Open recording directory", f"No .xdf files found under:\n{dir_path}")
+            return
+        try:
+            loaded = self._timeline_builder.replace_timeline_from_xdf_paths(discovered.xdf_paths, xdf_discovery_dirs_for_refresh=[dir_path])
+        except Exception as e:
+            _logger.warning("open recording directory failed: %s", e)
+            QMessageBox.warning(self, "Open recording directory", str(e))
+            return
+        if loaded is None:
+            QMessageBox.information(self, "Open recording directory", "No streams could be loaded from the discovered .xdf files (check stream filters or file contents).")
 
 
     @property
