@@ -298,6 +298,8 @@ class TrackRenderingMixin(EpochRenderingMixin):
     def find_intervals_in_active_window(self, debug_print: bool = False) -> Dict[str, pd.DataFrame]:
         """Find interval and track datasource rows overlapping the active window.
         """
+        limited_interval_dfs_output_column_names = ['t_start', 't_duration', 't_end']
+
         active_window_dt = getattr(getattr(self, 'spikes_window', None), 'active_time_window', None)
         if active_window_dt is not None:
             new_start_dt, new_end_dt = active_window_dt
@@ -312,31 +314,20 @@ class TrackRenderingMixin(EpochRenderingMixin):
         curr_window_end: float = self._window_value_to_signal_float(new_end_dt) # self._last_applied_plot_window_x1
         ## OUTPUTS: curr_window_start, curr_window_end
 
-        def _subfn_get_ds_intervals(a_ds, window_start: float, window_end: float, return_full_intervals_df: bool=True):
-            """ captures: curr_window_start, curr_window_start """
-            overview_intervals_df: pd.DataFrame = a_ds.get_overview_intervals()
-            is_overview_interval_in_window = np.logical_and((window_start <= overview_intervals_df['t_start'].to_numpy()), (overview_intervals_df['t_end'].to_numpy() <= window_end))
-            if np.sum(is_overview_interval_in_window) > 0:
-                window_overview_intervals = overview_intervals_df[is_overview_interval_in_window]
-                if return_full_intervals_df:
-                    return window_overview_intervals
-                else:
-                    return window_overview_intervals[['t_start', 't_end']].to_numpy()
-            else:
-                return []
-
 
         ## BEGIN FUNCTION BODY:
         visible_intervals_dict: Dict[str, pd.DataFrame] = {}
         seen_datasource_names = set()
 
+        ## `timeline.interval_datasource_names` is None for some reason even on a valid timeline object
         for datasource_name in self.interval_datasource_names:
             datasource = self.interval_datasources.get(datasource_name, None)
             if datasource is None or (not hasattr(datasource, 'get_updated_data_window')):
                 continue
             # visible_intervals_dict[datasource_name] = datasource.get_updated_data_window(new_start_dt, new_end_dt)
-            # visible_intervals_dict[datasource_name] = _subfn_get_ds_intervals(a_ds=datasource, window_start=curr_window_start, window_end=curr_window_end) # .get_updated_data_window(new_start_dt, new_end_dt)
             visible_intervals_dict[datasource_name] = datasource.get_updated_data_window(curr_window_start, curr_window_end)
+            if (limited_interval_dfs_output_column_names is not None) and (visible_intervals_dict[datasource_name] is not None):
+                visible_intervals_dict[datasource_name] = visible_intervals_dict[datasource_name][limited_interval_dfs_output_column_names] ## subset to the included columns
             seen_datasource_names.add(datasource_name)
 
         track_datasource_names = getattr(self.track_datasources, 'dynamically_added_attributes', [])
@@ -348,14 +339,14 @@ class TrackRenderingMixin(EpochRenderingMixin):
                 continue
             # visible_intervals_dict[datasource_name] = datasource.get_updated_data_window(new_start_dt, new_end_dt)
             visible_intervals_dict[datasource_name] = datasource.get_updated_data_window(curr_window_start, curr_window_end)
-            # visible_intervals_dict[datasource_name] = _subfn_get_ds_intervals(a_ds=datasource, window_start=curr_window_start, window_end=curr_window_end)
+            if (limited_interval_dfs_output_column_names is not None) and (visible_intervals_dict[datasource_name] is not None):
+                visible_intervals_dict[datasource_name] = visible_intervals_dict[datasource_name][limited_interval_dfs_output_column_names] ## subset to the included columns
 
         if debug_print:
             visible_counts_dict = {datasource_name: len(intervals_df) for datasource_name, intervals_df in visible_intervals_dict.items()}
             print(f'TrackRenderingMixin.find_intervals_in_active_window(...): {visible_counts_dict}')
 
         ## OUTPUTS: visible_intervals_dict
-
         return visible_intervals_dict
 
 
