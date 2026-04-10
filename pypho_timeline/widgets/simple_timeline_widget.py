@@ -213,10 +213,12 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
         )
         self._last_applied_plot_window_x0 = self._window_value_to_signal_float(self.active_window_start_time)
         self._last_applied_plot_window_x1 = self._window_value_to_signal_float(self.active_window_end_time)
+        self._applying_window_from_signal = False
+
+        ### "compare" side-by-side docks:
         self.compare_window_start_time = self.active_window_start_time
         self.compare_window_end_time = self.active_window_end_time
         self._is_updating_compare_window = False
-        self._applying_window_from_signal = False
         self.ui.compare_track_names = set()
         self.ui.compare_track_master_name = None
         self.ui.split_group_docks = {}
@@ -508,7 +510,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
 
 
     def go_to_specific_interval(self, desired_interval_idx: int, specific_intervals_ds_identifier: str = 'EEG_Epoc X'):
-        """ jumps to the specific interval if it's valid """
+        """ jumps to the specific interval if it's valid -- this one works and is what the numeric spinbox uses to adjust the window to a specific session 
+        """
         ## Zoom to a particular event:
         eeg_widget, eeg_track, eeg_ds = self.get_track_tuple(specific_intervals_ds_identifier)
         eeg_overview_intervals_df: pd.DataFrame = eeg_ds.get_overview_intervals()
