@@ -254,6 +254,28 @@ class TimelineBuilder:
             self._append_refresh_log(f"Refresh failed: {e}", level=logging.ERROR, level_name="ERROR")
 
 
+    def replace_timeline_from_xdf_paths(self, xdf_file_paths: List[Path], *, xdf_discovery_dirs_for_refresh: Optional[List[Path]] = None) -> Optional[SimpleTimelineWidget]:
+        """Rebuild the timeline from the given XDF paths in a new main window, then close the previous main window if loading succeeded."""
+        if not xdf_file_paths:
+            return None
+        normalized_paths: List[Path] = list(dict.fromkeys(Path(p).resolve() for p in xdf_file_paths))
+        old_main_window = self._current_main_window
+        rc: Dict[str, Any] = self._refresh_config or {}
+        stream_allowlist: Optional[List[str]] = rc.get("stream_allowlist", None)
+        stream_blocklist: Optional[List[str]] = rc.get("stream_blocklist", None)
+        if xdf_discovery_dirs_for_refresh is not None:
+            video_dirs: List[Path] = rc.get("video_discovery_dirs", [])
+            vext = rc.get("video_extensions", ('.mp4', '.avi', '.mov', '.mkv', '.wmv'))
+            self.set_refresh_config(xdf_discovery_dirs=[Path(p).resolve() for p in xdf_discovery_dirs_for_refresh], n_most_recent=rc.get("n_most_recent", None), stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist, video_discovery_dirs=video_dirs, video_extensions=list(vext) if vext is not None else None)
+        timeline = self.build_from_xdf_files(xdf_file_paths=normalized_paths, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+        if timeline is None:
+            logger.warning("replace_timeline_from_xdf_paths: no timeline built (no streams or load error); previous window kept.")
+            return None
+        if old_main_window is not None and old_main_window is not self._current_main_window:
+            old_main_window.close()
+        return timeline
+
+
     
     ## MAIN FUNCTION
     def build_from_xdf_file(self, xdf_file_path: Path, window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, add_overview_strip: bool = True, **kwargs) -> Optional[SimpleTimelineWidget]:
