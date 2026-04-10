@@ -474,6 +474,39 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
         self.simulate_window_scroll(self._target_window_start_go_earliest())
 
 
+    def find_next_active_interval(self, is_jump_next: bool=True, specific_intervals_ds_identifier: str = 'EEG_Epoc X'):
+        """ finds the next active interval and then jumps to it
+
+        desired_interval_idx, (desired_t_start, desired_t_end) = timeline.find_next_active_interval(is_jump_previous=False)
+        self.update_window(desired_t_start, desired_t_end)
+
+        """
+        if is_jump_next:
+            side = 'right'
+        else:
+            side = 'left'
+
+        # curr_window_start_time: float = deepcopy(self.active_window_start_time) ## Timestamp unfortunately
+        curr_window_start_time: float = self._window_value_to_signal_float(self.active_window_start_time) # self._last_applied_plot_window_x0
+        # self._last_applied_plot_window_x1 = self._window_value_to_signal_float(self.active_window_end_time) # self._last_applied_plot_window_x1
+
+        eeg_widget, eeg_track, eeg_ds = self.get_track_tuple(specific_intervals_ds_identifier)
+        eeg_overview_intervals_df: pd.DataFrame = eeg_ds.get_overview_intervals()
+        eeg_overview_intervals_start_ts = eeg_overview_intervals_df['t_start'].to_numpy()
+
+        # eeg_overview_intervals_df[['t_start', 't_end']]
+        desired_interval_idx = np.searchsorted(eeg_overview_intervals_start_ts, curr_window_start_time, side=side)
+        print(f'.find_next_active_interval(is_jump_previous: {is_jump_next}):\n\tcurr_window_start_time: {curr_window_start_time}, desired_interval_idx: {desired_interval_idx}')
+
+        if desired_interval_idx < 0:
+            raise IndexError(f'desired_interval_idx: {desired_interval_idx}')
+
+        desired_t_start, desired_t_end = eeg_overview_intervals_df.iloc[desired_interval_idx][['t_start', 't_end']].to_numpy()
+        return desired_interval_idx, (desired_t_start, desired_t_end)
+
+
+
+
     def go_to_specific_interval(self, desired_interval_idx: int, specific_intervals_ds_identifier: str = 'EEG_Epoc X'):
         """ jumps to the specific interval if it's valid """
         ## Zoom to a particular event:
