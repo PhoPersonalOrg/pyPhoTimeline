@@ -4,13 +4,13 @@ overview: Fix the `MainTimelineWindow` startup crash by realigning the loaded Qt
 todos:
   - id: inspect-ui-contract
     content: Patch `MainTimelineWindow.ui` so it provides a real `logPanel` widget instead of only `logPanelLayout`.
-    status: in_progress
+    status: completed
   - id: align-footer-names
     content: Resolve any `collapsedDockOverflowStrip` and action-name mismatches between the UI file and `MainTimelineWindow.py`.
-    status: pending
+    status: completed
   - id: smoke-validate-window
     content: Re-run the timeline construction path and verify log toggle and footer controls initialize cleanly.
-    status: pending
+    status: completed
 isProject: false
 ---
 
