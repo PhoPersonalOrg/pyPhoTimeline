@@ -634,11 +634,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
         self._update_interval_jump_buttons_enabled()
 
 
-    def _window_value_to_signal_float(self, value: Union[float, datetime, pd.Timestamp]) -> float:
-        """Convert a stored window boundary value to the float expected by Qt signals."""
-        if isinstance(value, (datetime, pd.Timestamp)):
-            return value.timestamp() if hasattr(value, 'timestamp') else pd.Timestamp(value).timestamp()
-        return float(value)
+    ## note: inherits `_window_value_to_signal_float(...)` too
 
 
     @pyqtExceptionPrintingSlot(float, float)
