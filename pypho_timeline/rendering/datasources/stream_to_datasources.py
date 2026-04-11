@@ -7,7 +7,7 @@ Used by TimelineBuilder when building from XDF files or pre-loaded streams.
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional, cast
 
 import pyqtgraph as pg
 
@@ -21,7 +21,7 @@ from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
 
 try:
-    from pyphocorehelpers.function_helpers import function_attributes
+    from pyphocorehelpers.function_helpers import function_attributes  # pyright: ignore[reportAssignmentType]
 except ImportError:
     def function_attributes(**kwargs):
         return lambda f: f
@@ -72,6 +72,92 @@ def default_dock_named_color_scheme_key(name: str) -> str:
     return 'red'
 
 
+def _is_motion_stream(stream_type: str, stream_name: str) -> bool:
+    return (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name)
+
+
+def _is_eeg_quality_stream(stream_type: str, stream_name: str) -> bool:
+    return (stream_type.upper() in ['RAW']) and (' eQuality' in stream_name)
+
+
+def _is_eeg_stream(stream_type: str, stream_name: str) -> bool:
+    return stream_type.upper() == 'EEG'
+
+
+def _is_log_stream(stream_type: str, stream_name: str) -> bool:
+    return (stream_type.upper() in ['MARKERS']) and (stream_name in ['EventBoard', 'TextLogger'])
+
+
+def _build_intervals_df(stream_info: Dict, timestamps, series_vertical_offset: float = 0.0, color_name: str = 'blue', color_alpha: float = 0.3) -> Tuple[np.ndarray, Optional[pd.DataFrame]]:
+    timestamps = np.asarray(timestamps, dtype=float)
+    if len(timestamps) == 0:
+        return timestamps, None
+
+    stream_start = float(timestamps[0])
+    stream_end = float(timestamps[-1])
+    stream_duration = stream_end - stream_start
+    if stream_duration <= 0 and len(timestamps) > 1:
+        diffs = np.diff(timestamps)
+        median_dt = float(np.median(diffs)) if len(diffs) > 0 else 0.0
+        if median_dt > 0:
+            stream_duration = median_dt * (len(timestamps) - 1)
+        else:
+            try:
+                nominal_srate = float(stream_info.get('nominal_srate', [[128.0]])[0][0])
+                stream_duration = (len(timestamps) - 1) / max(nominal_srate, 1.0)
+            except (TypeError, KeyError, IndexError, ValueError):
+                stream_duration = 1.0
+        stream_end = stream_start + stream_duration
+
+    intervals_df = pd.DataFrame({'t_start': [stream_start], 't_duration': [stream_duration], 't_end': [stream_end]})
+    intervals_df['series_vertical_offset'] = series_vertical_offset
+    intervals_df['series_height'] = 0.9
+
+    color = pg.mkColor(color_name)
+    color.setAlphaF(color_alpha)
+    intervals_df['pen'] = [pg.mkPen(color, width=1)]
+    intervals_df['brush'] = [pg.mkBrush(color)]
+    return timestamps, intervals_df
+
+
+def _get_channel_names_for_stream(stream_type: str, stream_name: str, n_columns: int) -> List[str]:
+    if _is_motion_stream(stream_type, stream_name):
+        return modality_channels_dict['MOTION']
+    if _is_eeg_quality_stream(stream_type, stream_name) or _is_eeg_stream(stream_type, stream_name):
+        return modality_channels_dict['EEG']
+    if _is_log_stream(stream_type, stream_name):
+        return modality_channels_dict['LOG']
+    return [f'Channel_{i}' for i in range(n_columns)]
+
+
+def _build_detailed_df(stream_info: Dict, stream_type: str, stream_name: str, timestamps: np.ndarray, time_series, strict_validation: bool = False) -> Optional[pd.DataFrame]:
+    if time_series is None or len(time_series) == 0:
+        return None
+
+    n_channels = int(stream_info['channel_count'][0])
+    n_t_stamps, n_columns = np.shape(time_series)
+    if strict_validation:
+        assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
+        assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
+    elif not ((n_channels == n_columns) and (len(timestamps) == n_t_stamps)):
+        return None
+
+    time_series_df = pd.DataFrame(time_series, columns=_get_channel_names_for_stream(stream_type, stream_name, n_columns))
+    time_series_df['t'] = timestamps
+    return time_series_df
+
+
+def _build_eeg_quality_detail_renderer():
+    from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
+    eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
+    return cast(Any, DataframePlotDetailRenderer(channel_names=modality_channels_dict['EEG'], fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict))
+
+
+def _build_log_detail_renderer():
+    from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
+    return cast(Any, LogTextDataFramePlotDetailRenderer(text_color='white', text_size=10, channel_names=modality_channels_dict['LOG']))
+
+
 @function_attributes(short_name=None, tags=['OLDER', 'single_xdf_file', 'multi-streams'], input_requires=[], output_provides=[], uses=[], used_by=[], creation_date='2026-03-02 03:06', related_items=['perform_process_all_streams_multi_xdf'])
 def perform_process_single_xdf_file_all_streams(streams):
     """ previous main function, and still used for a *single* XDF file with multiple streams - processes streams to build datasources, and thus tracks.
@@ -87,97 +173,42 @@ def perform_process_single_xdf_file_all_streams(streams):
         timestamps = s['time_stamps'] ## get stream data
         time_series = s['time_series'] ## get stream data
 
-        n_channels: int = int(s['info']['channel_count'][0])
-        print(f"Stream {i}: {stream_name}, channels: {n_channels}, samples: {len(timestamps)}")
+        print(f"Stream {i}: {stream_name}, channels: {int(s['info']['channel_count'][0])}, samples: {len(timestamps)}")
 
-        # Create a single interval representing the entire stream recording
-        if len(timestamps) == 0:
+        timestamps, intervals_df = _build_intervals_df(s['info'], timestamps, series_vertical_offset=(1.0) * float(i), color_name='grey', color_alpha=0.7)
+        if intervals_df is None:
             continue
-
-        stream_start = float(timestamps[0])
-        stream_end = float(timestamps[-1])
-        stream_duration = stream_end - stream_start
-        if stream_duration <= 0 and len(timestamps) > 1:
-            ts_arr = np.asarray(timestamps, dtype=float)
-            diffs = np.diff(ts_arr)
-            median_dt = float(np.median(diffs)) if len(diffs) > 0 else 0.0
-            if median_dt > 0:
-                stream_duration = median_dt * (len(ts_arr) - 1)
-            else:
-                try:
-                    nominal_srate = float(s['info'].get('nominal_srate', [[128.0]])[0][0])
-                    stream_duration = (len(ts_arr) - 1) / max(nominal_srate, 1.0)
-                except (TypeError, KeyError, IndexError, ValueError):
-                    stream_duration = 1.0
-            stream_end = stream_start + stream_duration
-
-        # Create interval DataFrame with proper structure
-        intervals_df = pd.DataFrame({
-            't_start': [stream_start],
-            't_duration': [stream_duration],
-            't_end': [stream_end]
-        })
-
-        # Add visualization columns
-        intervals_df['series_vertical_offset'] = (1.0) * float(i)
-        intervals_df['series_height'] = 0.9
-
-        # Create pens and brushes
-        color = pg.mkColor('grey')
-        color.setAlphaF(0.7)
-        pen = pg.mkPen(color, width=1)
-        brush = pg.mkBrush(color)
-        intervals_df['pen'] = [pen]
-        intervals_df['brush'] = [brush]
-
 
         all_streams[stream_name] = intervals_df
         has_valid_intervals: bool = (intervals_df is not None) and (len(intervals_df) > 0)
 
         # Create datasource
-        if (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name):
+        if _is_motion_stream(stream_type, stream_name):
             assert has_valid_intervals
-            n_t_stamps, n_columns = np.shape(time_series)
-            assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
-            assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
-            time_series_df = pd.DataFrame(time_series, columns=modality_channels_dict['MOTION'])
-            time_series_df['t'] = timestamps
+            time_series_df = _build_detailed_df(s['info'], stream_type, stream_name, timestamps, time_series, strict_validation=True)
+            assert time_series_df is not None
             motion_norm_dict = modality_channels_normalization_mode_dict.get('MOTION')
             datasource = MotionTrackDatasource(motion_df=time_series_df, intervals_df=intervals_df, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict=motion_norm_dict)
             datasource.custom_datasource_name = f"MOTION_{stream_name}"
 
-        elif (stream_type.upper() in ['RAW']) and (' eQuality' in stream_name):
+        elif _is_eeg_quality_stream(stream_type, stream_name):
             assert has_valid_intervals
-            from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
-            channel_names = modality_channels_dict['EEG']
-            eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
-            a_detail_renderer: DataframePlotDetailRenderer = DataframePlotDetailRenderer(channel_names=channel_names, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict)
-            n_t_stamps, n_columns = np.shape(time_series)
-            assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
-            assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
-            time_series_df = pd.DataFrame(time_series, columns=channel_names)
-            time_series_df['t'] = timestamps
+            a_detail_renderer = _build_eeg_quality_detail_renderer()
+            time_series_df = _build_detailed_df(s['info'], stream_type, stream_name, timestamps, time_series, strict_validation=True)
+            assert time_series_df is not None
             datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=time_series_df, custom_datasource_name=f"EEGQ_{stream_name}", detail_renderer=a_detail_renderer, max_points_per_second=2.0, enable_downsampling=True)
 
-        elif (stream_type.upper() == 'EEG'):
-            n_t_stamps, n_columns = np.shape(time_series)
-            assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
-            assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
-            time_series_df = pd.DataFrame(time_series, columns=modality_channels_dict['EEG'])
-            time_series_df['t'] = timestamps
+        elif _is_eeg_stream(stream_type, stream_name):
+            time_series_df = _build_detailed_df(s['info'], stream_type, stream_name, timestamps, time_series, strict_validation=True)
+            assert time_series_df is not None
             eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
             datasource = EEGTrackDatasource(intervals_df=intervals_df, eeg_df=time_series_df, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict)
 
-        elif (stream_type.upper() in ['MARKERS']) and (stream_name in ['EventBoard', 'TextLogger']):
+        elif _is_log_stream(stream_type, stream_name):
             assert has_valid_intervals
-            from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
-            channel_names = modality_channels_dict['LOG']
-            a_detail_renderer: LogTextDataFramePlotDetailRenderer = LogTextDataFramePlotDetailRenderer(text_color='white', text_size=10, channel_names=channel_names)
-            n_t_stamps, n_columns = np.shape(time_series)
-            assert n_channels == n_columns, f"n_channels: {n_channels} != n_columns: {n_columns}"
-            assert len(timestamps) == n_t_stamps, f"len(timestamps): {len(timestamps)} != n_t_stamps: {n_t_stamps}"
-            time_series_df = pd.DataFrame(time_series, columns=channel_names)
-            time_series_df['t'] = timestamps
+            a_detail_renderer = _build_log_detail_renderer()
+            time_series_df = _build_detailed_df(s['info'], stream_type, stream_name, timestamps, time_series, strict_validation=True)
+            assert time_series_df is not None
             datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=time_series_df, custom_datasource_name=f"LOG_{stream_name}", detail_renderer=a_detail_renderer, enable_downsampling=False)
 
 
@@ -216,9 +247,9 @@ def merge_streams_by_name(streams_by_file: List[Tuple[List, Path]]) -> Dict[str,
     return streams_by_name
 
 
-@function_attributes(short_name=None, tags=['MAIN', 'multi_xdf_files', 'multi-streams'], input_requires=[], output_provides=[], uses=['merge_streams_by_name', 'unix_timestamp_to_datetime', 'float_to_datetime', 'datetime_to_unix_timestamp'], used_by=['TimelineBuilder'], creation_date='2026-03-02 03:00', related_items=['perform_process_single_xdf_file_all_streams'])
-def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[dict]] = None, enable_raw_xdf_processing: bool=True, spectrogram_channel_groups: Optional[List[SpectrogramChannelGroupConfig]] = EMOTIV_EPOC_X_SPECTROGRAM_GROUPS) -> Tuple[Dict, Dict]:
-    """Process streams from multiple XDF files and merge streams with the same name.
+@function_attributes(short_name=None, tags=['MAIN', 'multi_xdf_files', 'multi-streams'], input_requires=[], output_provides=[], uses=['merge_streams_by_name', 'float_to_datetime', 'datetime_to_unix_timestamp'], used_by=['TimelineBuilder'], creation_date='2026-03-02 03:00', related_items=['perform_process_single_xdf_file_all_streams'])
+def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[Optional[dict]]] = None, enable_raw_xdf_processing: bool=True, spectrogram_channel_groups: Optional[List[SpectrogramChannelGroupConfig]] = EMOTIV_EPOC_X_SPECTROGRAM_GROUPS) -> Tuple[Dict, Dict]:
+    """Process streams from multiple XDF files and **merge streams with the same name**.
 
     Streams with the same name across different files will be merged into a single datasource.
     Timestamps are converted to use a common reference datetime (earliest file's reference) to ensure
@@ -285,7 +316,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
     xdf_recording_file_metadata_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=xdf_file_paths) ## this should be cheap because most will already be cached
 
     if file_headers is None:
-        file_headers = [None] * len(xdf_file_paths)
+        file_headers = [None for _ in xdf_file_paths]
 
     for file_header, file_path in zip(file_headers, xdf_file_paths):
         ref_dt = None
@@ -294,7 +325,9 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         if ref_dt is not None:
             file_reference_datetimes[file_path] = ref_dt
         else:
-            found_file_df_matches = xdf_recording_file_metadata_df[xdf_recording_file_metadata_df['src_file'].apply(lambda s: Path(s).resolve()) == Path(file_path).resolve()]
+            resolved_file_path = Path(file_path).resolve()
+            resolved_src_files = [Path(str(src_file)).resolve() == resolved_file_path for src_file in xdf_recording_file_metadata_df['src_file'].tolist()]
+            found_file_df_matches = xdf_recording_file_metadata_df[resolved_src_files]
             if len(found_file_df_matches) == 1:
                 meas_datetime = found_file_df_matches.iloc[0]['meas_datetime'] if not found_file_df_matches.empty else None
                 ref_dt = meas_datetime
@@ -326,7 +359,6 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         all_intervals_dfs = []
         all_detailed_dfs = [] ## #TODO 2026-03-02 08:56: - [ ] these detailed_dfs are being built synchronously in the following loop too, PERFORMANCE: defer this to an async call
         stream_type = None
-        stream_info = None
         lab_obj_dict: Dict[str, Optional[LabRecorderXDF]] = {}
 
 
@@ -334,7 +366,6 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
             current_stream_type = stream['info']['type'][0]
             if stream_type is None:
                 stream_type = current_stream_type
-                stream_info = stream['info']
             elif stream_type != current_stream_type:
                 print(f"WARN: Stream '{stream_name}' has different types across files: {stream_type} vs {current_stream_type}")
 
@@ -357,64 +388,13 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
 
             timestamps = np.asarray(timestamps, dtype=float)
 
-            stream_start = float(timestamps[0])
-            stream_end = float(timestamps[-1])
-            stream_duration = stream_end - stream_start
-            if stream_duration <= 0 and len(timestamps) > 1:
-                ts_arr = np.asarray(timestamps, dtype=float)
-                diffs = np.diff(ts_arr)
-                median_dt = float(np.median(diffs)) if len(diffs) > 0 else 0.0
-                if median_dt > 0:
-                    stream_duration = median_dt * (len(ts_arr) - 1)
-                else:
-                    try:
-                        nominal_srate = float(stream['info'].get('nominal_srate', [[128.0]])[0][0])
-                        stream_duration = (len(ts_arr) - 1) / max(nominal_srate, 1.0)
-                    except (TypeError, KeyError, IndexError, ValueError):
-                        stream_duration = 1.0
-                stream_end = stream_start + stream_duration
-
-            # Create interval DataFrame __________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
-            intervals_df = pd.DataFrame({
-                't_start': [stream_start],
-                't_duration': [stream_duration],
-                't_end': [stream_end]
-            })
-
-            # Add visualization columns
-            intervals_df['series_vertical_offset'] = 0.0
-            intervals_df['series_height'] = 0.9
-
-            # Create pens and brushes
-            color = pg.mkColor('blue')
-            color.setAlphaF(0.3)
-            pen = pg.mkPen(color, width=1)
-            brush = pg.mkBrush(color)
-            intervals_df['pen'] = [pen]
-            intervals_df['brush'] = [brush]
-
+            timestamps, intervals_df = _build_intervals_df(stream['info'], timestamps, series_vertical_offset=0.0, color_name='blue', color_alpha=0.3)
             all_intervals_dfs.append(intervals_df)
 
             # Create *detailed* DataFrame if time_series exists
-            if time_series is not None and len(time_series) > 0:
-                n_channels = int(stream['info']['channel_count'][0])
-                n_t_stamps, n_columns = np.shape(time_series)
-
-                if n_channels == n_columns and len(timestamps) == n_t_stamps:
-                    if (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name):
-                        channel_names = modality_channels_dict['MOTION']
-                    elif (stream_type.upper() in ['RAW']) and (' eQuality' in stream_name):
-                        channel_names = modality_channels_dict['EEG']
-                    elif (stream_type.upper() == 'EEG'):
-                        channel_names = modality_channels_dict['EEG']
-                    elif (stream_type.upper() in ['MARKERS']) and (stream_name in ['EventBoard', 'TextLogger']):
-                        channel_names = modality_channels_dict['LOG']
-                    else:
-                        channel_names = [f'Channel_{i}' for i in range(n_columns)]
-
-                    time_series_df = pd.DataFrame(time_series, columns=channel_names)
-                    time_series_df['t'] = timestamps
-                    all_detailed_dfs.append(time_series_df)
+            time_series_df = _build_detailed_df(stream['info'], stream_type, stream_name, timestamps, time_series, strict_validation=False)
+            if time_series_df is not None:
+                all_detailed_dfs.append(time_series_df)
         ## END for stream, file_path in stream_file_pairs
 
 
@@ -427,6 +407,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         # Merge intervals for display (all_streams dict)
         merged_intervals_df = pd.concat(all_intervals_dfs, ignore_index=True).sort_values('t_start')
         all_streams[stream_name] = merged_intervals_df
+        assert stream_type is not None
 
         has_valid_intervals = len(merged_intervals_df) > 0
         has_detailed_data = len(all_detailed_dfs) > 0
@@ -441,11 +422,8 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
 
             for a_xdf_path in xdf_paths_for_raw:
                 lab_obj_dict[a_xdf_path.name] = None
-                try:
-                    a_lab_obj, _a_raws_dict = _subfn_process_xdf_file(xdf_path_for_raw=a_xdf_path)
-                    lab_obj_dict[a_xdf_path.name] = a_lab_obj
-                except Exception as e:
-                    raise
+                a_lab_obj, _a_raws_dict = _subfn_process_xdf_file(xdf_path_for_raw=a_xdf_path)
+                lab_obj_dict[a_xdf_path.name] = a_lab_obj
 
 
 
@@ -453,7 +431,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         # ==================================================================================================================================================================================================================================================================================== #
         # Handle Each Specific Stream Modality Type                                                                                                                                                                                                                                            #
         # ==================================================================================================================================================================================================================================================================================== #
-        if (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name):
+        if _is_motion_stream(stream_type, stream_name):
             if has_valid_intervals and has_detailed_data:
                 motion_norm_dict = modality_channels_normalization_mode_dict.get('MOTION')
                 datasource = MotionTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict=motion_norm_dict, lab_obj_dict=lab_obj_dict)
@@ -465,6 +443,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                         try:
                             from phopymnehelper.motion_data import MotionData
 
+                            assert datasource.detailed_df is not None
                             is_moving_annots, is_moving_annots_df = MotionData.find_high_accel_periods(a_ds=datasource.detailed_df, total_change_threshold=0.5, should_set_bad_period_annotations=False, minimum_bad_duration=0.050) # at least 50ms in duration to prevent tons of tiny intervals
                             datasource.set_bad_intervals(bad_intervals_df=is_moving_annots_df, emit_changed=False)
 
@@ -472,19 +451,12 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                             logger.warning(f'\t\tFailed to create bad period moving annotations for "{stream_name}": {spec_e}')
                     else:
                         logger.warning(f'\tNo MOTION raw found in XDF for stream "{stream_name}"; skipping spectrogram')
-
-
-
-
-        elif (stream_type.upper() in ['RAW']) and (' eQuality' in stream_name):
+        elif _is_eeg_quality_stream(stream_type, stream_name):
             if has_valid_intervals and has_detailed_data:
-                from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
-                channel_names = modality_channels_dict['EEG']
-                eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
-                a_detail_renderer = DataframePlotDetailRenderer(channel_names=channel_names, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict)
+                a_detail_renderer = _build_eeg_quality_detail_renderer()
                 datasource = IntervalProvidingTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"EEGQ_{stream_name}", detail_renderer=a_detail_renderer, max_points_per_second=2.0, enable_downsampling=True)
 
-        elif (stream_type.upper() == 'EEG'):
+        elif _is_eeg_stream(stream_type, stream_name):
             if has_valid_intervals and has_detailed_data:
                 eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
                 datasource = EEGTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict, lab_obj_dict=lab_obj_dict)
@@ -527,13 +499,9 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                             logger.warning(f'Failed to create spectrogram for "{stream_name}": {spec_e}')
                     else:
                         logger.warning(f'No EEG raw found in XDF for stream "{stream_name}"; skipping spectrogram')
-
-
-        elif (stream_type.upper() in ['MARKERS']) and (stream_name in ['EventBoard', 'TextLogger']):
+        elif _is_log_stream(stream_type, stream_name):
             if has_valid_intervals and has_detailed_data:
-                from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
-                channel_names = modality_channels_dict['LOG']
-                a_detail_renderer = LogTextDataFramePlotDetailRenderer(text_color='white', text_size=10, channel_names=channel_names)
+                a_detail_renderer = _build_log_detail_renderer()
                 datasource = IntervalProvidingTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"LOG_{stream_name}", detail_renderer=a_detail_renderer, enable_downsampling=False)
 
         elif has_valid_intervals:

@@ -1420,7 +1420,7 @@ class TimelineBuilder:
 
             track_widget, a_root_graphics, a_plot_item, a_dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
                 name=datasource.custom_datasource_name,
-                dockSize=(500, 80),
+                dockSize=((500, 80 // 4) if datasource.custom_datasource_name == 'LOG_EventBoard' else (500, 80)),
                 dockAddLocationOpts=['bottom'],
                 display_config=display_config,
                 sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA,
