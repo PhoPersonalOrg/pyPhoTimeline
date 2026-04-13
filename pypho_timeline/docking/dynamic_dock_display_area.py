@@ -158,6 +158,34 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
 
 
 
+    ## Compute the stretch heights
+    def compute_normalized_stretch_heights(self):
+        """ 
+        bump!
+        """
+        height_px: int = dock_area.height()
+        # dock_area.heightMM() # 283
+
+        height_px
+        flat_dockitems = timeline.get_flat_dockitems_list()
+        flat_dockitems
+
+        stretches: List[Tuple] = [d.stretch() for d in flat_dockitems]
+        height_px: np.array = np.array([d.height() for d in flat_dockitems])
+        stretches_height: np.array = np.array([s[1] for s in stretches])
+        # height_px
+        # stretches_height
+        total_height_px: float = np.nansum(height_px)
+        total_height_stretches: float = np.nansum(stretches_height)
+
+        # total_height_px, total_height_stretches
+
+        normalized_height_stretches = (stretches_height / total_height_stretches)
+        normalized_height_stretches
+
+
+
+
 
     # ==================================================================================================================== #
     # dockGroup                                                                                                            #
