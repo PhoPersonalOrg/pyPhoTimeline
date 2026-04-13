@@ -961,6 +961,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
 
 
     def _schedule_timeline_overview_strip_rebuild(self, *_args):
+        logger.info(f'timeline._schedule_timeline_overview_strip_rebuild()')
         if self.ui.get('timeline_overview_strip', None) is None:
             return
         self._overview_rebuild_timer.start(45)
@@ -968,11 +969,14 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
 
 
     def _overview_on_datasource_changed(self):
+        logger.info(f'timeline._overview_on_datasource_changed()')
         self._schedule_timeline_overview_strip_rebuild()
 
 
 
     def _resync_timeline_overview_datasource_connections(self):
+        logger.info(f'timeline._resync_timeline_overview_datasource_connections()')
+
         if self.ui.get('timeline_overview_strip', None) is None:
             return
         current = {}
@@ -997,6 +1001,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
     def _overview_strip_fallback_x_range(self) -> Tuple[float, float]:
         a = self._window_value_to_signal_float(self.total_data_start_time)
         b = self._window_value_to_signal_float(self.total_data_end_time)
+        logger.info(f'timeline._overview_strip_fallback_x_range():\n\ta: {a}\n\tb: {b}')
         if b < a:
             a, b = b, a
         if b <= a:
@@ -1006,6 +1011,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
 
 
     def _rebuild_timeline_overview_strip(self):
+        logger.info(f'timeline._rebuild_timeline_overview_strip()')
+
         strip = self.ui.get('timeline_overview_strip', None)
         if strip is None:
             return
@@ -1019,6 +1026,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
     def add_calendar_navigator(self):
         """Adds the calendar navigator to the bottom of the timeline."""
         from pypho_timeline.widgets import TimelineCalendarWidget
+        logger.info(f'timeline.add_calendar_navigator()')
 
         self.ui.calendar = TimelineCalendarWidget()
         self.ui.layout.addWidget(self.ui.calendar)
