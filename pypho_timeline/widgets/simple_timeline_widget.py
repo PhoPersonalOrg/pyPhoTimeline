@@ -963,6 +963,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
     def _schedule_timeline_overview_strip_rebuild(self, *_args):
         logger.info(f'timeline._schedule_timeline_overview_strip_rebuild()')
         if self.ui.get('timeline_overview_strip', None) is None:
+            logger.error(f'\ttimeline.ui.timeline_overview_strip is None!')
             return
         self._overview_rebuild_timer.start(45)
 
@@ -978,6 +979,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
         logger.info(f'timeline._resync_timeline_overview_datasource_connections()')
 
         if self.ui.get('timeline_overview_strip', None) is None:
+            logger.error(f'\ttimeline.ui.timeline_overview_strip is None!')
             return
         current = {}
         for name in self.get_track_names_for_window_sync_group(window_sync_group='primary'):
@@ -1015,6 +1017,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
 
         strip = self.ui.get('timeline_overview_strip', None)
         if strip is None:
+            logger.error(f'\ttimeline.ui.timeline_overview_strip is None!')
             return
         self._resync_timeline_overview_datasource_connections()
         names = self.get_track_names_for_window_sync_group(window_sync_group='primary')
