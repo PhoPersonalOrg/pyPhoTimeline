@@ -1145,6 +1145,5 @@ from pypho_timeline.rendering.datasources.stream_to_datasources import (
     modality_sfreq_dict,
     modality_channels_normalization_mode_dict,
     merge_streams_by_name,
-    perform_process_single_xdf_file_all_streams,
     perform_process_all_streams_multi_xdf,
 )

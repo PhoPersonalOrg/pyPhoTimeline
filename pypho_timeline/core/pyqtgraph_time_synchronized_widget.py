@@ -19,14 +19,13 @@ from pypho_timeline.core.time_synchronized_plotter_base import TimeSynchronizedP
 from pyphocorehelpers.programming_helpers import metadata_attributes
 from pyphocorehelpers.function_helpers import function_attributes
 from pyphocorehelpers.plotting.mixins.plotting_backend_mixin import PlottingBackendSpecifyingMixin, PlottingBackendType, PlotImageExportableMixin
-from pypho_timeline.mixins.crosshairs_tracing_mixin import CrosshairsTracingMixin
 from pypho_timeline.widgets.custom_graphics_layout_widget import CustomViewBox, CustomGraphicsLayoutWidget
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 
 from pypho_timeline.EXTERNAL.pyqtgraph_extensions.mixins.DraggableGraphicsWidgetMixin import MouseInteractionCriteria, DraggableGraphicsWidgetMixin
 
 @metadata_attributes(short_name=None, tags=['pyqtgraph'], input_requires=[], output_provides=[], uses=[], used_by=[], creation_date='2024-12-31 03:42', related_items=['MatplotlibTimeSynchronizedWidget'])
-class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportableMixin, PlottingBackendSpecifyingMixin, TimeSynchronizedPlotterBase):
+class PyqtgraphTimeSynchronizedWidget(PlotImageExportableMixin, PlottingBackendSpecifyingMixin, TimeSynchronizedPlotterBase):
     """ Plots the decoded position at a given moment in time. 
 
     Simple pyqtgraph-based alternative to `MatplotlibTimeSynchronizedWidget`

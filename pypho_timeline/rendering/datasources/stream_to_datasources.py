@@ -158,75 +158,6 @@ def _build_log_detail_renderer():
     return cast(Any, LogTextDataFramePlotDetailRenderer(text_color='white', text_size=10, channel_names=modality_channels_dict['LOG']))
 
 
-@function_attributes(short_name=None, tags=['OLDER', 'single_xdf_file', 'multi-streams'], input_requires=[], output_provides=[], uses=[], used_by=[], creation_date='2026-03-02 03:06', related_items=['perform_process_all_streams_multi_xdf'])
-def perform_process_single_xdf_file_all_streams(streams):
-    """ previous main function, and still used for a *single* XDF file with multiple streams - processes streams to build datasources, and thus tracks.
-
-    NOTE: for *multiple* XDF files with multiple streams each, use `perform_process_all_streams_multi_xdf`
-
-    """
-    all_streams = {}
-    all_streams_datasources = {}
-    for i, s in enumerate(streams):
-        stream_name = s['info']['name'][0]
-        stream_type = s['info']['type'][0]
-        timestamps = s['time_stamps'] ## get stream data
-        time_series = s['time_series'] ## get stream data
-
-        print(f"Stream {i}: {stream_name}, channels: {int(s['info']['channel_count'][0])}, samples: {len(timestamps)}")
-
-        timestamps, intervals_df = _build_intervals_df(s['info'], timestamps, series_vertical_offset=(1.0) * float(i), color_name='grey', color_alpha=0.7)
-        if intervals_df is None:
-            continue
-
-        all_streams[stream_name] = intervals_df
-        has_valid_intervals: bool = (intervals_df is not None) and (len(intervals_df) > 0)
-
-        # Create datasource
-        if _is_motion_stream(stream_type, stream_name):
-            assert has_valid_intervals
-            time_series_df = _build_detailed_df(s['info'], stream_type, stream_name, timestamps, time_series, strict_validation=True)
-            assert time_series_df is not None
-            motion_norm_dict = modality_channels_normalization_mode_dict.get('MOTION')
-            datasource = MotionTrackDatasource(motion_df=time_series_df, intervals_df=intervals_df, custom_datasource_name=f"MOTION_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict=motion_norm_dict)
-            datasource.custom_datasource_name = f"MOTION_{stream_name}"
-
-        elif _is_eeg_quality_stream(stream_type, stream_name):
-            assert has_valid_intervals
-            a_detail_renderer = _build_eeg_quality_detail_renderer()
-            time_series_df = _build_detailed_df(s['info'], stream_type, stream_name, timestamps, time_series, strict_validation=True)
-            assert time_series_df is not None
-            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=time_series_df, custom_datasource_name=f"EEGQ_{stream_name}", detail_renderer=a_detail_renderer, max_points_per_second=2.0, enable_downsampling=True)
-
-        elif _is_eeg_stream(stream_type, stream_name):
-            time_series_df = _build_detailed_df(s['info'], stream_type, stream_name, timestamps, time_series, strict_validation=True)
-            assert time_series_df is not None
-            eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
-            datasource = EEGTrackDatasource(intervals_df=intervals_df, eeg_df=time_series_df, custom_datasource_name=f"EEG_{stream_name}", max_points_per_second=10.0, enable_downsampling=True, fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict)
-
-        elif _is_log_stream(stream_type, stream_name):
-            assert has_valid_intervals
-            a_detail_renderer = _build_log_detail_renderer()
-            time_series_df = _build_detailed_df(s['info'], stream_type, stream_name, timestamps, time_series, strict_validation=True)
-            assert time_series_df is not None
-            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=time_series_df, custom_datasource_name=f"LOG_{stream_name}", detail_renderer=a_detail_renderer, enable_downsampling=False)
-
-
-        elif has_valid_intervals:
-            datasource = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=None, custom_datasource_name=f"UNKNOWN_{stream_name}", max_points_per_second=1.0, enable_downsampling=False)
-            datasource.custom_datasource_name = f"UNKNOWN_{stream_name}"
-            print(f'WARN: unspecific stream type -- cannot build datasource for stream: stream_name: "{stream_name}", stream_type: "{stream_type}"')
-
-        else:
-            datasource = None
-            print(f'WARN: NO intervals_df!! unknown stream type -- cannot build datasource for stream: stream_name: "{stream_name}", stream_type: "{stream_type}"')
-
-        all_streams_datasources[stream_name] = datasource
-    ## END for i, s in enumerate(streams)...
-
-    return all_streams, all_streams_datasources
-
-
 def merge_streams_by_name(streams_by_file: List[Tuple[List, Path]]) -> Dict[str, List[Tuple[Dict, Path]]]:
     """Group streams by name across multiple XDF files.
 
@@ -520,6 +451,5 @@ __all__ = [
     'modality_channels_normalization_mode_dict',
     'default_dock_named_color_scheme_key',
     'merge_streams_by_name',
-    'perform_process_single_xdf_file_all_streams',
     'perform_process_all_streams_multi_xdf',
 ]
