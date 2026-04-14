@@ -27,15 +27,9 @@ except ImportError:
         return lambda f: f
 
 
-modality_channels_dict = {'EEG': ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'],
-                        'MOTION': ['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'],
-                        'GENERIC': ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'],
-                        'LOG': ['msg'],
-}
+from phopymnehelper.xdf_files import _get_channel_names_for_stream, _is_motion_stream, _is_eeg_quality_stream, _is_eeg_stream, _is_log_stream, merge_streams_by_name
+from phopymnehelper.xdf_files import modality_channels_dict, modality_sfreq_dict
 
-modality_sfreq_dict = {'EEG': 128, 'MOTION': 16,
-                        'GENERIC': 128, 'LOG': -1,
-}
 
 ## Default modality normalization modes:
 modality_channels_normalization_mode_dict = {
@@ -72,20 +66,7 @@ def default_dock_named_color_scheme_key(name: str) -> str:
     return 'red'
 
 
-def _is_motion_stream(stream_type: str, stream_name: str) -> bool:
-    return (stream_type.upper() in ['SIGNAL', 'RAW']) and ('Motion' in stream_name)
 
-
-def _is_eeg_quality_stream(stream_type: str, stream_name: str) -> bool:
-    return (stream_type.upper() in ['RAW']) and (' eQuality' in stream_name)
-
-
-def _is_eeg_stream(stream_type: str, stream_name: str) -> bool:
-    return stream_type.upper() == 'EEG'
-
-
-def _is_log_stream(stream_type: str, stream_name: str) -> bool:
-    return (stream_type.upper() in ['MARKERS']) and (stream_name in ['EventBoard', 'TextLogger'])
 
 
 def _build_intervals_df(stream_info: Dict, timestamps, series_vertical_offset: float = 0.0, color_name: str = 'blue', color_alpha: float = 0.3) -> Tuple[np.ndarray, Optional[pd.DataFrame]]:
@@ -119,17 +100,6 @@ def _build_intervals_df(stream_info: Dict, timestamps, series_vertical_offset: f
     intervals_df['brush'] = [pg.mkBrush(color)]
     return timestamps, intervals_df
 
-
-def _get_channel_names_for_stream(stream_type: str, stream_name: str, n_columns: int) -> List[str]:
-    if _is_motion_stream(stream_type, stream_name):
-        return modality_channels_dict['MOTION']
-    if _is_eeg_quality_stream(stream_type, stream_name) or _is_eeg_stream(stream_type, stream_name):
-        return modality_channels_dict['EEG']
-    if _is_log_stream(stream_type, stream_name):
-        return modality_channels_dict['LOG']
-    return [f'Channel_{i}' for i in range(n_columns)]
-
-
 def _build_detailed_df(stream_info: Dict, stream_type: str, stream_name: str, timestamps: np.ndarray, time_series, strict_validation: bool = False) -> Optional[pd.DataFrame]:
     if time_series is None or len(time_series) == 0:
         return None
@@ -157,25 +127,6 @@ def _build_log_detail_renderer():
     from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
     return cast(Any, LogTextDataFramePlotDetailRenderer(text_color='white', text_size=10, channel_names=modality_channels_dict['LOG']))
 
-
-def merge_streams_by_name(streams_by_file: List[Tuple[List, Path]]) -> Dict[str, List[Tuple[Dict, Path]]]:
-    """Group streams by name across multiple XDF files.
-
-    Args:
-        streams_by_file: List of tuples (streams_list, file_path) where streams_list is a list of stream dictionaries
-                         from pyxdf and file_path is the Path to the XDF file
-
-    Returns:
-        Dictionary mapping stream names to lists of (stream_dict, file_path) tuples
-    """
-    streams_by_name = {}
-    for streams, file_path in streams_by_file:
-        for stream in streams:
-            stream_name = stream['info']['name'][0]
-            if stream_name not in streams_by_name:
-                streams_by_name[stream_name] = []
-            streams_by_name[stream_name].append((stream, file_path))
-    return streams_by_name
 
 
 @function_attributes(short_name=None, tags=['MAIN', 'multi_xdf_files', 'multi-streams'], input_requires=[], output_provides=[], uses=['merge_streams_by_name', 'float_to_datetime', 'datetime_to_unix_timestamp'], used_by=['TimelineBuilder'], creation_date='2026-03-02 03:00', related_items=['perform_process_single_xdf_file_all_streams'])
