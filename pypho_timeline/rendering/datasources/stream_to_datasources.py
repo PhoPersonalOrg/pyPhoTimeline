@@ -128,6 +128,12 @@ def _build_log_detail_renderer():
     return cast(Any, LogTextDataFramePlotDetailRenderer(text_color='white', text_size=10, channel_names=modality_channels_dict['LOG']))
 
 
+def _build_dose_curve_records_detail_renderer():
+    from pypho_timeline.rendering.datasources.specific.dose import DosePlotDetailRenderer
+    return cast(Any, DosePlotDetailRenderer(text_color='orange', text_size=10, channel_names=modality_channels_dict['LOG']))
+
+
+
 
 @function_attributes(short_name=None, tags=['MAIN', 'multi_xdf_files', 'multi-streams'], input_requires=[], output_provides=[], uses=['merge_streams_by_name', 'float_to_datetime', 'datetime_to_unix_timestamp'], used_by=['TimelineBuilder'], creation_date='2026-03-02 03:00', related_items=['perform_process_single_xdf_file_all_streams'])
 def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[Optional[dict]]] = None, enable_raw_xdf_processing: bool=True, spectrogram_channel_groups: Optional[List[SpectrogramChannelGroupConfig]] = EMOTIV_EPOC_X_SPECTROGRAM_GROUPS) -> Tuple[Dict, Dict]:
@@ -333,6 +339,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                             logger.warning(f'\t\tFailed to create bad period moving annotations for "{stream_name}": {spec_e}')
                     else:
                         logger.warning(f'\tNo MOTION raw found in XDF for stream "{stream_name}"; skipping spectrogram')
+
         elif _is_eeg_quality_stream(stream_type, stream_name):
             if has_valid_intervals and has_detailed_data:
                 a_detail_renderer = _build_eeg_quality_detail_renderer()
@@ -381,9 +388,16 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
                             logger.warning(f'Failed to create spectrogram for "{stream_name}": {spec_e}')
                     else:
                         logger.warning(f'No EEG raw found in XDF for stream "{stream_name}"; skipping spectrogram')
+
         elif _is_log_stream(stream_type, stream_name):
-            if has_valid_intervals and has_detailed_data:
-                a_detail_renderer = _build_log_detail_renderer()
+            if (has_valid_intervals and has_detailed_data):
+                if stream_name == 'EventBoard':
+                    ## treat EventBoard streams a "Dose" record type streams
+                    a_detail_renderer = _build_dose_curve_records_detail_renderer()
+
+                else:                   
+                    a_detail_renderer = _build_log_detail_renderer()
+
                 datasource = IntervalProvidingTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"LOG_{stream_name}", detail_renderer=a_detail_renderer, enable_downsampling=False)
 
         elif has_valid_intervals:
