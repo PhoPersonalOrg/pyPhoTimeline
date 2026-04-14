@@ -19,7 +19,7 @@ from phopymnehelper.helpers.dataframe_accessor_helpers import CommonDataFrameAcc
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, RawProvidingTrackDatasource, DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin
-from phopymnehelper.motion_data import BadMotionDataFrame
+from phopymnehelper.motion_data import MotionData, MotionDataFrame, BadMotionDataFrame
 from phopymnehelper.SavedSessionsProcessor import DataModalityType
 import phopymnehelper.type_aliases as types
 
