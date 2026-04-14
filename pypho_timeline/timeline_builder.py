@@ -1358,48 +1358,48 @@ class TimelineBuilder(QObject):
                     annotations_df['t'] = pd.to_numeric(annotations_df['onset'], errors='coerce')
                 
                 # Create log datasource for annotations
-                if LogTextDataFramePlotDetailRenderer is not None:
-                    log_renderer = LogTextDataFramePlotDetailRenderer(
-                        text_color='white',
-                        text_size=10,
-                        channel_names=['description']
-                    )
+                log_renderer = LogTextDataFramePlotDetailRenderer(
+                    text_color='white',
+                    text_size=10,
+                    channel_names=['description']
+                )
+                
+                # Prepare DataFrame with 't' and 'description' columns
+                log_df = pd.DataFrame({
+                    't': annotations_df['t'],
+                    'description': annotations_df['description'].astype(str)
+                })
+                
+                # Create intervals for each annotation
+                annotation_intervals = []
+                for _, ann_row in annotations_df.iterrows():
+                    ann_t_start = ann_row['t']
+                    ann_duration = ann_row.get('duration', 0.0)
                     
-                    # Prepare DataFrame with 't' and 'description' columns
-                    log_df = pd.DataFrame({
-                        't': annotations_df['t'],
-                        'description': annotations_df['description'].astype(str)
+                    annotation_intervals.append({
+                        't_start': float(ann_t_start),
+                        't_duration': float(ann_duration),
+                        't_end': float(ann_t_start) + float(ann_duration)
                     })
+                
+                if annotation_intervals:
+                    ann_intervals_df = pd.DataFrame(annotation_intervals)
                     
-                    # Create intervals for each annotation
-                    annotation_intervals = []
-                    for _, ann_row in annotations_df.iterrows():
-                        ann_t_start = ann_row['t']
-                        ann_duration = ann_row.get('duration', 0.0)
-                        
-                        annotation_intervals.append({
-                            't_start': float(ann_t_start),
-                            't_duration': float(ann_duration),
-                            't_end': float(ann_t_start) + float(ann_duration)
-                        })
-                    
-                    if annotation_intervals:
-                        ann_intervals_df = pd.DataFrame(annotation_intervals)
-                        
-                        ann_datasource = IntervalProvidingTrackDatasource(
-                            intervals_df=ann_intervals_df,
-                            detailed_df=log_df,
-                            custom_datasource_name=f"ANNOTATIONS_{stream_name}",
-                            detail_renderer=log_renderer,
-                            enable_downsampling=False
-                        )
-                        datasources.append(ann_datasource)
-                        logger.info(f"  Created Annotations datasource for '{stream_name}' with {len(annotations_df)} annotations")
+                    ann_datasource = IntervalProvidingTrackDatasource(
+                        intervals_df=ann_intervals_df,
+                        detailed_df=log_df,
+                        custom_datasource_name=f"ANNOTATIONS_{stream_name}",
+                        detail_renderer=log_renderer,
+                        enable_downsampling=False
+                    )
+                    datasources.append(ann_datasource)
+                    logger.info(f"  Created Annotations datasource for '{stream_name}' with {len(annotations_df)} annotations")
             except Exception as e:
                 logger.warning(f"Warning: Failed to extract Annotations from '{stream_name}': {e}")
         
         return datasources
     
+
     def _process_xdf_streams(self, streams: List) -> Tuple[Dict, Dict]:
         """Process XDF streams to extract datasources.
         
@@ -1411,6 +1411,7 @@ class TimelineBuilder(QObject):
         """
         return perform_process_single_xdf_file_all_streams(streams=streams)
     
+
     def _filter_streams_by_name(self, streams: List, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> List:
         """Filter streams by name using regex patterns.
         
@@ -1458,6 +1459,7 @@ class TimelineBuilder(QObject):
         logger.info(f"Kept {len(filtered_streams)} out of {len(streams)} stream(s) after filtering")
         
         return filtered_streams
+
 
     # @function_attributes(short_name=None, tags=['MAIN', 'add'], input_requires=[], output_provides=[], uses=[], used_by=['self.update_timeline', 'self.build_from_datasources'], creation_date='2026-02-03 19:57', related_items=[])
     def _add_tracks_to_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource], enable_hide_extra_track_x_axes: bool=False, use_absolute_datetime_track_mode: bool = True) -> None:
