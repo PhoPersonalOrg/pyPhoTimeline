@@ -17,6 +17,9 @@
         },
         {
             "path": "../stream_viewer"
+        },
+        {
+            "path": "../Dose-Analysis-Python"
         }
     ],
 	"settings": {
