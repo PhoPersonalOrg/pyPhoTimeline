@@ -7,11 +7,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence, Union
 
 import pandas as pd
-
-try:
-    from phopymnehelper.historical_data import HistoricalData
-except ImportError:
-    HistoricalData = None
+from phopymnehelper.historical_data import HistoricalData
 
 
 @dataclass(frozen=True)
@@ -24,8 +20,6 @@ def discover_xdf_files_for_timeline(xdf_discovery_dirs: Union[Path, str, Sequenc
     dirs: List[Path] = [Path(xdf_discovery_dirs)] if isinstance(xdf_discovery_dirs, (Path, str)) else [Path(p) for p in xdf_discovery_dirs]
     if len(dirs) == 0:
         return XdfDiscoveryResult(xdf_paths=[], file_comparison_df=pd.DataFrame())
-    if HistoricalData is None:
-        raise ImportError("HistoricalData is not available. XDF discovery requires phopymnehelper.")
     ext = recordings_extensions if recordings_extensions is not None else ['.xdf']
     discovered_xdf_files: List[Path] = HistoricalData.get_recording_files(recordings_dir=dirs, recordings_extensions=ext)
     if n_most_recent is not None:

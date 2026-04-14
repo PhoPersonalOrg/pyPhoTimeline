@@ -7,13 +7,15 @@ from different data sources such as XDF files, pre-loaded streams, or existing d
 
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union, Any, Set
+import time
 from datetime import datetime, timezone, timedelta
 import logging
 import re
 import numpy as np
 import pandas as pd
 import pyxdf
-from qtpy import QtWidgets
+from qtpy import QtWidgets, QtCore
+from qtpy.QtCore import QObject
 from pypho_timeline.widgets import SimpleTimelineWidget
 from pypho_timeline.widgets.TimelineWindow.MainTimelineWindow import MainTimelineWindow
 from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_all_streams_multi_xdf, default_dock_named_color_scheme_key
@@ -28,7 +30,6 @@ from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, ge
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 from pypho_timeline.xdf_session_discovery import discover_xdf_files_for_timeline
 
-
 logger = None # get_rendering_logger(__name__)
 logger = configure_logging( ## updates the global logger variable
     log_level=logging.DEBUG,
@@ -36,6 +37,9 @@ logger = configure_logging( ## updates the global logger variable
     log_to_console=True,
     log_to_file=False,
 )
+
+def get_now_time_str(time_separator='-') -> str:
+    return str(time.strftime(f"%Y-%m-%d_%H{time_separator}%m", time.localtime(time.time())))
 
 
 # Import MNE (optional - may not be available)
@@ -54,7 +58,7 @@ from phopymnehelper.analysis.computations.specific.EEG_Spectograms import comput
 from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
 
 
-class TimelineBuilder:
+class TimelineBuilder(QObject):
     """Builder class for creating and updating SimpleTimelineWidget instances from various input sources.
     
     This class provides methods to build timeline widgets from:
@@ -81,16 +85,26 @@ class TimelineBuilder:
 
             self.build_from_datasources
     """
-    
-    def __init__(self, log_level: int = logging.DEBUG, log_file: Optional[Path] = None, log_to_console: bool = False, log_to_file: bool = True):
+    sigRefreshXDFStarted = QtCore.Signal()
+    sigSourcesRefreshStarted = QtCore.Signal()
+    sigSourcesRefreshFinished = QtCore.Signal(object)
+    sigSourceAdded = QtCore.Signal(object, object)
+    sigSourceUpdated = QtCore.Signal(object, object)
+    sigSourceRemoved = QtCore.Signal(object, object)
+
+    def __init__(self, log_level: int = logging.DEBUG, log_file: Optional[Path] = None, log_to_console: bool = False, log_to_file: bool = True,
+        xdf_file_cache_filename: Optional[str] = None, xdf_file_cache_parent_path: Optional[Path]=None,
+        parent=None):
         """Initialize the TimelineBuilder with logging configuration.
         
         Args:
             log_level: Logging level (default: logging.DEBUG)
             log_file: Path to log file (default: None, uses "timeline_rendering.log")
-            log_to_console: Whether to log to console (default: True)
+            log_to_console: Whether to log to console (default: False)
             log_to_file: Whether to log to file (default: True)
+            parent: Parent QObject
         """
+        super().__init__(parent)
         self.log_level = log_level
         self.log_file = log_file if log_file is not None else Path('EXTERNAL/LOGGING').resolve().joinpath("timeline_rendering.log")
         self.log_to_console = log_to_console
@@ -102,7 +116,9 @@ class TimelineBuilder:
         self._loaded_xdf_paths: Set[Path] = set()
         self._loaded_video_paths: Set[Path] = set()
         self._refresh_generation: int = 0
-        
+        self._xdf_file_cache_filename = (xdf_file_cache_filename or f"{get_now_time_str()}_found_xdf_files.csv")
+        self._final_xdf_paths = []
+        self._xdf_file_cache_parent_path = (xdf_file_cache_parent_path or Path('./'))
 
         # Create log widget
         self.log_widget = LogWidget()
@@ -122,7 +138,31 @@ class TimelineBuilder:
             logger.info(f"Logging configured for TimelineBuilder - console: {self.log_to_console}, file: {self.log_to_file} ({self.log_file})")
 
 
+    @property
+    def final_xdf_paths(self) -> List[Path]:
+        """The final_xdf_paths property."""
+        return self._final_xdf_paths
+    @final_xdf_paths.setter
+    def final_xdf_paths(self, value: List[Path]):
+        self._final_xdf_paths = value
+
+
+    @property
+    def xdf_file_cache_filepath(self) -> Path:
+        """The xdf_file_cache_filepath property."""
+        assert self._xdf_file_cache_parent_path is not None
+        assert self._xdf_file_cache_filename is not None
+        return self._xdf_file_cache_parent_path.joinpath(self._xdf_file_cache_filename).resolve()
+    @xdf_file_cache_filepath.setter
+    def xdf_file_cache_filepath(self, value: Path):
+        if value is None:
+            raise ValueError(f'none!')
+        self._xdf_file_cache_parent_path = value.parent
+        self._xdf_file_cache_filename = value.name
+
+
     def set_refresh_config(self, xdf_discovery_dirs: Optional[List[Path]] = None, n_most_recent: Optional[int] = None, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, video_discovery_dirs: Optional[List[Path]] = None, video_extensions: Optional[List[str]] = None):
+        """ called to update data sources """
         xdf_discovery_dirs = [Path(p) for p in (xdf_discovery_dirs or [])]
         video_discovery_dirs = [Path(p) for p in (video_discovery_dirs or [])]
         self._refresh_config = {
@@ -181,6 +221,8 @@ class TimelineBuilder:
 
 
     def refresh_from_directories(self):
+        """ performs the refresh operation """
+        self._append_refresh_log("TimelineBuilder.refresh_from_directories():", level=logging.INFO, level_name="INFO")
         if self._current_timeline is None or self._current_main_window is None:
             self._append_refresh_log("Refresh skipped: timeline window is not ready yet.", level=logging.WARNING, level_name="WARNING")
             return
@@ -824,7 +866,59 @@ class TimelineBuilder:
             window_size=window_size,
             reference_datetime=reference_datetime, **kwargs,
         )
-    
+
+
+
+    def refresh(self):
+        """ refreshes/rediscovers the files from the set refresh config 
+        """
+        curr_refresh_config = self._refresh_config
+        assert curr_refresh_config is not None
+        xdf_discovery_dirs: List[Path] = curr_refresh_config.get('xdf_discovery_dirs', [])
+        video_discovery_dirs: List[Path] = curr_refresh_config.get('video_discovery_dirs', [])
+
+        xdf_file_cache_filepath: Path = self.xdf_file_cache_filepath.resolve()
+        print(f'exporting xdf .csv to xdf_file_cache_filepath: "{xdf_file_cache_filepath}..."')
+        discovery = discover_xdf_files_for_timeline(xdf_discovery_dirs=xdf_discovery_dirs, n_most_recent=n_most_recent_sessions_to_preprocess, csv_export_path=xdf_file_cache_filepath)
+        prev_final_xdf_paths = set(self.final_xdf_paths.copy())
+        updated_final_xdf_paths: List[Path] = discovery.xdf_paths
+        print(f'processing len(active_EEG_recording_files): {len(updated_final_xdf_paths)} recording files...')
+        new_final_xdf_paths = set(updated_final_xdf_paths)
+        changed_final_xdf_paths = new_final_xdf_paths.difference(prev_final_xdf_paths)
+        print(f'changed_final_xdf_paths: {changed_final_xdf_paths}')
+        ## OUTPUTS: final_xdf_paths
+        self.final_xdf_paths = updated_final_xdf_paths ## update the changes
+
+
+
+    def build(self):
+        """ builds the timeline from the refresh config and such 
+        """
+        curr_refresh_config = self._refresh_config
+        assert curr_refresh_config is not None
+        xdf_discovery_dirs: List[Path] = curr_refresh_config.get('xdf_discovery_dirs', [])
+        video_discovery_dirs: List[Path] = curr_refresh_config.get('video_discovery_dirs', [])
+
+        # eeg_analyzed_parent_export_path = db_root_path.joinpath('AnalysisData/MNE_preprocessed')
+        # pickled_data_path = db_root_path.joinpath('AnalysisData/MNE_preprocessed/PICKLED_COLLECTION')
+        # assert pickled_data_path.exists()
+        xdf_to_rerun_rrd_parent_export_path = db_root_path.joinpath('AnalysisData/to_rerun_rrd').resolve()
+        xdf_to_rerun_rrd_parent_export_path.mkdir(exist_ok=True)
+        # print(f'xdf_to_rerun_rrd_parent_export_path: "{xdf_to_rerun_rrd_parent_export_path.as_posix()}"')
+
+        # lab_recorder_output_path = Path(r"E:\Dropbox (Personal)\Databases\UnparsedData\LabRecorderStudies\sub-P001")
+        lab_recorder_output_path = db_root_path.joinpath('UnparsedData/LabRecorderStudies/sub-P001')
+        assert lab_recorder_output_path.exists()
+
+        xdf_file_cache_filename: str = f"{get_now_time_str()}_found_xdf_files.csv"
+        xdf_file_cache_filepath: Path = xdf_to_rerun_rrd_parent_export_path.joinpath(xdf_file_cache_filename).resolve()
+        print(f'exporting xdf .csv to xdf_file_cache_filepath: "{xdf_file_cache_filepath}..."')
+        discovery = discover_xdf_files_for_timeline(xdf_discovery_dirs=[lab_recorder_output_path, pho_log_to_LSL_recordings_path], n_most_recent=n_most_recent_sessions_to_preprocess, csv_export_path=xdf_file_cache_filepath)
+        final_xdf_paths: List[Path] = discovery.xdf_paths
+        print(f'processing len(active_EEG_recording_files): {len(final_xdf_paths)} recording files...')
+
+        ## OUTPUTS: final_xdf_paths
+        
 
     def _overview_row_t_end(self, overview_df: pd.DataFrame, j: int, is_datetime: bool) -> Optional[Any]:
         ts = overview_df['t_start'].iloc[j]
