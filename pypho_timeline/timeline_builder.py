@@ -47,28 +47,11 @@ except ImportError:
     mne = None
 
 # Import datasources
-try:
-    from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource
-    from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource
-    from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
-except ImportError:
-    EEGTrackDatasource = None
-    EEGSpectrogramTrackDatasource = None
-    MotionTrackDatasource = None
-    LogTextDataFramePlotDetailRenderer = None
-
-try:
-    from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
-    EEG_SPECTROGRAM_AVAILABLE = True
-except ImportError:
-    compute_raw_eeg_spectrogram = None
-    EEG_SPECTROGRAM_AVAILABLE = False
-
-# Import VideoTrackDatasource for video-only timeline building
-try:
-    from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
-except ImportError:
-    VideoTrackDatasource = None
+from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource
+from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource
+from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
+from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
+from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
 
 
 class TimelineBuilder:
@@ -299,7 +282,7 @@ class TimelineBuilder:
         return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist, add_overview_strip=add_overview_strip, **kwargs)
     
 
-    # @function_attributes(short_name=None, tags=['MAIN', 'used], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
+    # @function_attributes(short_name=None, tags=['MAIN', 'used], input_requires=[], output_provides=[], uses=['self.build_from_datasources', 'perform_process_all_streams_multi_xdf], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
     def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, add_overview_strip: bool = True, **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from multiple XDF files, merging streams by name.
         
@@ -392,7 +375,12 @@ class TimelineBuilder:
 
         ## Calls `perform_process_all_streams_multi_xdf(...)` to process streams from all files and merge by stream name
         all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_xdf_file_paths, file_headers=all_file_headers)
-        
+
+
+        ## TODO 2026-04-13 19:10: - [ ] new async method that calls something equivalent of `perform_process_all_streams_multi_xdf`... but iteratively
+
+
+
         if not all_streams:
             logger.warning("No streams found.")
             return None

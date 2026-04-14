@@ -119,8 +119,8 @@ EMOTIV_EPOC_X_SPECTROGRAM_GROUPS: List[SpectrogramChannelGroupConfig] = [
     # SpectrogramChannelGroupConfig(name='Frontal-R', channels=['AF4', 'F8', 'FC6', 'F4']),
     # SpectrogramChannelGroupConfig(name='Posterior-L', channels=['T7', 'P7', 'O1']),
     # SpectrogramChannelGroupConfig(name='Posterior-R', channels=['T8', 'P8', 'O2']),
-    SpectrogramChannelGroupConfig(name='Frontal', channels=['AF3', 'F7', 'FC5', 'F3', 'AF4', 'F8', 'FC6', 'F4']),
-    SpectrogramChannelGroupConfig(name='Posterior', channels=['T7', 'P7', 'O1', 'T8', 'P8', 'O2']),
+    # SpectrogramChannelGroupConfig(name='Frontal', channels=['AF3', 'F7', 'FC5', 'F3', 'AF4', 'F8', 'FC6', 'F4']),
+    # SpectrogramChannelGroupConfig(name='Posterior', channels=['T7', 'P7', 'O1', 'T8', 'P8', 'O2']),
     SpectrogramChannelGroupConfig(name='All', channels=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4']),
 ]
 
@@ -151,7 +151,7 @@ class EEGPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailRend
 
     """
     
-    def __init__(self, pen_width=1, channel_names=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'], pen_colors=None,
+    def __init__(self, pen_width=0.5, channel_names=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'], pen_colors=None,
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
                  arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
@@ -1008,7 +1008,7 @@ class EEGFPTrackDatasource(EEGTrackDatasource):
 
     def __init__(self, intervals_df: pd.DataFrame, eeg_df: pd.DataFrame, custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, gfp_filter_order: int = 4, gfp_n_bootstrap: int = 100, gfp_baseline_start: Optional[float] = None, gfp_baseline_end: float = 0.0, gfp_show_confidence: bool = False, gfp_line_width: float = 0.5, gfp_nominal_srate: Optional[float] = None, parent: Optional[QtCore.QObject] = None):
         if custom_datasource_name is None:
-            custom_datasource_name = "EEGFPTrack"
+            custom_datasource_name = "GFP_EEG_Track"
         self._gfp_filter_order = int(gfp_filter_order)
         self._gfp_n_bootstrap = int(gfp_n_bootstrap)
         self._gfp_baseline_start = gfp_baseline_start
