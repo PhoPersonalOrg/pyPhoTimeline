@@ -1,10 +1,12 @@
-# MainTimelineWindow.py
-# Generated from c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\widgets\TimelineWindow\MainTimelineWindow.ui automatically by PhoPyQtClassGenerator VSCode Extension
+# LiveStreamingTimelineWindow.py
+# Generated from c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\widgets\TimelineWindow\LiveStreamingTimelineWindow.ui automatically by PhoPyQtClassGenerator VSCode Extension
 import sys
 import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any, TYPE_CHECKING
-from qtpy import QtWidgets, QtCore
+from pathlib import Path
+from qtpy import QtCore
+
 from qtpy.uic import loadUi
 from qtpy.QtWidgets import QApplication, QFileDialog, QMessageBox, QMainWindow, QVBoxLayout
 
@@ -13,124 +15,50 @@ if TYPE_CHECKING:
 
 ## IMPORTS:
 from pypho_timeline.widgets.log_widget import LogWidget, QtLogHandler
+from pypho_timeline.widgets.TimelineWindow.MainTimelineWindow import MainTimelineWindow, LSLConnectedViewerMixin
 from pypho_timeline.utils.logging_util import get_rendering_logger
 from pypho_timeline.utils.window_icon import ensure_timeline_application_window_icon, timeline_window_icon
 from pypho_timeline.xdf_session_discovery import discover_xdf_files_for_timeline
 
 ## Define the .ui file path
 path = os.path.dirname(os.path.abspath(__file__))
-uiFile = os.path.join(path, 'MainTimelineWindow.ui')
+uiFile = os.path.join(path, 'LiveStreamingTimelineWindow.ui')
 
 SESSION_JUMP_INTERVALS_TRACK_ID = 'EEG_Epoc X'
 
 _logger = get_rendering_logger(__name__)
 
-class LSLConnectedViewerMixin:
-    """ Description of what this mixin does
 
-    Factored out from `LSLViewer` which originally implemented it all on its own
-    
-    Requires at minimum:
-        List of required attributes/methods
-    
-    Creates:
-        List of attributes/methods this mixin creates
-        
-        
-    Known Usages:
-        List of classes that use this mixin
-    
-    """
-   
+class LiveStreamingTimelineWindow(LSLConnectedViewerMixin, MainTimelineWindow):
+    """ like the offline/static timeline window (which it inherits from) but it also manages live connectsions to LSL streams """
 
-    def LSLConnectedViewerMixin_on_init(self, settings_path: Optional[Path]=None, **kwargs):
-        """ perform any parameters setting/checking during init """
-        self._open_renderers = []  # List of renderer keys (rend_cls :: strm_name :: int)
-        self._plugin_dirs = {'renderers': [], 'widgets': []}  # Dict of lists of directories to search for plugins
-                                                              #  in addition to default search dir of
-                                                              #  ~/.stream_viewer/plugins/{renderers|widgets}
-        self._monitor_sources = {}
-
-        
-        home_dir = Path(QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.HomeLocation))
-        self._settings_path = home_dir / '.stream_viewer' / 'lsl_viewer.ini'
-        if settings_path is not None:
-            settings_path = Path(settings_path)
-            if not settings_path.exists():
-                # Try only the filename in the default folder.
-                settings_path = home_dir / '.stream_viewer' / settings_path.name
-            if settings_path.exists():
-                self._settings_path = settings_path
-
-        # Set the data model for the stream status view. This handles its own list of streams.
-        self.stream_status_model = LSLStreamInfoTableModel(refresh_interval=5.0)
-        # Create the stream status panel.
-        self.stream_status_widget = None
-
-
-
-    def LSLConnectedViewerMixin_on_setup(self):
-        """ perform setup/creation of widget/graphical/data objects. Only the core objects are expected to exist on the implementor (root widget, etc) """
-        pass
-
-
-    def setup_status_panel(self):
-        dock = QtWidgets.QDockWidget()
-        dock.setObjectName("StatusPanel")
-        dock.setAllowedAreas(QtCore.Qt.LeftDockWidgetArea)
-        dock.setMinimumWidth(300)
-        dock.setFeatures(QtWidgets.QDockWidget.DockWidgetMovable | QtWidgets.QDockWidget.DockWidgetClosable)
-        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
-        dock.setWidget(self.stream_status_widget)
-        dock.setFloating(False)
-        # Prevent the dock from floating by monitoring topLevelChanged signal
-        dock.topLevelChanged.connect(lambda floating: dock.setFloating(False) if floating else None)
-
-
-    def LSLConnectedViewerMixin_on_buildUI(self):
-        """ perform setup/creation of widget/graphical/data objects. Only the core objects are expected to exist on the implementor (root widget, etc) """
-        # Create the stream status panel.
-        self.stream_status_widget = StreamStatusQMLWidget(self.stream_status_model)
-        # self.stream_status_widget.setSizePolicy(QtWidgets.QSizePolicy.Preferred,
-        #                                         QtWidgets.QSizePolicy.MinimumExpanding)
-        self.stream_status_widget.stream_activated.connect(self.on_stream_activated)
-        self.stream_status_widget.stream_added.connect(self.on_stream_added)
-        self.setup_status_panel()
-
-    
-
-    def LSLConnectedViewerMixin_on_destroy(self):
-        """ perform teardown/destruction of anything that needs to be manually removed or released """
-        pass
-
-
-    @QtCore.Slot(dict)
-    def on_stream_added(self, strm):
-        self._monitor_sources[strm['uid']] = LSLDataSource(strm, auto_start=True, timer_interval=1000, monitor_only=True)
-        self._monitor_sources[strm['uid']].rate_updated.connect(
-            functools.partial(self.stream_status_widget.model.handleRateUpdated, stream_data=strm)
-        )
-
-    @QtCore.Slot(dict)
-    def on_stream_activated(self, sources, renderer_name=None, renderer_kwargs={}):
-        return self.on_stream_activated(sources, renderer_name=renderer_name, renderer_kwargs=renderer_kwargs, forced_rend_key=None)
-
-
-    def on_stream_activated(self, sources, renderer_name=None, renderer_kwargs={}, forced_rend_key=None):
-        # Normalize renderer_name: if not provided then use a popup combo box.
-        raise NotImplementedError(f'Implementor must override!')
-
-
-class MainTimelineWindow(QMainWindow):
     def __init__(self, parent=None, show_immediately: bool = True, refresh_callback: Optional[Callable[[], None]] = None, builder: Optional[Any] = None):
         super().__init__(parent=parent) # Call the inherited classes __init__ method
         self._refresh_callback = refresh_callback
         self._timeline_builder = builder
         self._collapsed_dock_overflow_controller = None
         self.ui = loadUi(uiFile, self) # Load the .ui file
+
+        # Based off of `LSLViewer`
+        self.LSLConnectedViewerMixin_on_init(settings_path=settings_path) ## updates: self.stream_status_model, self.stream_status_widget
+        self.setWindowTitle("LiveStreamingTimelineWindow - Stream Viewer")
+
+        self.LSLConnectedViewerMixin_on_setup()
+
+        # # Setup console output panel
+        # self.setup_console_panel()
+
+        # # Setup menubar
+        # self.setup_menus()
+
+        # # Read settings and restore geometry.
+        # self.restoreOnStartup()
+
         self.initUI()
+
         if show_immediately:
             self.show() # Show the GUI
+
 
     def initUI(self):
         self.statusBar().hide()
@@ -172,6 +100,8 @@ class MainTimelineWindow(QMainWindow):
         ensure_timeline_application_window_icon()
         if hasattr(self, "collapsedDockOverflowStrip"):
             self.collapsedDockOverflowStrip.setVisible(False)
+
+        self.LSLConnectedViewerMixin_on_buildUI()
 
 
     def attach_collapsed_dock_overflow(self, nested_dock_area: "NestedDockAreaWidget") -> None:
@@ -331,9 +261,135 @@ class MainTimelineWindow(QMainWindow):
         return None
 
 
+    # LSLConnectedViewerMixin Required Conformances
+
+    @QtCore.Slot(dict)
+    def on_stream_added(self, strm):
+        self._monitor_sources[strm['uid']] = LSLDataSource(strm, auto_start=True, timer_interval=1000, monitor_only=True)
+        self._monitor_sources[strm['uid']].rate_updated.connect(
+            functools.partial(self.stream_status_widget.model.handleRateUpdated, stream_data=strm)
+        )
+
+    @QtCore.Slot(dict)
+    def on_stream_activated(self, sources, renderer_name=None, renderer_kwargs={}):
+        return self.on_stream_activated(sources, renderer_name=renderer_name, renderer_kwargs=renderer_kwargs, forced_rend_key=None)
+
+
+    def on_stream_activated(self, sources, renderer_name=None, renderer_kwargs={}, forced_rend_key=None):
+        # Normalize renderer_name: if not provided then use a popup combo box.
+        raise NotImplementedError(f'Implementor must override!')
+        # if renderer_name is None:
+        #     renderer_list = list_renderers(extra_search_dirs=self._plugin_dirs['renderers']) + self._open_renderers
+        #     if PYPHOTIMELINE_AVAILABLE:
+        #         renderer_list = ["Timeline"] + renderer_list
+        #     item, ok = QtWidgets.QInputDialog.getItem(self, "Select Renderer", "Found Renderers", renderer_list)
+        #     renderer_name = item if ok else None
+
+        # if renderer_name is None:
+        #     return
+
+        # # Normalize sources. str -> [strs] -> [dicts] -> [LSLDataSources]
+        # if not isinstance(sources, list):
+        #     sources = [sources]
+        # # If there are no sources, nothing to activate; return gracefully
+        # if len(sources) == 0:
+        #     return
+        # for src_ix, src in enumerate(sources):
+        #     if isinstance(src, str):
+        #         src = json.loads(src)
+        #     if isinstance(src, dict):
+        #         src = LSLDataSource(src)
+        #     if not isinstance(src, LSLDataSource):
+        #         raise ValueError("Only LSLDataSource type currently supported.")
+        #     sources[src_ix] = src
+
+        # if renderer_name == "Timeline" and PYPHOTIMELINE_AVAILABLE:
+        #     self._on_open_timeline(sources)
+        #     return
+
+        # # If the renderer is already open then we just use that one and add the source(s).
+        # if renderer_name in self._open_renderers:
+        #     found = self.findChild(QtWidgets.QDockWidget, renderer_name)
+        #     if found is not None:  # Should never be None
+        #         stream_widget = found.widget()  # instance of ConfigAndRenderWidget
+        #         renderer = stream_widget.renderer
+        #         for src in sources:
+        #             renderer.add_source(src)
+        #         stream_widget.control_panel.reset_widgets(renderer)
+        #         return
+
+        # # Renderer not already open. We need a new dock, a control panel, and a renderer with sources added.
+        # # We keep track of these with a key derived from the renderer_name and the source identifier
+        # if forced_rend_key is not None:
+        #     rend_key = forced_rend_key
+        # else:
+        #     src_id = json.loads(sources[0].identifier)
+        #     rend_key = "|".join([renderer_name, src_id['name']])
+        #     n_match = len([_ for _ in self._open_renderers if _.startswith(rend_key)])
+        #     rend_key = rend_key + "|" + str(n_match)
+
+        # # New dock
+        # dock = QtWidgets.QDockWidget(rend_key, self)
+        # dock.setAllowedAreas(QtCore.Qt.RightDockWidgetArea)
+        # dock.setObjectName(rend_key)
+        # dock.setAttribute(QtCore.Qt.WA_DeleteOnClose, on=True)
+        # dock.setMinimumHeight(300)
+
+        # # New renderer
+        # renderer_kwargs['key'] = rend_key
+        # renderer_cls = load_renderer(renderer_name, extra_search_dirs=self._plugin_dirs['renderers'])
+        # renderer = renderer_cls(**renderer_kwargs)
+        # for src in sources:
+        #     renderer.add_source(src)
+
+        # # New control panel
+        # if hasattr(renderer, 'COMPAT_ICONTROL') and len(renderer.COMPAT_ICONTROL) > 0:
+        #     # Infer the control panel class from a string
+        #     control_panel_cls = load_widget(renderer.COMPAT_ICONTROL[0], extra_search_dirs=self._plugin_dirs['widgets'])
+        #     ctrl_panel = control_panel_cls(renderer)
+        # else:
+        #     ctrl_panel = None
+
+        # # Load the renderer and control panel into a common widget, parented by dock.
+        # stream_widget = ConfigAndRenderWidget(renderer, ctrl_panel, parent=dock)
+        # dock.setWidget(stream_widget)
+
+        # # Store a map from the renderer friendly name (for popup list) to the dock name
+        # self._open_renderers.append(rend_key)
+
+        # dock.destroyed.connect(functools.partial(
+        #     self.onDockDestroyed, skey=sources[0].identifier, rkey=rend_key))
+        # dock.visibilityChanged.connect(functools.partial(self.onDockVisChanged, rkey=rend_key))
+
+        # # Attach the dock to the mainwindow
+        # self.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
+
+        # # Restore Dock geometry
+        # # self.restoreDockWidget(dock)  # Doesn't seem to do anything. Use custom settings instead.
+        # settings = QtCore.QSettings(str(self._settings_path), QtCore.QSettings.IniFormat)
+        # settings.beginGroup("RendererDocksMain")
+        # settings.beginGroup(rend_key)
+        # saved_size = settings.value("size")
+        # is_floating = settings.value("floating", 'false') == 'true'
+        
+        # if is_floating:
+        #     dock.setFloating(True)
+        #     if saved_size is not None:
+        #         dock.resize(saved_size)
+        #         dock.move(settings.value("pos"))
+        # elif saved_size is None:
+        #     # New dock with no saved geometry: apply default size
+        #     # Use QTimer to defer resize until dock is properly laid out
+        #     default_size = self._get_default_dock_size(QtCore.Qt.RightDockWidgetArea)
+        #     QtCore.QTimer.singleShot(0, lambda: self.resizeDocks([dock], [default_size.width()], QtCore.Qt.Horizontal))
+        
+        # settings.endGroup()
+        # settings.endGroup()
+
+
 ## Start Qt event loop
 if __name__ == '__main__':
     app = QApplication([])
-    widget = MainTimelineWindow()
+    widget = LiveStreamingTimelineWindow()
     widget.show()
     sys.exit(app.exec() if hasattr(app, "exec") else app.exec_())
