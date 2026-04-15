@@ -167,7 +167,7 @@ from .graphicsItems.ViewBox import *
 # # indirect imports known to be used outside of the library
 # from .metaarray import MetaArray
 # from .ordereddict import OrderedDict
-# from .Point import Point
+from .Point import Point
 # from .ptime import time
 # from .Qt import isQObjectAlive
 # from .SignalProxy import *

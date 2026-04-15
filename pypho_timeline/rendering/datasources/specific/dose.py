@@ -5,7 +5,8 @@ import pandas as pd
 from dataclasses import dataclass
 from qtpy import QtCore
 from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence, TYPE_CHECKING, cast
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, RawProvidingTrackDatasource, ComputableDatasourceMixin
 if TYPE_CHECKING:
     import mne
@@ -25,211 +26,177 @@ from dose_analysis_python.FileImportExport.DoseImporter import DoseNoteFragmentP
 
 
 # ==================================================================================================================================================================================================================================================================================== #
-# DosePlotDetailRenderer - Renders eeg data as line plots.                                                                                                                                                                                                                              #
+# DosePlotDetailRenderer - Renders EventBoard doses + dose curves.                                                                                                                                                                                                                     #
 # ==================================================================================================================================================================================================================================================================================== #
 import pyqtgraph as pg
 
-from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
+from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
 
 
-## NOTE: Currently inherits directly from DetailRenderer protocol. GenericPlotDetailRenderer is designed
-## to wrap functions rather than for traditional inheritance. MotionPlotDetailRenderer follows the same pattern.
-class DosePlotDetailRenderer(DataframePlotDetailRenderer):
-    """Detail renderer for eeg tracks that displays eeg channels as line plots.
-    
-    Expects detail_data to be a DataFrame with columns ['t'] and channel columns
-    (e.g., ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4']).
-
-    Usage:
-        from pypho_timeline.rendering.datasources.specific.eeg import DosePlotDetailRenderer, DoseTrackDatasource, SpectrogramChannelGroupConfig
+EVENTBOARD_TIMEZONE = ZoneInfo("America/New_York")
+DEFAULT_CURVE_KEYS = ["AMPH_blood", "DA_str", "NE_pfc"]
+DEFAULT_CURVE_COLORS = ["#4FC3F7", "#FFB74D", "#81C784", "#BA68C8"]
 
 
+class DosePlotDetailRenderer(LogTextDataFramePlotDetailRenderer):
+    """Detail renderer for EventBoard dose records with pyqtgraph dose curves."""
 
-    """
-    
-    def __init__(self, channel_names: Optional[List[str]]=None, text_color='orange', text_size=10, text_rotation=90, y_position=0.0, anchor=(0.5, 0.5), line_color=None, line_width=1, enable_lines=True):
-        """Initialize the text log plot renderer.
-        
-        Args:
-            channel_names: Optional list of channel names to display. If None, defaults to ['message'] (default: None)
-            text_color: Color for text labels (default: 'white')
-            text_size: Font size in points (default: 10)
-            text_rotation: Rotation angle in degrees (default: 90 for vertical)
-            y_position: Y-coordinate for text placement (default: 0.5)
-            anchor: Text anchor point as (x, y) tuple (default: (0, 0.5) for left-center)  A value of (0,0) sets the upper-left corner of the text box to be at the position specified by setPos(), while a value of (1,1) sets the lower-right corner.
-            line_color: Color for vertical lines. If None, defaults to text_color (default: None)
-            line_width: Width of vertical lines in pixels (default: 1)
-            enable_lines: Whether to draw vertical lines at message times (default: True)
-        """
+    def __init__(self, channel_names: Optional[List[str]]=None, text_color='orange', text_size=10, text_rotation=90, y_position=0.0, anchor=(0.5, 0.5), line_color=None, line_width=1, enable_lines=True, curve_keys: Optional[List[str]]=None, curve_pen_colors: Optional[List[str]]=None, curve_pen_width: float=2.0, max_events: int=120, follow_h_after_last: float=24.0, backend: str='scipy'):
         if channel_names is None:
-            channel_names = ['msg'] # ['message']
+            channel_names = ['msg']
+        super().__init__(channel_names=channel_names, text_color=text_color, text_size=text_size, text_rotation=text_rotation, y_position=y_position, anchor=anchor, line_color=line_color, line_width=line_width, enable_lines=enable_lines)
+        self.base_y_position = y_position
+        self.curve_keys = list(curve_keys) if curve_keys is not None else list(DEFAULT_CURVE_KEYS)
+        self.curve_pen_colors = list(curve_pen_colors) if curve_pen_colors is not None else list(DEFAULT_CURVE_COLORS)
+        self.curve_pen_width = curve_pen_width
+        self.max_events = max_events
+        self.follow_h_after_last = follow_h_after_last
+        self.backend = backend
+        self.active_model = PySbPKPD_DA_NE_DoseCurveModel(recordSeries=pd.DataFrame(), quanta=pd.Series(dtype=float), parameters={'backend': backend}, max_events=max_events, follow_h_after_last=follow_h_after_last)
+        self._last_curve_payload: Optional[Dict[str, Any]] = None
 
-        # Initialize parent with minimal params to skip line plotting logic
-        super().__init__(pen_width=1, channel_names=channel_names, normalize=False)
-        self.text_color = text_color
-        self.text_size = text_size
-        self.text_rotation = text_rotation
-        self.y_position = y_position
-        self.anchor = anchor
-        self.line_color = line_color if line_color is not None else text_color
-        self.line_width = line_width
-        self.enable_lines = enable_lines
-        self.active_model = PySbPKPD_DA_NE_DoseCurveModel(recordSeries=None, quanta=None, max_events=1200, follow_h_after_last=24))
 
-    
-    def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
-        """Render eeg data as line plots for each channel.
-        
-        Args:
-            plot_item: The pyqtgraph PlotItem to render into
-            interval: The interval DataFrame (single row) with 't_start' and 't_duration'
-            detail_data: DataFrame with columns ['t'] and channel columns (e.g., ['AccX', 'AccY', ...])
-            
-        Returns:
-            List of GraphicsObject items added (PlotDataItem)
-
-        Usage:
-            a_track_name: str = 'MOTION_Epoc X Dose'
-            a_renderer = timeline.track_renderers[a_track_name]
-            a_detail_renderer = a_renderer.detail_renderer # DosePlotDetailRenderer 
-            a_ds = timeline.track_datasources[a_track_name]
-            interval = a_ds.get_overview_intervals()
-
-            dDisplayItem = timeline.ui.dynamic_docked_widget_container.find_display_dock(identifier=a_track_name) # Dock
-            a_widget = timeline.ui.matplotlib_view_widgets[a_track_name] # PyqtgraphTimeSynchronizedWidget 
-            a_root_graphics_layout_widget = a_widget.getRootGraphicsLayoutWidget()
-            a_plot_item = a_widget.getRootPlotItem()
-
-            graphics_objects = a_detail_renderer.render_detail(plot_item=a_plot_item, interval=None, detail_data=a_ds.detailed_df) # List[PlotDataItem]
-
-        """
-        logger.debug(f"DosePlotDetailRenderer[].render_detail(plot_item: {plot_item},\n\tinterval='{interval}',\n\t detail_data={detail_data}) - starting")
-    
-        if detail_data is None or len(detail_data) == 0:
-            return []
-        
-        if not isinstance(detail_data, pd.DataFrame):
-            raise TypeError(f"DosePlotDetailRenderer expects DataFrame, got {type(detail_data)}")
-        
-        graphics_objects = []
-        
-        # Check required columns
-        if 't' not in detail_data.columns:
-            return []
-        
-        # Determine which channel columns to use
+    def _get_channel_names_to_use(self, detail_data: pd.DataFrame) -> List[str]:
         channel_names_to_use = self.channel_names
         if channel_names_to_use is None:
-            # Auto-detect: all non-numeric columns except 't'
-            non_numeric_cols = detail_data.select_dtypes(exclude=[np.number]).columns.tolist()
+            non_numeric_cols = detail_data.select_dtypes(exclude=['number']).columns.tolist()
             channel_names_to_use = [col for col in non_numeric_cols if col != 't']
             if len(channel_names_to_use) == 0:
-                return []  # No channels found
-        else:
-            # Use explicitly provided channel names
-            found_channel_names: List[str] = [k for k in channel_names_to_use if (k in detail_data.columns)]
-            # Only assert all channels required when channel_names was explicitly provided
-            found_all_channel_names: bool = len(found_channel_names) == len(channel_names_to_use)
-            if not found_all_channel_names:
-                missing_channels = set(channel_names_to_use) - set(found_channel_names)
-                raise ValueError(f"Missing channels: {missing_channels}")
-            channel_names_to_use = found_channel_names
-        
-        # Sort by time
-        df_sorted = detail_data.sort_values('t')
-
-        # # Compute interval bounds as unix seconds so we can clamp log events
-        # interval_t_start_unix: Optional[float] = None
-        # interval_t_end_unix: Optional[float] = None
-        # if interval is not None and len(interval) > 0 and 't_start' in interval.columns and 't_duration' in interval.columns:
-        #     from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-        #     _t_start_raw = interval['t_start'].iloc[0]
-        #     _t_dur = float(interval['t_duration'].iloc[0])
-        #     interval_t_start_unix = float(datetime_to_unix_timestamp(_t_start_raw)) if isinstance(_t_start_raw, (datetime, pd.Timestamp)) else float(_t_start_raw)
-        #     interval_t_end_unix = interval_t_start_unix + _t_dur
+                return []
+            return channel_names_to_use
+        found_channel_names: List[str] = [k for k in channel_names_to_use if (k in detail_data.columns)]
+        found_all_channel_names: bool = len(found_channel_names) == len(channel_names_to_use)
+        if not found_all_channel_names:
+            missing_channels = set(channel_names_to_use) - set(found_channel_names)
+            raise ValueError(f"Missing channels: {missing_channels}")
+        return found_channel_names
 
 
-        from dose_analysis_python.DoseCurveCalculation.pysb_pkpd_da_ne_monoamine import PySbPKPD_DA_NE_DoseCurveModel
-        from dose_analysis_python.FileImportExport.DoseImporter import DoseNoteFragmentParser
+    def _build_message_from_row(self, row: pd.Series, channel_names_to_use: List[str]) -> str:
+        text_parts: List[str] = []
+        for channel_name in channel_names_to_use:
+            channel_value = str(row[channel_name])
+            if len(channel_names_to_use) > 1:
+                text_parts.append(f"{channel_name}: {channel_value}")
+            else:
+                text_parts.append(channel_value)
+        return " | ".join(text_parts).strip()
 
 
-        self.active_model = PySbPKPD_DA_NE_DoseCurveModel(recordSeries=parsed_record_df, quanta=parsed_quanta, max_events=120, follow_h_after_last=24)
-        curve_dict = active_model.compute()
-        fig = active_model.plot()
+    def _build_daily_note_dict(self, detail_data: pd.DataFrame) -> Dict[datetime, str]:
+        channel_names_to_use = self._get_channel_names_to_use(detail_data)
+        if len(channel_names_to_use) == 0:
+            return {}
+        grouped_lines: Dict[datetime, List[str]] = {}
+        for _, row in detail_data.sort_values('t').iterrows():
+            raw_t_value = row['t']
+            try:
+                t_value = float(raw_t_value)
+            except (TypeError, ValueError):
+                continue
+            message = self._build_message_from_row(row=row, channel_names_to_use=channel_names_to_use)
+            if len(message) == 0:
+                continue
+            try:
+                DoseNoteFragmentParser.parse_numeric_dose([message])
+            except Exception:
+                continue
+            local_dt = datetime.fromtimestamp(float(t_value), tz=timezone.utc).astimezone(EVENTBOARD_TIMEZONE)
+            note_day = datetime(local_dt.year, local_dt.month, local_dt.day)
+            time_text = local_dt.strftime('%I:%M%p').lstrip('0').lower()
+            grouped_lines.setdefault(note_day, []).append(f"{time_text} - {message}")
+        return {day: '\n'.join(lines) for day, lines in grouped_lines.items() if len(lines) > 0}
 
-        message = " | ".join(text_parts)
-        txt_df = df_sorted[['t', *channel_names_to_use]] ## just the ['t', 'msg'] columns
-        txt_df.str.
 
-        potential_note_strings_to_parse: List[str] = []
-        # Create a TextItem for each row, displaying all channel values
-        for idx, row in df_sorted.iterrows():
-            t_value = float(row['t'])
-
-            # # Skip events that fall outside the owning interval bounds
-            # if interval_t_start_unix is not None and interval_t_end_unix is not None:
-            #     if t_value < interval_t_start_unix or t_value > interval_t_end_unix:
-            #         continue
-            
-            # Create vertical line at message time if enabled
-            if self.enable_lines:
-                vline = pg.InfiniteLine(angle=90, movable=False, pos=t_value)
-                vline.setPen(pg.mkPen(color=self.line_color, width=self.line_width))
-                vline.setZValue(-10)  # Render lines behind text labels
-                plot_item.addItem(vline, ignoreBounds=True)
-                graphics_objects.append(vline)
-            
-            # Combine all channel values into a single text string
-            text_parts = []
-            for channel_name in channel_names_to_use:
-                channel_value = str(row[channel_name])
-                if len(channel_names_to_use) > 1:
-                    text_parts.append(f"{channel_name}: {channel_value}")
-                else:
-                    text_parts.append(channel_value)
-            
-            message = " | ".join(text_parts)
-            potential_note_strings_to_parse.append(message)
-
-            # Create text item
-            text_item = pg.TextItem(
-                text=message,
-                color=self.text_color,
-                anchor=self.anchor
-            )
-            
-            # Set font size
-            font = text_item.textItem.font()
-            font.setPointSize(self.text_size)
-            text_item.textItem.setFont(font)
-            
-            # Set position
-            text_item.setPos(t_value, self.y_position)
-            
-            # Set rotation if needed
-            if self.text_rotation != 0:
-                text_item.setRotation(self.text_rotation)
-            
-            # Add to plot
-            plot_item.addItem(text_item)
-            graphics_objects.append(text_item)
-        
-        ## try to parase
-        potential_note_to_try_parse: str = '\n'.join(potential_note_strings_to_parse)
-        logger.info(f"potential_note_to_try_parse: '''\n{potential_note_to_try_parse}'''\n")
-        parsed_record_df, parsed_records_dict, (parsed_quanta, parsed_quanta_dict) = DoseNoteFragmentParser.parse_dose_note(test_note=potential_note_to_try_parse)
-        if (len(parsed_record_df) > 0) and (len(parsed_quanta) > 0):
-            logger.warning(f"\tafter parsing len(parsed_record_df): {len(parsed_record_df)}\n\tlen(parsed_quanta): {len(parsed_quanta)}.\n\t Building model...")
-            self.active_model = PySbPKPD_DA_NE_DoseCurveModel(recordSeries=parsed_record_df, quanta=parsed_quanta, **self.active_model.parameters)
-            logger.warning(f"\tafter building model: computing...")
+    def _compute_curve_payload(self, detail_data: Any) -> Optional[Dict[str, Any]]:
+        self._last_curve_payload = None
+        if detail_data is None or len(detail_data) == 0:
+            return None
+        if not isinstance(detail_data, pd.DataFrame):
+            raise TypeError(f"DosePlotDetailRenderer expects DataFrame, got {type(detail_data)}")
+        if 't' not in detail_data.columns:
+            return None
+        daily_note_dict = self._build_daily_note_dict(detail_data=detail_data)
+        if len(daily_note_dict) == 0:
+            return None
+        try:
+            parse_result = cast(Any, DoseNoteFragmentParser.parse_dose_note(test_note=daily_note_dict))
+            parsed_record_df, _, (parsed_quanta, _) = parse_result
+        except Exception as e:
+            logger.warning("DosePlotDetailRenderer parse failed: %s", e)
+            return None
+        parsed_record_df = cast(pd.DataFrame, parsed_record_df)
+        parsed_quanta = cast(pd.Series, parsed_quanta)
+        if (len(parsed_record_df) == 0) or (len(parsed_quanta) == 0):
+            return None
+        try:
+            self.active_model = PySbPKPD_DA_NE_DoseCurveModel(recordSeries=parsed_record_df, quanta=parsed_quanta, parameters={'backend': self.backend}, max_events=self.max_events, follow_h_after_last=self.follow_h_after_last)
             curve_dict = self.active_model.compute()
-            fig = self.active_model.plot()
+        except Exception as e:
+            logger.warning("DosePlotDetailRenderer compute failed: %s", e)
+            return None
+        meta = curve_dict.get('meta', None)
+        y_dict = curve_dict.get('y_dict', None)
+        t_h = np.asarray(curve_dict.get('t_h', []), dtype=float)
+        if (meta is None) or (y_dict is None) or (len(y_dict) == 0) or (t_h.size == 0):
+            return None
+        t0 = meta.get('t0', None)
+        if t0 is None:
+            return None
+        try:
+            if isinstance(t0, pd.Timestamp):
+                t0_dt = t0.to_pydatetime()
+            elif isinstance(t0, datetime):
+                t0_dt = t0
+            elif isinstance(t0, str):
+                t0_dt = pd.Timestamp(t0).to_pydatetime()
+            else:
+                return None
+            t0_unix_raw = datetime_to_unix_timestamp(t0_dt)
+            if isinstance(t0_unix_raw, list):
+                return None
+            t0_unix = float(t0_unix_raw)
+        except Exception:
+            return None
+        selected_curve_keys = [k for k in self.curve_keys if k in y_dict]
+        if len(selected_curve_keys) == 0:
+            selected_curve_keys = list(y_dict.keys())[:3]
+        curve_arrays: Dict[str, np.ndarray] = {}
+        for key in selected_curve_keys:
+            y_values = np.asarray(cast(Any, y_dict[key]), dtype=float)
+            if y_values.shape == t_h.shape:
+                curve_arrays[key] = y_values
+        if len(curve_arrays) == 0:
+            return None
+        finite_blocks = [values[np.isfinite(values)] for values in curve_arrays.values() if np.any(np.isfinite(values))]
+        if len(finite_blocks) == 0:
+            return None
+        finite_values = np.concatenate(finite_blocks)
+        curve_min = float(np.nanmin(finite_values))
+        curve_max = float(np.nanmax(finite_values))
+        curve_range = max(curve_max - curve_min, 1.0)
+        curve_padding = max(curve_range * 0.08, 0.5)
+        text_y_position = max(self.base_y_position, curve_max + curve_padding)
+        payload = {'curve_dict': curve_dict, 'curve_arrays': curve_arrays, 'curve_min': curve_min, 'curve_max': curve_max, 'curve_padding': curve_padding, 'text_y_position': text_y_position, 't_x': t0_unix + (t_h * 3600.0)}
+        self._last_curve_payload = payload
+        return payload
 
-        else:
-            logger.warning(f"\tafter parsing len(parsed_record_df) or len(parsed_quanta) == 0")
 
-
-
+    def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
+        logger.debug(f"DosePlotDetailRenderer[].render_detail(plot_item: {plot_item},\n\tinterval='{interval}',\n\t detail_data={detail_data}) - starting")
+        curve_payload = self._compute_curve_payload(detail_data=detail_data)
+        original_y_position = self.y_position
+        self.y_position = self.base_y_position if curve_payload is None else curve_payload['text_y_position']
+        try:
+            graphics_objects = super().render_detail(plot_item=plot_item, interval=interval, detail_data=detail_data)
+        finally:
+            self.y_position = original_y_position
+        if curve_payload is None:
+            return graphics_objects
+        for idx, (curve_key, y_values) in enumerate(curve_payload['curve_arrays'].items()):
+            curve_item = pg.PlotDataItem(curve_payload['t_x'], y_values, pen=pg.mkPen(color=self.curve_pen_colors[idx % len(self.curve_pen_colors)], width=self.curve_pen_width), name=curve_key)
+            plot_item.addItem(curve_item)
+            graphics_objects.append(curve_item)
         return graphics_objects
     
 
@@ -242,15 +209,16 @@ class DosePlotDetailRenderer(DataframePlotDetailRenderer):
         """
         if graphics_objects is None:
             return
-        conn = getattr(plot_item, '_channel_label_conn', None)
+        plot_item_any = cast(Any, plot_item)
+        conn = getattr(plot_item_any, '_channel_label_conn', None)
         if conn is not None:
             try:
                 conn.disconnect()
             except Exception:
                 pass
-            del plot_item._channel_label_conn
-        if getattr(plot_item, '_channel_label_items', None) is not None:
-            del plot_item._channel_label_items
+            del plot_item_any._channel_label_conn
+        if getattr(plot_item_any, '_channel_label_items', None) is not None:
+            del plot_item_any._channel_label_items
 
         for obj in graphics_objects:
             if obj is None:
@@ -266,66 +234,17 @@ class DosePlotDetailRenderer(DataframePlotDetailRenderer):
                 
     
     def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
-        """Get bounds for the eeg plot.
-        
-        Args:
-            interval: The interval DataFrame (single row) with 't_start' and 't_duration'
-            detail_data: DataFrame with eeg data (columns: 't' and channel columns)
-            
-        Returns:
-            Tuple of (x_min, x_max, y_min, y_max) where x is time and y is channel values
-        """
-        has_valid_detail_data: bool = (detail_data is not None) and isinstance(detail_data, pd.DataFrame) and (len(detail_data) > 0)
-        if (interval is None) or (len(interval) == 0):
-            # If interval is None or empty, attempt to determine t_start and t_end from detail_data
-            if has_valid_detail_data:
-                # Try to get time column: use 't' if present
-                if 't' in detail_data.columns:
-                    t_start = float(detail_data['t'].min())
-                    t_end = float(detail_data['t'].max())
-                else:
-                    # Fallback: use DataFrame index if it is numeric and sorted
-                    try:
-                        idx = detail_data.index
-                        if hasattr(idx, 'dtype') and np.issubdtype(idx.dtype, np.number):
-                            t_start = float(idx.min())
-                            t_end = float(idx.max())
-                        else:
-                            t_start = 0.0
-                            t_end = 1.0
-                    except Exception:
-                        t_start = 0.0
-                        t_end = 1.0
-            else:
-                raise ValueError(f'has_valid_detail_data is False')
-            
-            t_duration = t_end - t_start
-        else:
-            ## interval is provided
-            t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
-            t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
-            
-            # Handle datetime objects for t_end calculation
-            if isinstance(t_start, (datetime, pd.Timestamp)):
-                from datetime import timedelta
-                t_end = t_start + timedelta(seconds=float(t_duration))
-                # Convert to Unix timestamp for return value
-                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-                t_start = datetime_to_unix_timestamp(t_start)
-                t_end = datetime_to_unix_timestamp(t_end)
-            else:
-                t_end = t_start + t_duration
-        
-        # Ensure t_start and t_end are floats (Unix timestamps) for return value
-        if isinstance(t_start, (datetime, pd.Timestamp)):
-            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-            t_start = datetime_to_unix_timestamp(t_start)
-        if isinstance(t_end, (datetime, pd.Timestamp)):
-            from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-            t_end = datetime_to_unix_timestamp(t_end)
-        
-        # Text logs don't have numeric y-values, so use fixed y-bounds
-        return (t_start, t_end, 0.0, 1.0)
+        x_min, x_max, _, _ = super().get_detail_bounds(interval=interval, detail_data=detail_data)
+        curve_payload = self._compute_curve_payload(detail_data=detail_data)
+        if curve_payload is None:
+            return (x_min, x_max, 0.0, 1.0)
+        curve_x = np.asarray(curve_payload['t_x'], dtype=float)
+        if curve_x.size > 0:
+            x_min = min(x_min, float(np.nanmin(curve_x)))
+            x_max = max(x_max, float(np.nanmax(curve_x)))
+        y_min = min(0.0, curve_payload['curve_min'] - curve_payload['curve_padding'])
+        y_max = max(1.0, curve_payload['text_y_position'] + curve_payload['curve_padding'])
+        return (x_min, x_max, y_min, y_max)
 
 
 # ==================================================================================================================================================================================================================================================================================== #
