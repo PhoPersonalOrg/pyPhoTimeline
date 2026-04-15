@@ -872,6 +872,52 @@ class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
 
 
 
+    def export_all_to_EDF(self, xdf_to_exported_EDF_parent_export_path: Path) -> List[Path]:
+        """2026-04-15 - Export loaded sessions to EDF for analysis in other apps
+        Exports the `self.raw_datasets_dict` to separate .EDF files
+
+
+        exported_edf_paths: List[Path] = eeg_ds.export_all_to_EDF(xdf_to_exported_EDF_parent_export_path=xdf_to_exported_EDF_parent_export_path)
+        exported_edf_paths
+
+        """
+        import mne
+
+        ## INPUTS: xdf_to_exported_EDF_parent_export_path
+        assert xdf_to_exported_EDF_parent_export_path is not None
+        # xdf_to_exported_EDF_parent_export_path = sso.eeg_analyzed_parent_export_path
+        flat_raws: List[mne.io.Raw] = self._flatten_raw_lists_from_dict(self.raw_datasets_dict)
+        edf_export_parent_path: Path = xdf_to_exported_EDF_parent_export_path.resolve() # .joinpath("exported_EDF")
+        edf_export_parent_path.mkdir(exist_ok=True, parents=True)
+
+        exported_edf_paths: List[Path] = []
+        for raw_idx, a_raw in enumerate(flat_raws):
+            source_stem = None
+            raw_description = a_raw.info.get("description")
+            if raw_description:
+                try:
+                    source_stem = Path(str(raw_description)).stem
+                except Exception:
+                    source_stem = None
+
+            if not source_stem:
+                raw_filenames = getattr(a_raw, "filenames", None)
+                if raw_filenames and raw_filenames[0]:
+                    source_stem = Path(str(raw_filenames[0])).stem
+
+            if not source_stem:
+                source_stem = f"session_{raw_idx:03d}"
+
+            curr_file_edf_path: Path = edf_export_parent_path.joinpath(f"{source_stem}.edf").resolve()
+            exported_edf_paths.append(a_raw.save_to_edf(output_path=curr_file_edf_path))
+
+        ## END for raw_idx, a_raw in enumerate(flat_raws)....
+
+        print(f"Exported {len(exported_edf_paths)} EDF file(s) to: {edf_export_parent_path}")
+        return exported_edf_paths
+
+
+
 
 class ComputableDatasourceMixin:
     """ implementors are able to recompute their results when a property changes
