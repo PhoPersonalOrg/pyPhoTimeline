@@ -25,7 +25,7 @@ from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayA
 from pypho_timeline.docking.specific_dock_widget_mixin import SpecificDockWidgetManipulatingMixin
 from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, VideoTrackDatasource
-from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource
+from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGFPTrackDatasource, EEGSpectrogramTrackDatasource
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 
@@ -125,6 +125,21 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
     def motion_track_identifier(self) -> Optional[str]:
         """The motion track identifier property."""
         return (self.find_motion_track_identifiers()[0] if self.find_motion_track_identifiers() else None)
+
+
+    def _is_overview_eligible_track_datasource(self, ds: Any) -> bool:
+        """Return True when a datasource should appear in the interval overview strip."""
+        if ds is None:
+            return False
+        if isinstance(ds, (EEGFPTrackDatasource, EEGSpectrogramTrackDatasource)):
+            return False
+        return True
+
+
+    def get_track_names_for_overview_strip(self) -> List[str]:
+        """Overview strip track names: primary tracks excluding EEG-derived helper tracks."""
+        names = self.get_track_names_for_window_sync_group(window_sync_group='primary')
+        return [name for name in names if self._is_overview_eligible_track_datasource(self.track_datasources.get(name, None))]
 
 
 
@@ -935,7 +950,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
         
         max_total_dock_height: float = 120
 
-        names = self.get_track_names_for_window_sync_group(window_sync_group='primary')
+        names = self.get_track_names_for_overview_strip()
         num_dock_items: int = len(names)
         dock_height = int(min(max_total_dock_height, (row_height_px * num_dock_items) + 28))
         strip.setMaximumHeight(int(max_total_dock_height))
@@ -982,7 +997,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
             logger.error(f'\ttimeline.ui.timeline_overview_strip is None!')
             return
         current = {}
-        for name in self.get_track_names_for_window_sync_group(window_sync_group='primary'):
+        for name in self.get_track_names_for_overview_strip():
             ds = self.track_datasources.get(name, None)
             if ds is not None and hasattr(ds, 'source_data_changed_signal'):
                 current[id(ds)] = ds
@@ -1020,7 +1035,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
             logger.error(f'\ttimeline.ui.timeline_overview_strip is None!')
             return
         self._resync_timeline_overview_datasource_connections()
-        names = self.get_track_names_for_window_sync_group(window_sync_group='primary')
+        names = self.get_track_names_for_overview_strip()
         strip.rebuild(names, lambda n: self.track_datasources.get(n), self._overview_strip_fallback_x_range())
         strip.set_viewport(self._window_value_to_signal_float(self.active_window_start_time), self._window_value_to_signal_float(self.active_window_end_time))
 
