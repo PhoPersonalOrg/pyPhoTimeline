@@ -14,8 +14,9 @@ if TYPE_CHECKING:
     from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
 
 ## IMPORTS:
+from pypho_timeline.widgets.live.live_mixins import LSLConnectedViewerMixin
 from pypho_timeline.widgets.log_widget import LogWidget, QtLogHandler
-from pypho_timeline.widgets.TimelineWindow.MainTimelineWindow import MainTimelineWindow, LSLConnectedViewerMixin
+from pypho_timeline.widgets.TimelineWindow.MainTimelineWindow import MainTimelineWindow
 from pypho_timeline.utils.logging_util import get_rendering_logger
 from pypho_timeline.utils.window_icon import ensure_timeline_application_window_icon, timeline_window_icon
 from pypho_timeline.xdf_session_discovery import discover_xdf_files_for_timeline
