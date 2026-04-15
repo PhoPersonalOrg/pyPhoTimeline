@@ -7,6 +7,8 @@ from different data sources such as XDF files, pre-loaded streams, or existing d
 
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union, Any, Set
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
 import time
 from datetime import datetime, timezone, timedelta
 import logging
@@ -204,6 +206,31 @@ class TimelineBuilder(QObject):
         return discover_xdf_files_for_timeline(xdf_discovery_dirs=xdf_discovery_dirs, n_most_recent=n_most_recent).xdf_paths
 
 
+    def _load_and_filter_xdf_file(self, file_index: int, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> Dict[str, Any]:
+        logger.info(f"Loading XDF file: {xdf_file_path} ...")
+        try:
+            streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+
+            # # #TODO 2026-03-02 05:30: - [ ] Could instead do
+            # from phopymnehelper.xdf_files import XDFDataStreamAccessor, LabRecorderXDF
+
+            # obj: LabRecorderXDF = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_file_path, should_load_full_file_data=True) ## #TODO 2026-03-02 07:47: - [ ] introduces `ValueError: Date must be datetime object in UTC: datetime.datetime(2026, 3, 1, 2, 9, 18, tzinfo=<UTC>)` error
+            # # stream_infos = _obj.stream_infos
+            # # raws = _obj.datasets
+            # # raws_dict = _obj.datasets_dict
+            # ## Convert back to the simple outputs:
+            # streams = obj.xdf_streams
+            # file_header = obj.xdf_header  # streams, file_header = pyxdf.load_xdf(str(xdf_file_path), verbose=True)
+
+            logger.info(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
+            if (stream_allowlist is not None) or (stream_blocklist is not None):
+                streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+            logger.info(f"  Streams kept for {xdf_file_path.name}: {[s['info']['name'][0] for s in streams]}")
+            return {"file_index": file_index, "xdf_file_path": xdf_file_path, "streams": streams, "file_header": file_header, "error": None}
+        except (OSError, FileExistsError, FileNotFoundError) as err:
+            return {"file_index": file_index, "xdf_file_path": xdf_file_path, "streams": None, "file_header": None, "error": err}
+
+
     def _collect_new_datasources_for_xdf_path(self, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> List[TrackDatasource]:
         streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
         if (stream_allowlist is not None) or (stream_blocklist is not None):
@@ -382,46 +409,36 @@ class TimelineBuilder(QObject):
         all_streams_by_file = []
         all_file_headers = []
         all_loaded_xdf_file_paths = []
+        max_workers = max(1, min(len(xdf_file_paths), (os.cpu_count() or 4)))
+        completed_results_by_index: Dict[int, Dict[str, Any]] = {}
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='xdf_load') as executor:
+            future_to_path = {
+                executor.submit(self._load_and_filter_xdf_file, file_index, xdf_file_path, stream_allowlist, stream_blocklist): xdf_file_path
+                for file_index, xdf_file_path in enumerate(xdf_file_paths)
+            }
+            for future in as_completed(future_to_path):
+                result = future.result()
+                completed_results_by_index[result["file_index"]] = result
 
-        for xdf_file_path in xdf_file_paths:
-            logger.info(f"Loading XDF file: {xdf_file_path} ...")
-            try:
-                streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+        # Reassemble in input order so downstream xdf_file_paths/file_headers stay positionally aligned.
+        for file_index in range(len(xdf_file_paths)):
+            result = completed_results_by_index.get(file_index, None)
+            if result is None:
+                continue
+            if result["error"] is not None:
+                logger.warning(f"failed to load file {result['xdf_file_path']} with error: {result['error']}. Skipping.")
+                continue
+            all_streams_by_file.append(result["streams"])
+            all_file_headers.append(result["file_header"])
+            all_loaded_xdf_file_paths.append(result["xdf_file_path"])
 
-                # # #TODO 2026-03-02 05:30: - [ ] Could instead do 
-                # from phopymnehelper.xdf_files import XDFDataStreamAccessor, LabRecorderXDF
-
-                # obj: LabRecorderXDF = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_file_path, should_load_full_file_data=True) ## #TODO 2026-03-02 07:47: - [ ] introduces `ValueError: Date must be datetime object in UTC: datetime.datetime(2026, 3, 1, 2, 9, 18, tzinfo=<UTC>)` error
-                # # stream_infos = _obj.stream_infos
-                # # raws = _obj.datasets
-                # # raws_dict = _obj.datasets_dict
-                # ## Convert back to the simple outputs:
-                # streams = obj.xdf_streams
-                # file_header = obj.xdf_header  # streams, file_header = pyxdf.load_xdf(str(xdf_file_path), verbose=True)
-
-                logger.info(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
-                
-                # Filter streams if allowlist/blocklist is provided
-                if (stream_allowlist is not None) or (stream_blocklist is not None):
-                    streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
-                
-                all_streams_by_file.append(streams)
-                all_file_headers.append(file_header)
-                all_loaded_xdf_file_paths.append(xdf_file_path)
-
-            except (OSError, FileExistsError, FileNotFoundError) as err:
-                logger.warning(f'failed to load file {xdf_file_path} with error: {err}. Skipping.')
-                pass
-        ## END for xdf_file_path in xdf_file_paths
-
-
+        ## OUTPUTS: all_streams_by_file, all_loaded_xdf_file_paths, all_file_headers
         ## Calls `perform_process_all_streams_multi_xdf(...)` to process streams from all files and merge by stream name
         all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_xdf_file_paths, file_headers=all_file_headers)
 
 
+        ## INPUTS: all_streams_datasources, all_streams
         ## TODO 2026-04-13 19:10: - [ ] new async method that calls something equivalent of `perform_process_all_streams_multi_xdf`... but iteratively
-
-
 
         if not all_streams:
             logger.warning("No streams found.")
