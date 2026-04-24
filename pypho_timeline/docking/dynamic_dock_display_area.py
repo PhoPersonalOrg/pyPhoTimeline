@@ -527,7 +527,7 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
 
         """
         num_child_docks: int = len(flat_group_dockitems_list)
-        total_height: float = float(np.sum([a_dock.height() for a_dock in flat_group_dockitems_list]))
+        total_height: int = int(round(float(np.sum([a_dock.height() for a_dock in flat_group_dockitems_list]))))
         logger.info(f"[dock_group] build_wrapping_nested_dock_area: group={dock_group_name!r} num_child_docks={num_child_docks} total_height={total_height}")
         for _ch in flat_group_dockitems_list:
             logger.debug(f"[dock_group] build_wrapping_nested_dock_area child name={_ch.name()!r} h={_ch.height()} w={_ch.width()}")
@@ -555,7 +555,7 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
         from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
         nested_dynamic_docked_widget_container = NestedDockAreaWidget()
         nested_dynamic_docked_widget_container.setObjectName("nested_dynamic_docked_widget_container")
-        nested_dynamic_docked_widget_container.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Preferred)
+        nested_dynamic_docked_widget_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         nested_dynamic_docked_widget_container.setMinimumHeight(total_height)
         nested_dynamic_docked_widget_container.setContentsMargins(0, 0, 0, 0)
         _, dDisplayItem = self.add_display_dock(name, dockSize=dockSize, display_config=display_config, widget=nested_dynamic_docked_widget_container, dockAddLocationOpts=dockAddLocationOpts, autoOrientation=False)
