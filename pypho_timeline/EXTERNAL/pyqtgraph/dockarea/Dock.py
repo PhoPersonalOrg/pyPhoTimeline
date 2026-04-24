@@ -1,6 +1,4 @@
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
-from typing_extensions import TypeAlias
-from nptyping import NDArray
 import warnings
 from attrs import define, field, Factory
 from ..Qt import QtCore, QtGui, QtWidgets
@@ -79,18 +77,36 @@ class DockButtonConfig:
     """Holds the configuration options for a Dock button."""
     showButton: bool = field(default=True)
     buttonIcon: QtWidgets.QStyle.StandardPixmap = field(default=QtWidgets.QStyle.StandardPixmap.SP_ToolBarHorizontalExtensionButton)
+    buttonQIcon: Optional[QtGui.QIcon] = field(default=None, metadata={'desc': 'If set, used instead of standardIcon(buttonIcon).'})
     buttonToolTip: str = field(default='')
     buttonCallback: Callable = field(default=None)
     buttonShortcut: str = field(default='')
     buttonShortcutContext: QtCore.Qt.ShortcutContext = field(default=QtCore.Qt.ShortcutContext.WidgetShortcut)
 
 
+    def __deepcopy__(self, memo):
+        """Avoid copy.deepcopy trying to pickle QIcon (not supported); share the same icon instance."""
+        existing = memo.get(id(self))
+        if existing is not None:
+            return existing
+        dup = DockButtonConfig(
+            showButton=self.showButton,
+            buttonIcon=self.buttonIcon,
+            buttonQIcon=self.buttonQIcon,
+            buttonToolTip=self.buttonToolTip,
+            buttonCallback=self.buttonCallback,
+            buttonShortcut=self.buttonShortcut,
+            buttonShortcutContext=self.buttonShortcutContext,
+        )
+        memo[id(self)] = dup
+        return dup
+
 
 @define(slots=False)
 class DockDisplayConfig(object):
     """Holds the display and configuration options for a Dock, such as how to format its title bar (color and font), whether it's closable, etc.
     
-    from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockDisplayConfig
+    from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockDisplayConfig, DockButtonConfig, 
 
     """
     showCloseButton: bool = field(default=True)
@@ -207,6 +223,16 @@ buttonIconTimelineSyncMode = {
 
 
 buttonIcon_ShowTable = {'main': QtWidgets.QStyle.StandardPixmap.SP_FileDialogListView}
+
+_COLLAPSED_CONTENT_STRETCH = 1
+
+
+def _qsplitter_orientation_is_vertical(splitter: QtWidgets.QSplitter) -> bool:
+    o = splitter.orientation()
+    orient_enum = getattr(QtCore.Qt, 'Orientation', None)
+    if orient_enum is not None:
+        return o == orient_enum.Vertical
+    return o == QtCore.Qt.Vertical
 
 
 class Dock(QtWidgets.QWidget, DockDrop):
@@ -455,22 +481,38 @@ class Dock(QtWidgets.QWidget, DockDrop):
     def hideContents(self):
         """
         Hide the contents (everything except the title bar) for this Dock.
+        Collapsed stretch axis: top title bar frees vertical space in a VContainer (shrink wy) or horizontal in an HContainer (shrink wx). Left (vertical) title bar frees horizontal space (shrink wx) in both cases so column width can drop in nested layouts.
         """
-        print(f'hideContents()')
+        if self.contentsHidden:
+            return
+        sx, sy = self._stretch
+        self._stretch_before_content_toggle = (sx, sy)
         self.widgetArea.hide()
         self.contentsHidden = True
+        c = self._container
+        cw = _COLLAPSED_CONTENT_STRETCH
+        if self.orientation == 'vertical':
+            self.setStretch(cw, sy)
+        elif isinstance(c, QtWidgets.QSplitter):
+            if _qsplitter_orientation_is_vertical(c):
+                self.setStretch(sx, cw)
+            else:
+                self.setStretch(cw, sy)
+        else:
+            self.setStretch(sx, cw)
         self.updateStyle()
-        print(f'\tdone.')
-        
+
     def showContents(self):
         """
         Show the contents (everything except the title bar) for this Dock.
         """
-        print(f'showContents()')
+        if not self.contentsHidden:
+            return
         self.widgetArea.show()
         self.contentsHidden = False
+        sx, sy = getattr(self, '_stretch_before_content_toggle', self._stretch)
+        self.setStretch(sx, sy)
         self.updateStyle()
-        print(f'\tdone.')
         
 
 
@@ -501,7 +543,10 @@ class Dock(QtWidgets.QWidget, DockDrop):
             return
 
         if o == 'auto' and (self.autoOrient):
-            if self.container().type() == 'tab':
+            # Collapsed geometry is tall+narrow; aspect ratio would wrongly force horizontal title.
+            if self.contentsHidden and self.orientation in ('vertical', 'horizontal'):
+                o = self.orientation
+            elif self.container().type() == 'tab':
                 o = 'horizontal'
             elif self.width() > self.height()*1.5:
                 o = 'vertical'
@@ -1170,10 +1215,13 @@ class DockLabel(VerticalLabel):
             if key not in custom_button_configs:
                 self.custom_buttons[key].deleteLater()
                 del self.custom_buttons[key]
+        _style = QtWidgets.QApplication.style()
         for key, cfg in custom_button_configs.items():
+            _qicon = getattr(cfg, 'buttonQIcon', None)
+            _icon = _qicon if _qicon is not None else _style.standardIcon(cfg.buttonIcon)
             if key not in self.custom_buttons:
                 btn = QtWidgets.QToolButton(self)
-                btn.setIcon(QtWidgets.QApplication.style().standardIcon(cfg.buttonIcon))
+                btn.setIcon(_icon)
                 btn.setToolTip(cfg.buttonToolTip or '')
                 btn.setMinimumSize(MIN_BUTTON_SIZE, MIN_BUTTON_SIZE)
                 btn.setFixedSize(MIN_BUTTON_SIZE, MIN_BUTTON_SIZE)
@@ -1181,7 +1229,7 @@ class DockLabel(VerticalLabel):
                 self.custom_buttons[key] = btn
             btn = self.custom_buttons[key]
             btn.setVisible(cfg.showButton)
-            btn.setIcon(QtWidgets.QApplication.style().standardIcon(cfg.buttonIcon))
+            btn.setIcon(_icon)
             btn.setToolTip(cfg.buttonToolTip or '')
 
 

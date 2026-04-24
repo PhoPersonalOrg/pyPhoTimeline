@@ -2,7 +2,7 @@
 This module exists to smooth out some of the differences between Qt versions.
 
 * Automatically import Qt lib depending on availability
-* Allow you to import QtCore/QtGui from pyphoplacecellanalysis.External.pyqtgraph.Qt without specifying which Qt wrapper
+* Allow you to import QtCore/QtGui from pypho_timeline.EXTERNAL.pyqtgraph.Qt without specifying which Qt wrapper
   you want to use.
 """
 

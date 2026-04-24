@@ -1,7 +1,7 @@
 import sys
 from copy import deepcopy
 from qtpy import QtCore, QtGui, QtWidgets
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 
 __all__ = ['SelectableItemMixin']
 

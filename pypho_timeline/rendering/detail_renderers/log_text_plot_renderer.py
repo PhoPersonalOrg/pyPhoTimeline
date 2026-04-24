@@ -52,6 +52,7 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
         self.line_width = line_width
         self.enable_lines = enable_lines
     
+
     def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render text log events as text labels with optional vertical lines.
         
@@ -95,16 +96,25 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
         
         # Sort by time
         df_sorted = detail_data.sort_values('t')
-        
+
+        # # Compute interval bounds as unix seconds so we can clamp log events
+        # interval_t_start_unix: Optional[float] = None
+        # interval_t_end_unix: Optional[float] = None
+        # if interval is not None and len(interval) > 0 and 't_start' in interval.columns and 't_duration' in interval.columns:
+        #     from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
+        #     _t_start_raw = interval['t_start'].iloc[0]
+        #     _t_dur = float(interval['t_duration'].iloc[0])
+        #     interval_t_start_unix = float(datetime_to_unix_timestamp(_t_start_raw)) if isinstance(_t_start_raw, (datetime, pd.Timestamp)) else float(_t_start_raw)
+        #     interval_t_end_unix = interval_t_start_unix + _t_dur
+
         # Create a TextItem for each row, displaying all channel values
         for idx, row in df_sorted.iterrows():
-            t_value_raw = row['t']
-            # Convert datetime to Unix timestamp if needed
-            if isinstance(t_value_raw, (datetime, pd.Timestamp)):
-                from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-                t_value = datetime_to_unix_timestamp(t_value_raw)
-            else:
-                t_value = float(t_value_raw)
+            t_value = float(row['t'])
+
+            # # Skip events that fall outside the owning interval bounds
+            # if interval_t_start_unix is not None and interval_t_end_unix is not None:
+            #     if t_value < interval_t_start_unix or t_value > interval_t_end_unix:
+            #         continue
             
             # Create vertical line at message time if enabled
             if self.enable_lines:
@@ -167,16 +177,8 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
             if has_valid_detail_data:
                 # Try to get time column: use 't' if present
                 if 't' in detail_data.columns:
-                    t_min = detail_data['t'].min()
-                    t_max = detail_data['t'].max()
-                    # Convert datetime to Unix timestamp if needed
-                    if isinstance(t_min, (datetime, pd.Timestamp)):
-                        from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
-                        t_start = datetime_to_unix_timestamp(t_min)
-                        t_end = datetime_to_unix_timestamp(t_max)
-                    else:
-                        t_start = float(t_min)
-                        t_end = float(t_max)
+                    t_start = float(detail_data['t'].min())
+                    t_end = float(detail_data['t'].max())
                 else:
                     # Fallback: use DataFrame index if it is numeric and sorted
                     try:

@@ -250,7 +250,7 @@ class GraphicsView(QtWidgets.QGraphicsView):
         self.updateMatrix()
         self.sigScaleChanged.emit(self)
 
-    def setRange(self, newRect=None, padding=0.05, lockAspect=None, propagate=True, disableAutoPixel=True):
+    def setRange(self, newRect=None, padding=0.01, lockAspect=None, propagate=True, disableAutoPixel=True):
         if disableAutoPixel:
             self.autoPixelRange=False
         if newRect is None:
@@ -294,13 +294,13 @@ class GraphicsView(QtWidgets.QGraphicsView):
         if not v1 in self.lockedViewports:
             self.lockedViewports.append(v1)
         
-    def setXRange(self, r, padding=0.05):
+    def setXRange(self, r, padding=0.01):
         r1 = QtCore.QRectF(self.range)
         r1.setLeft(r.left())
         r1.setRight(r.right())
         GraphicsView.setRange(self, r1, padding=[padding, 0], propagate=False)
         
-    def setYRange(self, r, padding=0.05):
+    def setYRange(self, r, padding=0.01):
         r1 = QtCore.QRectF(self.range)
         r1.setTop(r.top())
         r1.setBottom(r.bottom())

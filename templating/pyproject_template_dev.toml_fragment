@@ -2,3 +2,4 @@
 pyphocorehelpers = { path = "../pyPhoCoreHelpers", editable = true }
 phopylslhelper = { path = "../PhoPyLSLhelper", editable = true }
 phopymnehelper = { path = "../PhoPyMNEHelper", editable = true }
+dose-analysis-python = { path = "../Dose-Analysis-Python", editable = true }

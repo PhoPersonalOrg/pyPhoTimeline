@@ -23,7 +23,7 @@ from pypho_timeline.rendering.graphics.rectangle_helpers import RectangleRenderT
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.rendering.mixins.live_window_monitoring_mixin import LiveWindowEventIntervalMonitoringMixin
 import pyqtgraph as pg
-from datetime import datetime
+from datetime import datetime, timezone
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 from pypho_timeline._embed import IntervalsDatasource, General2DRenderTimeEpochs
@@ -59,7 +59,7 @@ class NowCurrentDatetimeLineRenderingMixin:
         """Perform any parameters setting/checking during init."""
         self.plots_data['now_lines'] = RenderPlotsData('NowCurrentDatetimeLineRenderingMixin')
         # Get current datetime
-        self.plots_data['now_lines'].now_dt = datetime.now()
+        self.plots_data['now_lines'].now_dt = datetime.now(timezone.utc)
         # Convert to unix timestamp
         self.plots_data['now_lines'].now_timestamp = datetime_to_unix_timestamp(self.plots_data['now_lines'].now_dt)
 
@@ -124,7 +124,7 @@ class NowCurrentDatetimeLineRenderingMixin:
     def update_now_lines(self):
         """ called to refresh the now (current) datetime for all now line items and updates the lines themselves if they exist. """
         # Get current datetime
-        self.plots_data['now_lines'].now_dt = datetime.now()
+        self.plots_data['now_lines'].now_dt = datetime.now(timezone.utc)
         # Convert to unix timestamp
         self.plots_data['now_lines'].now_timestamp = datetime_to_unix_timestamp(self.plots_data['now_lines'].now_dt)
         for plot_item, vline in self.plots.now_lines.now_line_items.items():
@@ -203,6 +203,15 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
     def rendered_epoch_series_names(self):
         """The rendered_epoch_names property."""
         return [a_name for a_name in self.rendered_epochs.keys() if ((a_name != 'name') and (a_name != 'context'))]
+
+
+    def _perform_add_render_item(self, plot_item, rect_item):
+        plot_item.addItem(rect_item)
+
+
+    def _perform_remove_render_item(self, plot_item, rect_item):
+        plot_item.removeItem(rect_item)
+
 
     @pyqtExceptionPrintingSlot()
     def EpochRenderingMixin_on_init(self):
@@ -293,13 +302,28 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
         
         return _SignalBlocker(self)
     
+
     @pyqtExceptionPrintingSlot(object)
     def EpochRenderingMixin_on_interval_datasource_changed(self, datasource):
         """Emit our own custom signal when the general datasource update method returns."""
         if self._is_updating_from_widget:
             return  # Skip if update is from widget to prevent circular updates
         self.add_rendered_intervals(datasource, name=datasource.custom_datasource_name, debug_print=False)  # updates the rendered intervals on the change
-    
+
+
+    def _window_value_to_signal_float(self, value: Union[float, datetime, pd.Timestamp]) -> float:
+        """Convert a stored window boundary value to the float expected by Qt signals.
+            IMPORTANT: used in all inheriting subclasses 
+
+
+            curr_window_start_time: float = self._window_value_to_signal_float(self.active_window_start_time)
+
+        """
+        if isinstance(value, (datetime, pd.Timestamp)):
+            return value.timestamp() if hasattr(value, 'timestamp') else pd.Timestamp(value).timestamp()
+        return float(value)
+
+
     
     def add_rendered_intervals(self, interval_datasource: Union[pd.DataFrame, Any], name=None, child_plots=None, debug_print=False, **vis_kwargs):
         """Adds or updates the intervals specified by the interval_datasource to the plots.
@@ -450,6 +474,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
 
         return returned_rect_items 
 
+
     def remove_rendered_intervals(self, name, child_plots_removal_list=None, debug_print=False):
         """Removes the intervals specified by the interval_datasource to the plots.
 
@@ -498,6 +523,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
     
         return items_to_remove_from_rendered_epochs
 
+
     def clear_all_rendered_intervals(self, child_plots_removal_list=None, debug_print=False):
         """Removes all rendered rects - a batch version of removed_rendered_intervals(...)."""
         curr_rendered_epoch_names = self.rendered_epoch_series_names
@@ -507,6 +533,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
                 if debug_print:
                     print(f'removing {a_name}...')
                 self.remove_rendered_intervals(a_name, child_plots_removal_list=child_plots_removal_list, debug_print=debug_print)
+
 
     def get_all_rendered_intervals_dict(self, debug_print=False) -> Dict[str, Dict[str, IntervalRectsItem]]:
         """Returns a dictionary containing the hierarchy of all the members. Can optionally also print.
@@ -547,6 +574,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
             print(f'out_dict: {out_dict}')
 
         return out_dict
+
 
     def update_rendered_intervals_visualization_properties(self, update_dict):
         """Updates the interval datasources (and thus the actual rendered rectangles) from the provided `update_dict`.
@@ -603,6 +631,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
             else:
                 print(f"WARNING: interval_key '{interval_key}' was not found in self.interval_datasources. Skipping update for unknown item.")
 
+
     @classmethod
     def compute_bounds_adjustment_for_rect_item(cls, a_plot, a_rect_item, should_apply_adjustment:bool=True, debug_print=False):
         """Adjusts plot bounds to fit the rectangle item.
@@ -648,6 +677,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
     
         return adjustment_needed
     
+
     @staticmethod
     def get_added_rect_item_required_y_value(a_rect_item, debug_print=False):
         """Gets the required y-value range for a rectangle item.
@@ -665,6 +695,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
             print(f'new_max_y_range: {new_max_y_range}')
         return new_min_y_range, new_max_y_range
     
+
     @staticmethod
     def get_plot_view_range(a_plot, debug_print=True):
         """Gets the current viewRange for the passed in plot.
@@ -684,6 +715,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
         if debug_print:
             print(f'curr_x_min: {curr_x_min}, curr_x_max: {curr_x_max}, curr_y_min: {curr_y_min}, curr_y_max: {curr_y_max}')
         return (curr_x_min, curr_x_max, curr_y_min, curr_y_max)
+
 
     @classmethod
     def build_stacked_epoch_layout(cls, rendered_interval_heights, epoch_render_stack_height=40.0, interval_stack_location='below', debug_print=True):

@@ -211,7 +211,7 @@ def get_utility_dock_colors(orientation, is_dim):
     return fg_color, bg_color, border_color
 
     
-NamedColorScheme = Enum('NamedColorScheme', 'blue green red grey')
+NamedColorScheme = Enum('NamedColorScheme', 'blue green red grey purple black orange pink teal white yellow tan lime')
 # NamedColorScheme.blue  # returns <Animal.ant: 1>
 # NamedColorScheme['blue']  # returns <Animal.ant: 1> (string lookup)
 # NamedColorScheme.blue.name  # returns 'ant' (inverse lookup)
@@ -281,6 +281,71 @@ class CustomCyclicColorsDockDisplayConfig(CustomDockDisplayConfig):
                     else:
                         bg_color = '#9d9d9d' 
                         border_color = '#3a3a3a' 
+                elif self.named_color_scheme.name == NamedColorScheme.purple.name:
+                    if is_dim:
+                        bg_color = '#552288'
+                        border_color = '#441166'
+                    else:
+                        bg_color = '#8844cc'
+                        border_color = '#6633aa'
+                elif self.named_color_scheme.name == NamedColorScheme.black.name:
+                    if is_dim:
+                        bg_color = '#1a1a1a'
+                        border_color = '#000000'
+                    else:
+                        bg_color = '#2d2d2d'
+                        border_color = '#111111'
+                elif self.named_color_scheme.name == NamedColorScheme.orange.name:
+                    if is_dim:
+                        bg_color = '#cc7722'
+                        border_color = '#aa5500'
+                    else:
+                        bg_color = '#ee9944'
+                        border_color = '#cc7722'
+                elif self.named_color_scheme.name == NamedColorScheme.pink.name:
+                    if is_dim:
+                        bg_color = '#aa5577'
+                        border_color = '#884466'
+                    else:
+                        bg_color = '#dd88aa'
+                        border_color = '#cc6699'
+                elif self.named_color_scheme.name == NamedColorScheme.teal.name:
+                    if is_dim:
+                        bg_color = '#226666'
+                        border_color = '#115555'
+                    else:
+                        bg_color = '#44aaaa'
+                        border_color = '#339999'
+                elif self.named_color_scheme.name == NamedColorScheme.white.name:
+                    if is_dim:
+                        fg_color = '#555555'
+                        bg_color = '#e8e8e8'
+                        border_color = '#a0a0a0'
+                    else:
+                        fg_color = '#1a1a1a'
+                        bg_color = '#f0f0f0'
+                        border_color = '#c8c8c8'
+                elif self.named_color_scheme.name == NamedColorScheme.yellow.name:
+                    if is_dim:
+                        bg_color = '#b39612'
+                        border_color = '#8a7300'
+                    else:
+                        bg_color = '#e6d040'
+                        border_color = '#c4b020'
+                elif self.named_color_scheme.name == NamedColorScheme.tan.name:
+                    if is_dim:
+                        bg_color = '#a68b5b'
+                        border_color = '#8a7450'
+                    else:
+                        bg_color = '#d4c4a0'
+                        border_color = '#b8a67e'
+                elif self.named_color_scheme.name == NamedColorScheme.lime.name:
+                    if is_dim:
+                        bg_color = '#669922'
+                        border_color = '#558011'
+                    else:
+                        bg_color = '#88cc44'
+                        border_color = '#66aa22'
                 else:
                     raise NotImplementedError
             # END else:

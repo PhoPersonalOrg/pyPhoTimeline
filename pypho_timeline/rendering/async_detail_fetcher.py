@@ -313,25 +313,26 @@ class AsyncDetailFetcher(QtCore.QObject):
             return None
     
 
-    def clear_cache(self, track_id: Optional[str] = None):
+    def clear_cache(self, cache_key_prefix: Optional[str] = None):
         """Clear cached data.
         
         Args:
-            track_id: If provided, only clear cache entries for this track (requires cache_key format)
-                     If None, clear all cache
+            cache_key_prefix: If provided, only clear cache entries whose keys match this track or datasource prefix.
+                If None, clear all cache.
         """
         thread_name = threading.current_thread().name
-        logger.info(f"[{thread_name}] AsyncDetailFetcher.clear_cache(track_id={track_id})")
+        logger.info(f"[{thread_name}] AsyncDetailFetcher.clear_cache(cache_key_prefix={cache_key_prefix})")
         with self._lock:
-            if track_id is None:
+            if cache_key_prefix is None:
                 cache_size = len(self._cache)
                 self._cache.clear()
                 logger.debug(f"[{thread_name}] AsyncDetailFetcher.clear_cache() - cleared all {cache_size} cache entries")
             else:
-                keys_to_remove = [k for k in self._cache.keys() if k.startswith(f"{track_id}:")]
+                valid_prefixes = (cache_key_prefix, f"{cache_key_prefix}:", f"{cache_key_prefix}_")
+                keys_to_remove = [k for k in self._cache.keys() if k == cache_key_prefix or any(k.startswith(prefix) for prefix in valid_prefixes[1:])]
                 for key in keys_to_remove:
                     del self._cache[key]
-                logger.debug(f"[{thread_name}] AsyncDetailFetcher.clear_cache() - cleared {len(keys_to_remove)} cache entries for track_id={track_id}")
+                logger.debug(f"[{thread_name}] AsyncDetailFetcher.clear_cache() - cleared {len(keys_to_remove)} cache entries for cache_key_prefix={cache_key_prefix}")
     
 
     def get_cache_stats(self) -> Dict[str, int]:

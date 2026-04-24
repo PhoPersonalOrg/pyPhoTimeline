@@ -47,35 +47,35 @@ from pypho_timeline.widgets.custom_graphics_layout_widget import (
     CustomGraphicsLayoutWidget,
     CustomViewBox,
 )
-from pypho_timeline.widgets.timeline_calendar_widget import TimelineCalendarWidget
-from pypho_timeline.widgets import (
-    SimpleTimelineWidget,
-    DataFrameTableWidget,
-    DataFrameTableModel,
-)
+# from pypho_timeline.widgets.timeline_calendar_widget import TimelineCalendarWidget
+# from pypho_timeline.widgets import (
+#     SimpleTimelineWidget,
+#     DataFrameTableWidget,
+#     DataFrameTableModel,
+# )
 
-from pypho_timeline.timeline_builder import TimelineBuilder
+# from pypho_timeline.timeline_builder import TimelineBuilder
 
-from pypho_timeline.mixins.crosshairs_tracing_mixin import CrosshairsTracingMixin
+# from pypho_timeline.mixins.crosshairs_tracing_mixin import CrosshairsTracingMixin
 
-# Rendering (interval/epoch rendering)
-from pypho_timeline.rendering import (
-    IntervalRectsItem,
-    IntervalRectsItemData,
-    RectangleRenderTupleHelpers,
-    Render2DEventRectanglesHelper,
-    EpochRenderingMixin,
-    RenderedEpochsItemsContainer,
-    LiveWindowEventIntervalMonitoringMixin,
-    IntervalsDatasource,
-    TrackRenderer,
-    TrackRenderingMixin,
-    TrackDatasource,
-    DetailRenderer,
-    AsyncDetailFetcher,
-    VideoThumbnailDetailRenderer,
-    GenericPlotDetailRenderer,
-)
+# # Rendering (interval/epoch rendering)
+# from pypho_timeline.rendering import (
+#     IntervalRectsItem,
+#     IntervalRectsItemData,
+#     RectangleRenderTupleHelpers,
+#     Render2DEventRectanglesHelper,
+#     EpochRenderingMixin,
+#     RenderedEpochsItemsContainer,
+#     LiveWindowEventIntervalMonitoringMixin,
+#     IntervalsDatasource,
+#     TrackRenderer,
+#     TrackRenderingMixin,
+#     TrackDatasource,
+#     DetailRenderer,
+#     AsyncDetailFetcher,
+#     VideoThumbnailDetailRenderer,
+#     GenericPlotDetailRenderer,
+# )
 
 __all__ = [
     # Core
@@ -95,28 +95,28 @@ __all__ = [
     # Widgets
     'CustomGraphicsLayoutWidget',
     'CustomViewBox',
-    'SimpleTimelineWidget',
-    'TimelineCalendarWidget',
-    'DataFrameTableWidget',
-    'DataFrameTableModel',
-    'TimelineBuilder',
-    # Mixins
-    'CrosshairsTracingMixin',
-    # Rendering
-    'IntervalRectsItem',
-    'IntervalRectsItemData',
-    'RectangleRenderTupleHelpers',
-    'Render2DEventRectanglesHelper',
-    'EpochRenderingMixin',
-    'RenderedEpochsItemsContainer',
-    'LiveWindowEventIntervalMonitoringMixin',
-    'IntervalsDatasource',
-    'TrackRenderer',
-    'TrackRenderingMixin',
-    'TrackDatasource',
-    'DetailRenderer',
-    'AsyncDetailFetcher',
-    'VideoThumbnailDetailRenderer',
-    'GenericPlotDetailRenderer',
+    # 'SimpleTimelineWidget',
+    # 'TimelineCalendarWidget',
+    # 'DataFrameTableWidget',
+    # 'DataFrameTableModel',
+    # 'TimelineBuilder',
+    # # Mixins
+    # 'CrosshairsTracingMixin',
+    # # Rendering
+    # 'IntervalRectsItem',
+    # 'IntervalRectsItemData',
+    # 'RectangleRenderTupleHelpers',
+    # 'Render2DEventRectanglesHelper',
+    # 'EpochRenderingMixin',
+    # 'RenderedEpochsItemsContainer',
+    # 'LiveWindowEventIntervalMonitoringMixin',
+    # 'IntervalsDatasource',
+    # 'TrackRenderer',
+    # 'TrackRenderingMixin',
+    # 'TrackDatasource',
+    # 'DetailRenderer',
+    # 'AsyncDetailFetcher',
+    # 'VideoThumbnailDetailRenderer',
+    # 'GenericPlotDetailRenderer',
 ]
 

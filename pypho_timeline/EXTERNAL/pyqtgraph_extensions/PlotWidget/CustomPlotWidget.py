@@ -1,10 +1,8 @@
 from PyQt5 import QtWidgets
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 import sys
 from copy import deepcopy
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
-from typing_extensions import TypeAlias
-from nptyping import NDArray
 
 import numpy as np
 from PyQt5.QtCore import *
@@ -16,8 +14,8 @@ __all__ = ['CustomPlotWidget']
 # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=[], used_by=[], creation_date='2024-10-21 20:56', related_items=[])
 class CustomPlotWidget(pg.PlotWidget):
     """ Tries to improve click handling
-    from pyphoplacecellanalysis.External.pyqtgraph_extensions.CustomPlotWidget import CustomPlotWidget
-    from pyphoplacecellanalysis.External.pyqtgraph_extensions.PlotWidget.CustomPlotWidget import CustomPlotWidget
+    from pypho_timeline.EXTERNAL.pyqtgraph_extensions.CustomPlotWidget import CustomPlotWidget
+    from pypho_timeline.EXTERNAL.pyqtgraph_extensions.PlotWidget.CustomPlotWidget import CustomPlotWidget
 
     """
     # signals wrapped from PlotItem / ViewBox

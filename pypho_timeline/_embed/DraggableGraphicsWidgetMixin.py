@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Callable
 from qtpy import QtCore, QtGui, QtWidgets
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 from dataclasses import dataclass
 
 class DragUpdateAction(Enum):

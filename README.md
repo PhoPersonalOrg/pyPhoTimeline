@@ -64,3 +64,22 @@ uv-deps-switcher dev
 uv sync --all-extras
 source .venv/bin/activate
 ```
+
+
+
+## PyQt5
+```toml
+ - pyqt5==5.15.11
+ - pyqt5-qt5==5.15.2
+ - pyqt5-sip==12.17.2
+ - pyqt5singleton==0.1
+ - sip==6.15.0
+```
+
+# Unfinished TODOs:
+
+#TODO 2026-04-13 15:11: - [ ] Merge "LOG_EventBoard" into "LOG_TextLogger" but as a different color track with an appropriate legend
+#TODO 2026-04-13 15:10: - [ ] Ignore all EEG-derived tracks from the interval overview widget (e.g. Spectogram, GFP, etc)
+#TODO 2026-04-13 15:29: - [ ] decrease the thickness of the raw EEG track channel lines
+#TODO 2026-04-13 15:30: - [ ] Increase the height of the raw EEG track
+#TODO 2026-04-13 15:30: - [ ] Fix the height of the EEG GFP track's intervals to the correct height

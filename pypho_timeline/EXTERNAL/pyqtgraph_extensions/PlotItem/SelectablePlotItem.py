@@ -3,7 +3,6 @@ from copy import deepcopy
 from PyQt5 import QtCore
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QApplication, QVBoxLayout, QWidget
-# import pyqtgraph as pg
 import pypho_timeline.EXTERNAL.pyqtgraph as pg
 
 __all__ = ['SelectablePlotItem']
@@ -13,7 +12,7 @@ class SelectablePlotItem(pg.PlotItem):
     """ A PlotItem subclass that can be selected/deselected via left-click
     
     
-    from pyphoplacecellanalysis.External.pyqtgraph_extensions.PlotItem.SelectablePlotItem import SelectablePlotItem
+    from pypho_timeline.EXTERNAL.pyqtgraph_extensions.PlotItem.SelectablePlotItem import SelectablePlotItem
         
     # curr_plot: pg.PlotItem = root_render_widget.addPlot(row=(curr_row + plots_start_row_idx), col=curr_col, title=formatted_title) # pg.PlotItem
     # SelectablePlotItem version:

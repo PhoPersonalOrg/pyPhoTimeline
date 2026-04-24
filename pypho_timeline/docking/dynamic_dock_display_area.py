@@ -17,7 +17,10 @@ from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.DockArea import DockArea
 DockPlanningHelperWidget = None
 
 from pypho_timeline.docking.dock_display_configs import CustomDockDisplayConfig, DockDisplayColors
+from pypho_timeline.utils.logging_util import get_rendering_logger
 # NestedDockAreaWidget is imported inside build_wrapping_nested_dock_area to avoid circular import
+
+logger = get_rendering_logger(__name__)
 
 
 class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
@@ -155,6 +158,39 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
 
 
 
+    ## Compute the stretch heights
+    def compute_normalized_stretch_heights(self):
+        """ 
+        bump!
+        """
+        height_px: int = dock_area.height()
+        # dock_area.heightMM() # 283
+
+        # height_px
+        flat_dockitems = timeline.get_flat_dockitems_list()
+        # flat_dockitems
+
+        n_tracks: int = len(stretches_height)
+
+        stretches: List[Tuple] = [d.stretch() for d in flat_dockitems]
+        height_px: np.array = np.array([d.height() for d in flat_dockitems])
+        stretches_height: np.array = np.array([s[1] for s in stretches])
+        # height_px
+        # stretches_height
+        total_height_px: float = np.nansum(height_px)
+        total_height_stretches: float = np.nansum(stretches_height)
+
+        # total_height_px, total_height_stretches
+
+        normalized_height_stretches = (stretches_height / total_height_stretches)
+        track_unit_normalized_height_stretches = (normalized_height_stretches * n_tracks)
+
+        return normalized_height_stretches, track_unit_normalized_height_stretches
+
+
+
+
+
 
     # ==================================================================================================================== #
     # dockGroup                                                                                                            #
@@ -222,18 +258,28 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
 
 
     @function_attributes(short_name=None, tags=['dockGroup', 'layout', 'sizing'], input_requires=[], output_provides=[], uses=['get_dockGroup_dock_dict', 'build_wrapping_nested_dock_area'], used_by=[], creation_date='2025-02-17 10:26', related_items=[])
-    def layout_dockGroups(self):
+    def layout_dockGroups(self, dock_group_names_order: Optional[List[str]] = None, dock_group_add_location_opts: Optional[Dict[str, List]] = None):
         """ fetches the dockGroup items and perform layout """
         grouped_dock_items_dict: Dict[str, List[Dock]] = self.get_dockGroup_dock_dict()
+        _detail = {k: [d.name() for d in v] for k, v in grouped_dock_items_dict.items()}
+        logger.debug(f"[dock_group] layout_dockGroups: grouped keys={list(grouped_dock_items_dict.keys())!r} members={_detail!r}")
         nested_dock_items = {}
         nested_dynamic_docked_widget_container_widgets = {}
-        for dock_group_name, flat_group_dockitems_list in grouped_dock_items_dict.items():
+        ordered_group_names = list(grouped_dock_items_dict.keys())
+        if dock_group_names_order is not None:
+            ordered_group_names = [dock_group_name for dock_group_name in dock_group_names_order if dock_group_name in grouped_dock_items_dict] + [dock_group_name for dock_group_name in ordered_group_names if dock_group_name not in (dock_group_names_order or [])]
+
+        logger.debug(f"[dock_group] layout_dockGroups: ordered_group_names={ordered_group_names!r}")
+        for dock_group_name in ordered_group_names:
+            flat_group_dockitems_list = grouped_dock_items_dict[dock_group_name]
+            logger.debug(f"[dock_group] layout_dockGroups: processing group={dock_group_name!r} docks={[d.name() for d in flat_group_dockitems_list]!r}")
             # Skip if this group already has a container
             if hasattr(self, 'nested_dock_items') and (dock_group_name in self.nested_dock_items):
                 continue
             # else:
             ## create a new item
-            dDisplayItem, nested_dynamic_docked_widget_container = self.build_wrapping_nested_dock_area(flat_group_dockitems_list, dock_group_name=dock_group_name)
+            dock_add_location_opts = (dock_group_add_location_opts or {}).get(dock_group_name, None)
+            dDisplayItem, nested_dynamic_docked_widget_container = self.build_wrapping_nested_dock_area(flat_group_dockitems_list, dock_group_name=dock_group_name, dockAddLocationOpts=dock_add_location_opts)
             nested_dock_items[dock_group_name] = dDisplayItem # Dock
             nested_dynamic_docked_widget_container_widgets[dock_group_name] = nested_dynamic_docked_widget_container # nested_dynamic_docked_widget_container
 
@@ -346,7 +392,8 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
 
         ## Respond to the close signal so that we can remove the item from the dynamic_display_dict when it is closed.
         dDisplayItem.sigClosed.connect(self.on_dock_closed)
-
+        if hasattr(self, "sigDockAdded"):
+            self.sigDockAdded.emit(self, dDisplayItem)
 
         # self.dynamic_display_dict[identifier] = {"dock":dDisplayItem, "widget":new_view_widget}        
         return widget, dDisplayItem
@@ -451,7 +498,7 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
         return test_dock_planning_widget, dDisplayItem
 
     @function_attributes(short_name=None, tags=['docks', 'nested', 'wrapping'], input_requires=[], output_provides=[], uses=['self.add_display_dock(...)', 'NestedDockAreaWidget','CustomDockDisplayConfig'], used_by=['layout_dockGroups'], creation_date='2025-01-14 03:41', related_items=[])        
-    def build_wrapping_nested_dock_area(self, flat_group_dockitems_list: List[Dock], dock_group_name: str = 'ContinuousDecode_ - t_bin_size: 0.025'):
+    def build_wrapping_nested_dock_area(self, flat_group_dockitems_list: List[Dock], dock_group_name: str = 'ContinuousDecode_ - t_bin_size: 0.025', dockAddLocationOpts=None):
         """ 
         Builds a wrapping dock area containing several pre-existing dock items
         
@@ -480,11 +527,20 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
 
         """
         num_child_docks: int = len(flat_group_dockitems_list)
-        total_height: float = np.sum([a_dock.height() for a_dock in flat_group_dockitems_list])
+        total_height: float = float(np.sum([a_dock.height() for a_dock in flat_group_dockitems_list]))
+        logger.info(f"[dock_group] build_wrapping_nested_dock_area: group={dock_group_name!r} num_child_docks={num_child_docks} total_height={total_height}")
+        for _ch in flat_group_dockitems_list:
+            logger.debug(f"[dock_group] build_wrapping_nested_dock_area child name={_ch.name()!r} h={_ch.height()} w={_ch.width()}")
+        if total_height <= 0:
+            logger.warning(f"[dock_group] build_wrapping_nested_dock_area: total_height<=0 ({total_height}); nested group may collapse or be invisible until layout")
+        for _ch in flat_group_dockitems_list:
+            if _ch.height() <= 0:
+                logger.warning(f"[dock_group] build_wrapping_nested_dock_area: child dock {_ch.name()!r} has height<=0 before move")
 
         name=f'GROUP[{dock_group_name}]'
         dockSize=(500, total_height)
-        dockAddLocationOpts=['bottom']
+        if dockAddLocationOpts is None:
+            dockAddLocationOpts = ['bottom']
 
         display_config = CustomDockDisplayConfig(showCloseButton=True, showCollapseButton=True, showGroupButton=True, showOrientationButton=True, orientation='horizontal', corner_radius='0px', fontSize='15px',
                                                 custom_get_colors_dict = {False: DockDisplayColors(fg_color='#5bf', bg_color='#0d001a', border_color='#5467ba'),
@@ -511,7 +567,7 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
         for a_dock in flat_group_dockitems_list:
             a_dock_identifier: str = a_dock.name()
             # a_dock_identifier: str = a_dock.identifier
-            print(f'\ta_dock_identifier: "{a_dock_identifier}"')
+            logger.debug(f"[dock_group] build_wrapping_nested_dock_area: moving child dock name={a_dock_identifier!r}")
             ## format nested child docks:
             a_dock.config.showCloseButton = False
             a_dock.config.showCollapseButton = False
@@ -703,7 +759,7 @@ class DynamicDockDisplayAreaOwningMixin(BaseDynamicInstanceConformingMixin):
         
     from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
     from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayAreaOwningMixin, DynamicDockDisplayAreaContentMixin
-    
+    from pypho_timeline.docking.dynamic_dock_display_area import DynamicDockDisplayAreaOwningMixin
     
     """
     # ==================================================================================================================== #

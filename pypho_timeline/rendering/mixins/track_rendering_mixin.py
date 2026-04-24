@@ -5,6 +5,7 @@ from qtpy import QtCore
 import pyqtgraph as pg
 from pyqtgraph import SignalProxy
 
+import phopymnehelper.type_aliases as types
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 from pyphocorehelpers.DataStructure.general_parameter_containers import RenderPlotsData
 
@@ -52,6 +53,11 @@ class TrackRenderingMixin(EpochRenderingMixin):
     def async_detail_fetcher(self) -> AsyncDetailFetcher:
         """The async_detail_fetcher property."""
         return self.plots_data['async_detail_fetcher']
+
+    @property
+    def track_window_sync_groups(self) -> Dict[str, str]:
+        """Map of track name to window sync group."""
+        return self.plots_data['track_window_sync_groups']
     
     @pyqtExceptionPrintingSlot()
     def TrackRenderingMixin_on_init(self):
@@ -61,6 +67,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
         
         # Initialize track rendering data structures
         self.plots_data['track_datasources'] = RenderPlotsData('TrackRenderingMixin')
+        self.plots_data['track_window_sync_groups'] = {}
         self.plots.track_renderers = {}
         
         # Create async detail fetcher
@@ -75,6 +82,8 @@ class TrackRenderingMixin(EpochRenderingMixin):
         # Ensure async fetcher exists
         if 'async_detail_fetcher' not in self.plots_data:
             self.plots_data['async_detail_fetcher'] = AsyncDetailFetcher(max_cache_size=100)
+        if 'track_window_sync_groups' not in self.plots_data:
+            self.plots_data['track_window_sync_groups'] = {}
     
     @pyqtExceptionPrintingSlot()
     def TrackRenderingMixin_on_buildUI(self):
@@ -116,7 +125,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
         self.EpochRenderingMixin_on_destroy()
     
 
-    def add_track(self, track_datasource: TrackDatasource, name: str, plot_item: Optional[pg.PlotItem] = None, **kwargs) -> TrackRenderer:
+    def add_track(self, track_datasource: TrackDatasource, name: str, plot_item: Optional[pg.PlotItem] = None, window_sync_group: str = 'primary', **kwargs) -> TrackRenderer:
         """Add a new track to the timeline.
         
         Updates:
@@ -148,6 +157,7 @@ class TrackRenderingMixin(EpochRenderingMixin):
             
             # Store datasource
             self.track_datasources[name] = track_datasource
+            self.set_track_window_sync_group(name, window_sync_group)
             
             # Create track renderer
             track_renderer = TrackRenderer(track_id=name, datasource=track_datasource, plot_item=plot_item, async_fetcher=self.async_detail_fetcher, **kwargs)
@@ -173,24 +183,17 @@ class TrackRenderingMixin(EpochRenderingMixin):
                 if proxy_key not in self.ui.connections:
                     proxy = SignalProxy(viewbox.sigRangeChanged, rateLimit=30, slot=lambda evt: self._on_plot_viewport_changed(name, evt)) # Limit to 30 updates per second
                     self.ui.connections[proxy_key] = proxy
-            
-                    try:
-                        # Try to find the parent widget that contains this plot_item
-                        # The plot_item is part of a GraphicsLayoutWidget, which is part of PyqtgraphTimeSynchronizedWidget
-                        graphics_layout = plot_item.parentItem()
-                        if graphics_layout is not None:
-                            # Find the widget by traversing up the parent chain or searching
-                            # Actually, we can search for widgets in the timeline that match the track name
-                            if hasattr(self, 'ui') and hasattr(self.ui, 'matplotlib_view_widgets'):
-                                widget_name = name
-                                if widget_name in self.ui.matplotlib_view_widgets:
-                                    widget = self.ui.matplotlib_view_widgets[widget_name]
-                                    if isinstance(widget, PyqtgraphTimeSynchronizedWidget):
-                                        widget.set_track_renderer(track_renderer)
-
-                    except (ImportError, AttributeError, KeyError):
-                        # If widget connection fails, continue without options panel
-                        pass
+                try:
+                    if hasattr(self, 'ui') and hasattr(self.ui, 'matplotlib_view_widgets') and name in self.ui.matplotlib_view_widgets:
+                        widget = self.ui.matplotlib_view_widgets[name]
+                        if isinstance(widget, PyqtgraphTimeSynchronizedWidget):
+                            widget.set_track_renderer(track_renderer)
+                            if hasattr(self.ui, 'dynamic_docked_widget_container'):
+                                dock_item = self.ui.dynamic_docked_widget_container.find_display_dock(identifier=name)
+                                if dock_item is not None and hasattr(dock_item, 'updateWidgetsHaveOptionsPanel'):
+                                    dock_item.updateWidgetsHaveOptionsPanel()
+                except (ImportError, AttributeError, KeyError):
+                    pass
 
             # Store renderer
             self.track_renderers[name] = track_renderer
@@ -223,15 +226,45 @@ class TrackRenderingMixin(EpochRenderingMixin):
             evt: Event from SignalProxy(sigRangeChanged): tuple (viewbox, view_range, changed).
                  view_range is (x_range, y_range).
         """
+        if getattr(self, '_applying_window_from_signal', False):
+            return
         if track_name not in self.track_renderers:
             return
         # ViewBox.sigRangeChanged emits (self, viewRange, changed); SignalProxy forwards as single tuple
         _, view_range, _ = evt
         x_range, y_range = view_range
         if len(x_range) == 2:
-            # Defer the update to avoid blocking the signal handler
+            # Defer the update to avoid blocking the signal handler. Read x-range from the ViewBox
+            # when the timer runs — not from evt — so programmatic jumps (interval prev/next) are not
+            # overwritten by a stale closure after setXRange updated the plot.
             def deferred_update():
-                self.track_renderers[track_name].update_viewport(x_range[0], x_range[1])
+                if getattr(self, '_applying_window_from_signal', False):
+                    return
+                tr = self.track_renderers.get(track_name, None)
+                if tr is None:
+                    return
+                vb = tr.plot_item.getViewBox() if tr.plot_item is not None else None
+                if vb is None:
+                    return
+                vr = vb.viewRange()
+                if len(vr) < 1 or len(vr[0]) != 2:
+                    return
+                x0, x1 = float(vr[0][0]), float(vr[0][1])
+                if x0 > x1:
+                    x0, x1 = x1, x0
+                tr.update_viewport(x0, x1)
+                if self.get_track_window_sync_group(track_name) != 'primary':
+                    return
+                apply_fn = getattr(self, 'apply_active_window_from_plot_x', None)
+                if apply_fn is None:
+                    return
+                la0 = getattr(self, '_last_applied_plot_window_x0', None)
+                la1 = getattr(self, '_last_applied_plot_window_x1', None)
+                eps = max(1e-6, (x1 - x0) * 1e-12)
+                if la0 is not None and la1 is not None and abs(x0 - la0) < eps and abs(x1 - la1) < eps:
+                    return
+                # Emit window_scrolled so overview strip / calendar / tables sync; sigViewportChanged uses block_signals True.
+                apply_fn(x0, x1, False)
             QtCore.QTimer.singleShot(0, deferred_update)
     
     
@@ -252,12 +285,69 @@ class TrackRenderingMixin(EpochRenderingMixin):
         # Remove datasource
         if name in self.track_datasources:
             del self.track_datasources[name]
+        self.track_window_sync_groups.pop(name, None)
         
         # Cancel pending fetches
         self.async_detail_fetcher.cancel_all_pending_fetches(name)
         
         # Emit signal
         self.sigTrackRemoved.emit(name)
+
+
+    # LiveWindowEventIntervalMonitoringMixin Conformances
+    def find_intervals_in_active_window(self, debug_print: bool = False) -> Dict[str, pd.DataFrame]:
+        """Find interval and track datasource rows overlapping the active window.
+        """
+        limited_interval_dfs_output_column_names = ['t_start', 't_duration', 't_end']
+
+        active_window_dt = getattr(getattr(self, 'spikes_window', None), 'active_time_window', None)
+        if active_window_dt is not None:
+            new_start_dt, new_end_dt = active_window_dt
+        else:
+            new_start_dt = getattr(self, 'active_window_start_time', None)
+            new_end_dt = getattr(self, 'active_window_end_time', None)
+
+        if new_start_dt is None or new_end_dt is None:
+            return {}
+
+        curr_window_start: float = self._window_value_to_signal_float(new_start_dt) # self._last_applied_plot_window_x0
+        curr_window_end: float = self._window_value_to_signal_float(new_end_dt) # self._last_applied_plot_window_x1
+        ## OUTPUTS: curr_window_start, curr_window_end
+
+
+        ## BEGIN FUNCTION BODY:
+        visible_intervals_dict: Dict[str, pd.DataFrame] = {}
+        seen_datasource_names = set()
+
+        ## `timeline.interval_datasource_names` is None for some reason even on a valid timeline object
+        for datasource_name in self.interval_datasource_names:
+            datasource = self.interval_datasources.get(datasource_name, None)
+            if datasource is None or (not hasattr(datasource, 'get_updated_data_window')):
+                continue
+            # visible_intervals_dict[datasource_name] = datasource.get_updated_data_window(new_start_dt, new_end_dt)
+            visible_intervals_dict[datasource_name] = datasource.get_updated_data_window(curr_window_start, curr_window_end)
+            if (limited_interval_dfs_output_column_names is not None) and (visible_intervals_dict[datasource_name] is not None):
+                visible_intervals_dict[datasource_name] = visible_intervals_dict[datasource_name][limited_interval_dfs_output_column_names] ## subset to the included columns
+            seen_datasource_names.add(datasource_name)
+
+        track_datasource_names = getattr(self.track_datasources, 'dynamically_added_attributes', [])
+        for datasource_name in track_datasource_names:
+            if datasource_name in seen_datasource_names:
+                continue
+            datasource = self.track_datasources.get(datasource_name, None)
+            if datasource is None or (not hasattr(datasource, 'get_updated_data_window')):
+                continue
+            # visible_intervals_dict[datasource_name] = datasource.get_updated_data_window(new_start_dt, new_end_dt)
+            visible_intervals_dict[datasource_name] = datasource.get_updated_data_window(curr_window_start, curr_window_end)
+            if (limited_interval_dfs_output_column_names is not None) and (visible_intervals_dict[datasource_name] is not None):
+                visible_intervals_dict[datasource_name] = visible_intervals_dict[datasource_name][limited_interval_dfs_output_column_names] ## subset to the included columns
+
+        if debug_print:
+            visible_counts_dict = {datasource_name: len(intervals_df) for datasource_name, intervals_df in visible_intervals_dict.items()}
+            print(f'TrackRenderingMixin.find_intervals_in_active_window(...): {visible_counts_dict}')
+
+        ## OUTPUTS: visible_intervals_dict
+        return visible_intervals_dict
 
 
     @pyqtExceptionPrintingSlot(float, float)
@@ -270,10 +360,36 @@ class TrackRenderingMixin(EpochRenderingMixin):
         """
         if new_start is None or new_end is None:
             return
-        
-        # Schedule each track's update asynchronously with small delays to prevent blocking
-        # This ensures the UI remains responsive even if one track is slow
-        for idx, (track_name, track_renderer) in enumerate(self.track_renderers.items()):
+
+        self._schedule_track_group_window_update(window_sync_group='primary', new_start=new_start, new_end=new_end)
+        self.EpochRenderingMixin_on_window_update(new_start, new_end)
+
+
+    def set_track_window_sync_group(self, name: str, window_sync_group: str = 'primary'):
+        """Register which window sync group controls a track renderer."""
+        self.track_window_sync_groups[name] = window_sync_group
+
+
+    def get_track_window_sync_group(self, name: str) -> str:
+        """Get the window sync group for a track renderer."""
+        return self.track_window_sync_groups.get(name, 'primary')
+
+
+    def get_track_names_for_window_sync_group(self, window_sync_group: str = 'primary') -> List[str]:
+        """Get all track names in a window sync group."""
+        return [track_name for track_name in self.track_renderers.keys() if self.get_track_window_sync_group(track_name) == window_sync_group]
+
+
+    def _schedule_track_group_window_update(self, window_sync_group: str = 'primary', new_start: Optional[float] = None, new_end: Optional[float] = None):
+        """Schedule viewport updates for all renderers in a sync group."""
+        if new_start is None or new_end is None:
+            return
+
+        grouped_track_items = [(track_name, track_renderer) for track_name, track_renderer in self.track_renderers.items() if self.get_track_window_sync_group(track_name) == window_sync_group]
+
+        # Schedule each track's update asynchronously with small delays to prevent blocking.
+        # This lets compare renderers opt out of the primary window while still sharing the same fetcher/cache.
+        for idx, (track_name, track_renderer) in enumerate(grouped_track_items):
             def make_update_fn(renderer, start, end):
                 def update_fn():
                     renderer.update_viewport(start, end)

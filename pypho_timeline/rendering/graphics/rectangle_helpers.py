@@ -4,7 +4,18 @@ Refactored from pyphoplacecellanalysis for use in pypho_timeline.
 """
 from typing import List, Tuple, Optional
 import pyqtgraph as pg
+# import pypho_timeline.EXTERNAL.pyqtgraph as pg
 from qtpy import QtGui
+
+
+def _ensure_leading_hash_for_hex_color(c):
+    if isinstance(c, str) and not c.startswith('#') and len(c) in (3, 4, 6, 8):
+        try:
+            int(c, 16)
+            return '#' + c
+        except ValueError:
+            pass
+    return c
 
 
 class RectangleRenderTupleHelpers:
@@ -123,8 +134,9 @@ class RectangleRenderTupleHelpers:
             # Reconstruct pen and brush from dicts
             # pen_dict: {'color': str, 'width': float}
             # brush_dict: {'color': str}
-            pen = pg.mkPen(pen_dict['color'], width=pen_dict.get('width', 1))
-            brush = pg.mkBrush(brush_dict['color'])
+            pen_color = _ensure_leading_hash_for_hex_color(pen_dict['color'])
+            pen = pg.mkPen(pen_color, width=pen_dict.get('width', 1))
+            brush = pg.mkBrush(_ensure_leading_hash_for_hex_color(brush_dict['color']))
             
             if use_objects:
                 # Return IntervalRectsItemData objects

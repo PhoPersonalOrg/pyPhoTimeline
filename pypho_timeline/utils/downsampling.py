@@ -148,16 +148,7 @@ def downsample_dataframe(df: pd.DataFrame, max_points: int, time_col: str = 't')
     # Sort by time to ensure proper ordering
     df_sorted = df.sort_values(time_col).reset_index(drop=True)
     
-    # Get time values. Convert to numeric seconds if datetime-like, since the LTTB math
-    # expects numeric x-values.
-    t_values_raw = df_sorted[time_col].values
-    t_values = t_values_raw
-    if np.issubdtype(getattr(t_values_raw, "dtype", object), np.datetime64):
-        t_values = t_values_raw.astype('datetime64[ns]').astype(np.int64) / 1e9
-    elif getattr(t_values_raw, "dtype", None) == object and len(t_values_raw) > 0:
-        sample = next((v for v in t_values_raw[:10] if v is not None), None)
-        if isinstance(sample, (datetime, pd.Timestamp, np.datetime64)):
-            t_values = pd.to_datetime(t_values_raw, utc=True).astype('int64').to_numpy(dtype=np.int64) / 1e9
+    t_values = df_sorted[time_col].values
     
     # Get all data columns (everything except time column)
     data_columns = [col for col in df_sorted.columns if col != time_col]

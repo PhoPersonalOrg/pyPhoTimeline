@@ -24,7 +24,9 @@ from pypho_timeline.utils.datetime_helpers import (
     datetime_to_unix_timestamp,
     unix_timestamp_to_datetime,
     float_to_datetime,
-    datetime_to_float
+    datetime_to_float,
+    create_am_pm_date_axis,
+    to_display_timezone
 )
 
 class ClickableLinearRegionItem(LinearRegionItem):
@@ -51,7 +53,9 @@ class TimelineCalendarWidget(pg.PlotWidget):
     
     def __init__(self, parent=None, **kwargs):
         # Use DateAxisItem for the x-axis
-        axis_item = pg.DateAxisItem(orientation='bottom')
+        axis_item = create_am_pm_date_axis(orientation='bottom')
+        if axis_item is None:
+            axis_item = pg.DateAxisItem(orientation='bottom')
         super().__init__(parent=parent, axisItems={'bottom': axis_item}, **kwargs)
         
         # Configure look and feel
@@ -179,16 +183,16 @@ class TimelineCalendarWidget(pg.PlotWidget):
         if self._total_start is None or self._total_end is None:
             return
             
-        # Convert to UTC datetime for consistent day boundary calculation
+        # Convert to display timezone datetime for consistent local day boundaries
         start_dt = unix_timestamp_to_datetime(self._total_start)
         end_dt = unix_timestamp_to_datetime(self._total_end)
+        start_dt_local = to_display_timezone(start_dt)
+        end_dt_local = to_display_timezone(end_dt)
         
         # Calculate day boundaries
-        # Use localized start of first day
-        current_day_start = datetime(start_dt.year, start_dt.month, start_dt.day, tzinfo=timezone.utc)
+        current_day_start = start_dt_local.replace(hour=0, minute=0, second=0, microsecond=0)
         
-        # 1. Draw Day Regions and Boundaries
-        while current_day_start < end_dt:
+        while current_day_start < end_dt_local:
             next_day_start = current_day_start + timedelta(days=1)
             
             r_start = datetime_to_unix_timestamp(current_day_start)
@@ -237,11 +241,10 @@ class TimelineCalendarWidget(pg.PlotWidget):
                 
             current_day_start = next_day_start
             
-        # 3. Optional: Finer hour markers if range is very small
-        range_duration = end_dt - start_dt
+        range_duration = end_dt_local - start_dt_local
         if range_duration < timedelta(days=2):
-            current_hour = datetime(start_dt.year, start_dt.month, start_dt.day, start_dt.hour, tzinfo=timezone.utc)
-            while current_hour < end_dt:
+            current_hour = start_dt_local.replace(minute=0, second=0, microsecond=0)
+            while current_hour < end_dt_local:
                 h_ts = datetime_to_unix_timestamp(current_hour)
                 # Skip if already drawn as day boundary or 6-hour tick
                 if h_ts > self._total_start and current_hour.hour % 6 != 0:

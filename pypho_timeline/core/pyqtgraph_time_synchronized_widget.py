@@ -5,11 +5,10 @@ import numpy as np
 import pandas as pd
 from qtpy import QtCore, QtWidgets
 
-import nptyping as ND
-from nptyping import NDArray
+from numpy.typing import NDArray
 import numpy as np
-import pyqtgraph as pg
-from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, create_am_pm_date_axis
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
+from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, create_am_pm_date_axis, unix_timestamp_to_datetime
 from pyphocorehelpers.DataStructure.general_parameter_containers import VisualizationParameters, RenderPlotsData, RenderPlots
 from pyphocorehelpers.DataStructure.RenderPlots.PyqtgraphRenderPlots import PyqtgraphRenderPlots
 from pyphocorehelpers.DataStructure.dynamic_parameters import DynamicParameters
@@ -20,14 +19,13 @@ from pypho_timeline.core.time_synchronized_plotter_base import TimeSynchronizedP
 from pyphocorehelpers.programming_helpers import metadata_attributes
 from pyphocorehelpers.function_helpers import function_attributes
 from pyphocorehelpers.plotting.mixins.plotting_backend_mixin import PlottingBackendSpecifyingMixin, PlottingBackendType, PlotImageExportableMixin
-from pypho_timeline.mixins.crosshairs_tracing_mixin import CrosshairsTracingMixin
 from pypho_timeline.widgets.custom_graphics_layout_widget import CustomViewBox, CustomGraphicsLayoutWidget
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
 
-
+from pypho_timeline.EXTERNAL.pyqtgraph_extensions.mixins.DraggableGraphicsWidgetMixin import MouseInteractionCriteria, DraggableGraphicsWidgetMixin
 
 @metadata_attributes(short_name=None, tags=['pyqtgraph'], input_requires=[], output_provides=[], uses=[], used_by=[], creation_date='2024-12-31 03:42', related_items=['MatplotlibTimeSynchronizedWidget'])
-class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportableMixin, PlottingBackendSpecifyingMixin, TimeSynchronizedPlotterBase):
+class PyqtgraphTimeSynchronizedWidget(PlotImageExportableMixin, PlottingBackendSpecifyingMixin, TimeSynchronizedPlotterBase):
     """ Plots the decoded position at a given moment in time. 
 
     Simple pyqtgraph-based alternative to `MatplotlibTimeSynchronizedWidget`
@@ -136,27 +134,27 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
         self.setup()
         
 
-        # #TODO 2026-03-05 08:52: - [ ] Build the mouse criteria to determine which drags are allowed (hopefully allowing left-click drag)
-        # #### This code came from `pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.GraphicsObjects.CustomLinearRegionItem.CustomLinearRegionItem`, get the rest there when needed.
-        # ## Setup the mouse action critiera for the background rectangle (excluding the two end-position lines, which are set below):
-        # if self.params.plotAreaMouseInteractionCriteria is None:
-        #     # Original/Default Conditions
-        #     self.params.plotAreaMouseInteractionCriteria = MouseInteractionCriteria(drag=lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.LeftButton),
-        #                                                                 hover=lambda an_evt: (an_evt.acceptDrags(QtCore.Qt.MouseButton.LeftButton)),
-        #                                                                 click=lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.RightButton) ## allow right-clicking
-        #     )
+        #TODO 2026-03-05 08:52: - [ ] Build the mouse criteria to determine which drags are allowed (hopefully allowing left-click drag)
+        #### This code came from `pyphoplacecellanalysis.GUI.PyQtPlot.Widgets.GraphicsObjects.CustomLinearRegionItem.CustomLinearRegionItem`, get the rest there when needed.
+        ## Setup the mouse action critiera for the background rectangle (excluding the two end-position lines, which are set below):
+        if self.params.plotAreaMouseInteractionCriteria is None:
+            # Original/Default Conditions
+            self.params.plotAreaMouseInteractionCriteria = MouseInteractionCriteria(drag=lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.LeftButton),
+                                                                        hover=lambda an_evt: (an_evt.acceptDrags(QtCore.Qt.MouseButton.LeftButton)),
+                                                                        click=lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.RightButton) ## allow right-clicking
+            )
             
-        #     # Actually override drag:
-        #     def _override_accept_either_mouse_button_drags(an_evt):
-        #         can_accept = an_evt.acceptDrags(QtCore.Qt.MouseButton.LeftButton)
-        #         can_accept = can_accept and an_evt.acceptDrags(QtCore.Qt.MouseButton.MiddleButton)
-        #         return can_accept
-        #     self.params.plotAreaMouseInteractionCriteria.hover = _override_accept_either_mouse_button_drags
+            # Actually override drag:
+            def _override_accept_either_mouse_button_drags(an_evt):
+                can_accept = an_evt.acceptDrags(QtCore.Qt.MouseButton.LeftButton)
+                can_accept = can_accept and an_evt.acceptDrags(QtCore.Qt.MouseButton.MiddleButton)
+                return can_accept
+            self.params.plotAreaMouseInteractionCriteria.hover = _override_accept_either_mouse_button_drags
             
-        #     self.params.plotAreaMouseInteractionCriteria.drag = lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.LeftButton) or (an_evt.button() == QtCore.Qt.MouseButton.MiddleButton)
+            self.params.plotAreaMouseInteractionCriteria.drag = lambda an_evt: (an_evt.button() == QtCore.Qt.MouseButton.LeftButton) or (an_evt.button() == QtCore.Qt.MouseButton.MiddleButton)
             
             
-        # self._custom_area_mouse_action_criteria = self.params.plotAreaMouseInteractionCriteria
+        self._custom_area_mouse_action_criteria = self.params.plotAreaMouseInteractionCriteria
 
 
         self.buildUI()
@@ -311,6 +309,9 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                 if isinstance(start_t, (datetime, pd.Timestamp)) and isinstance(end_t, (datetime, pd.Timestamp)):
                     dt_start = pd.Timestamp(start_t)
                     dt_end = pd.Timestamp(end_t)
+                elif isinstance(start_t, (int, float)) and isinstance(end_t, (int, float)) and float(start_t) > 1e9 and float(end_t) > 1e9:
+                    dt_start = pd.Timestamp(unix_timestamp_to_datetime(float(start_t)))
+                    dt_end = pd.Timestamp(unix_timestamp_to_datetime(float(end_t)))
                 else:
                     dt_start = float_to_datetime(start_t, self.reference_datetime)
                     dt_end = float_to_datetime(end_t, self.reference_datetime)
@@ -652,8 +653,56 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                 detail_renderer = self._track_renderer
                 track_renderer = None
             
+            desired_connections = {}
+            is_eeg_spectrogram_panel = False
+            is_eeg_fp_gfp_panel = False
+            if track_renderer is not None:
+                _eeg_spec_ds_type = None
+                try:
+                    from pypho_timeline.rendering.datasources.specific.eeg import EEGSpectrogramTrackDatasource as _eeg_spec_ds_type
+                except ImportError:
+                    pass
+                if _eeg_spec_ds_type is not None and isinstance(track_renderer.datasource, _eeg_spec_ds_type):
+                    from pypho_timeline.widgets.track_options_panels import EEGSpectrogramTrackOptionsPanel
+                    self.options_panel = EEGSpectrogramTrackOptionsPanel(track_renderer=track_renderer)
+                    desired_connections['options_panel.optionsChanged'] = (self.options_panel.optionsChanged, self.TrackOptionsPanelOwningMixin_optionsChanged)
+                    desired_connections['options_panel.onOptionsAccepted'] = (self.options_panel.onOptionsAccepted, self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
+                    desired_connections['options_panel.onOptionsRejected'] = (self.options_panel.onOptionsRejected, self.TrackOptionsPanelOwningMixin_onOptionsRejected)
+                    if hasattr(track_renderer, 'on_options_changed'):
+                        desired_connections['on_options_changed'] = (self.optionsChanged, track_renderer.on_options_changed)
+                    if hasattr(track_renderer, 'on_options_accepted'):
+                        desired_connections['on_options_accepted'] = (self.onOptionsAccepted, track_renderer.on_options_accepted)
+                    if hasattr(track_renderer, 'on_options_rejected'):
+                        desired_connections['on_options_rejected'] = (self.onOptionsRejected, track_renderer.on_options_rejected)
+                    self.ui.connections['spectrogram_options_applied'] = self.options_panel.spectrogramOptionsApplied.connect(track_renderer.apply_eeg_spectrogram_options_from_datasource)
+                    if hasattr(track_renderer, 'set_options_panel'):
+                        track_renderer.set_options_panel(self.options_panel)
+                    is_eeg_spectrogram_panel = True
+                if not is_eeg_spectrogram_panel:
+                    _eeg_fp_ds_type = None
+                    try:
+                        from pypho_timeline.rendering.datasources.specific.eeg import EEGFPTrackDatasource as _eeg_fp_ds_type
+                    except ImportError:
+                        pass
+                    if _eeg_fp_ds_type is not None and isinstance(track_renderer.datasource, _eeg_fp_ds_type):
+                        from pypho_timeline.widgets.track_options_panels import LinePowerGFPTrackOptionsPanel
+                        self.options_panel = LinePowerGFPTrackOptionsPanel(track_renderer=track_renderer)
+                        desired_connections['options_panel.optionsChanged'] = (self.options_panel.optionsChanged, self.TrackOptionsPanelOwningMixin_optionsChanged)
+                        desired_connections['options_panel.onOptionsAccepted'] = (self.options_panel.onOptionsAccepted, self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
+                        desired_connections['options_panel.onOptionsRejected'] = (self.options_panel.onOptionsRejected, self.TrackOptionsPanelOwningMixin_onOptionsRejected)
+                        if hasattr(track_renderer, 'on_options_changed'):
+                            desired_connections['on_options_changed'] = (self.optionsChanged, track_renderer.on_options_changed)
+                        if hasattr(track_renderer, 'on_options_accepted'):
+                            desired_connections['on_options_accepted'] = (self.onOptionsAccepted, track_renderer.on_options_accepted)
+                        if hasattr(track_renderer, 'on_options_rejected'):
+                            desired_connections['on_options_rejected'] = (self.onOptionsRejected, track_renderer.on_options_rejected)
+                        self.ui.connections['gfp_options_applied'] = self.options_panel.gfpOptionsApplied.connect(track_renderer.apply_line_power_gfp_options_from_datasource)
+                        if hasattr(track_renderer, 'set_options_panel'):
+                            track_renderer.set_options_panel(self.options_panel)
+                        is_eeg_fp_gfp_panel = True
+
             # Check if detail renderer has channel_names (channel-based renderer)
-            if hasattr(detail_renderer, 'channel_names') and detail_renderer.channel_names is not None:
+            if not is_eeg_spectrogram_panel and not is_eeg_fp_gfp_panel and hasattr(detail_renderer, 'channel_names') and detail_renderer.channel_names is not None:
                 # Create channel visibility panel for tracks with channels
                 from pypho_timeline.widgets.track_options_panels import TrackChannelVisibilityOptionsPanel
                 
@@ -667,19 +716,28 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                     # Create default visibility (all channels visible)
                     initial_visibility = {channel: True for channel in channel_names}
                 
-                self.options_panel = TrackChannelVisibilityOptionsPanel(
-                    channel_names=channel_names,
-                    initial_visibility=initial_visibility
-                )
+                self.options_panel = TrackChannelVisibilityOptionsPanel(channel_names=channel_names, initial_visibility=initial_visibility)
                 
-                # Forward panel signals to widget's mixin signals
-                self.options_panel.optionsChanged.connect(self.TrackOptionsPanelOwningMixin_optionsChanged)
-                self.options_panel.onOptionsAccepted.connect(self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
-                self.options_panel.onOptionsRejected.connect(self.TrackOptionsPanelOwningMixin_onOptionsRejected)
+                # # Forward panel signals to widget's mixin signals
+                # self.options_panel.optionsChanged.connect(self.TrackOptionsPanelOwningMixin_optionsChanged)
+                # self.options_panel.onOptionsAccepted.connect(self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
+                # self.options_panel.onOptionsRejected.connect(self.TrackOptionsPanelOwningMixin_onOptionsRejected)
                 
                 # Build desired connections only if track_renderer exists and has the methods
                 # Connect mixin signals (which are forwarded from panel) to track_renderer
                 desired_connections = {}
+
+                # self.options_panel.optionsChanged.connect(self.TrackOptionsPanelOwningMixin_optionsChanged)
+                # self.options_panel.onOptionsAccepted.connect(self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
+                # self.options_panel.onOptionsRejected.connect(self.TrackOptionsPanelOwningMixin_onOptionsRejected)
+
+                # if hasattr(self, 'on_options_changed'):
+                desired_connections['options_panel.optionsChanged'] = (self.options_panel.optionsChanged, self.TrackOptionsPanelOwningMixin_optionsChanged)
+                # if hasattr(self, 'on_options_accepted'):
+                desired_connections['options_panel.onOptionsAccepted'] = (self.options_panel.onOptionsAccepted, self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
+                # if hasattr(self, 'on_options_rejected'):
+                desired_connections['options_panel.onOptionsRejected'] = (self.options_panel.onOptionsRejected, self.TrackOptionsPanelOwningMixin_onOptionsRejected)
+
                 if track_renderer is not None:
                     if hasattr(track_renderer, 'on_options_changed'):
                         desired_connections['on_options_changed'] = (self.optionsChanged, track_renderer.on_options_changed)
@@ -696,19 +754,18 @@ class PyqtgraphTimeSynchronizedWidget(CrosshairsTracingMixin, PlotImageExportabl
                     if hasattr(track_renderer, 'set_options_panel'):
                         track_renderer.set_options_panel(self.options_panel)
 
-            else:
+            elif not is_eeg_spectrogram_panel and not is_eeg_fp_gfp_panel:
                 # Create basic options panel for tracks without channels
                 from pypho_timeline.widgets.track_options_panels import OptionsPanel
                 self.options_panel = OptionsPanel()
-                
-                # Forward panel signals to widget's mixin signals
-                self.options_panel.optionsChanged.connect(self.TrackOptionsPanelOwningMixin_optionsChanged)
-                self.options_panel.onOptionsAccepted.connect(self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
-                self.options_panel.onOptionsRejected.connect(self.TrackOptionsPanelOwningMixin_onOptionsRejected)
 
-                # Build desired connections only if track_renderer exists and has the methods
-                # Connect mixin signals (which are forwarded from panel) to track_renderer
+                # Build desired connections: panel → mixin, then mixin → track_renderer when present
                 desired_connections = {}
+                # Forward panel signals to widget's mixin signals
+                desired_connections['options_panel.optionsChanged'] = (self.options_panel.optionsChanged, self.TrackOptionsPanelOwningMixin_optionsChanged)
+                desired_connections['options_panel.onOptionsAccepted'] = (self.options_panel.onOptionsAccepted, self.TrackOptionsPanelOwningMixin_onOptionsAccepted)
+                desired_connections['options_panel.onOptionsRejected'] = (self.options_panel.onOptionsRejected, self.TrackOptionsPanelOwningMixin_onOptionsRejected)
+
                 if track_renderer is not None:
                     if hasattr(track_renderer, 'on_options_changed'):
                         desired_connections['on_options_changed'] = (self.optionsChanged, track_renderer.on_options_changed)

@@ -1,9 +1,9 @@
 import os
 import re
 
-from pyphoplacecellanalysis.External.pyqtgraph.GraphicsScene import GraphicsScene
-from pyphoplacecellanalysis.External.pyqtgraph.Qt import QtCore, QtWidgets
-from pyphoplacecellanalysis.External.pyqtgraph.widgets.FileDialog import FileDialog
+from pypho_timeline.EXTERNAL.pyqtgraph.GraphicsScene import GraphicsScene
+from pypho_timeline.EXTERNAL.pyqtgraph.Qt import QtCore, QtWidgets
+from pypho_timeline.EXTERNAL.pyqtgraph.widgets.FileDialog import FileDialog
 
 LastExportDirectory = None
 

@@ -3,11 +3,8 @@ import importlib
 from ...Qt import QT_LIB, QtCore, QtGui, QtWidgets
 from ...WidgetGroup import WidgetGroup
 
-# ui_template = importlib.import_module(
-#     f'.axisCtrlTemplate_{QT_LIB.lower()}', package='pyphoplacecellanalysis.External.pyqtgraph')
-
 ui_template = importlib.import_module(
-    f'.axisCtrlTemplate_{QT_LIB.lower()}', package='pyphoplacecellanalysis.External.pyqtgraph.graphicsItems.ViewBox')
+    f'.axisCtrlTemplate_{QT_LIB.lower()}', package=__package__)
 
 import weakref
 

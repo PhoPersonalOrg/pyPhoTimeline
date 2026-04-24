@@ -34,6 +34,7 @@ import pandas as pd
 import pyqtgraph as pg
 
 from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
+from phopymnehelper.helpers.dataframe_accessor_helpers import MaskedValidDataFrameAccessor
 
 logger = get_rendering_logger(__name__)
 
@@ -205,17 +206,33 @@ class ChannelNormalizationModeNormalizingMixin:
                 # if np.isfinite(y_min) and np.isfinite(y_max) and y_max > y_min:
                 #     plot_item.setYRange(y_min, y_max, padding=0.05)
     """
+    @property
+    def visible_channel_names(self) -> List[str]:
+        """The visible_channel_names computed from self._channel_visibility_state and self.channel_names."""
+        return [k for k in self.channel_names if self.channel_visibility.get(k, False)]
+
 
     def __init__(self, channel_names: Sequence[str],
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Mapping[Iterable[str], ChannelNormalizationMode]] = None,
                  arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
                  normalize: bool = True, normalize_over_full_data: bool = True,
-                 normalization_reference_df: Optional[pd.DataFrame] = None,
+                 normalization_reference_df: Optional[pd.DataFrame] = None, initial_visibility: Optional[Dict[str, bool]] = None,
                  **kwargs):
         """Initialize normalization configuration for a renderer-like class."""
         # Allow cooperative multiple inheritance
         super().__init__(**kwargs)
+
+        # Initialize visibility state (all visible by default)
+        if initial_visibility is None:
+            self.channel_visibility = {channel: True for channel in channel_names}
+        else:
+            self.channel_visibility = initial_visibility.copy()
+            # Ensure all channels are in the dict
+            for channel in channel_names:
+                if channel not in self.channel_visibility:
+                    self.channel_visibility[channel] = True
+
 
         self.channel_names: List[str] = list(channel_names)
         self.fallback_normalization_mode: ChannelNormalizationMode = fallback_normalization_mode
@@ -249,16 +266,21 @@ class ChannelNormalizationModeNormalizingMixin:
             return detail_df.iloc[0:0], (0.0, 1.0)
 
         if channel_names is None:
-            channel_names = self.channel_names
+            # channel_names = self.channel_names
+            channel_names = self.visible_channel_names
 
         # Keep only channels that actually exist in the detail frame
-        channel_list: List[str] = [c for c in channel_names if c in detail_df.columns]
+        channel_list: List[str] = sorted([c for c in channel_names if c in detail_df.columns])
         if not channel_list:
             return detail_df.iloc[0:0], (0.0, 1.0)
 
         # If we are not normalizing, just return raw values and their range
         if not self.normalize:
-            sub_df = detail_df[sorted(channel_list)].astype(float)
+            ## get masked `detail_df`
+            detail_df.masked_df.add_masking_column(mask_col='is_valid', value_cols=channel_list)
+            masked_detail_df: pd.DataFrame = detail_df.masked_df.get_masked(copy=False)
+
+            sub_df = masked_detail_df[channel_list].astype(float)
             y_min, y_max = _safe_min_max(sub_df.values)
             return sub_df, (y_min, y_max)
 
@@ -268,9 +290,13 @@ class ChannelNormalizationModeNormalizingMixin:
         else:
             ref_df = detail_df
 
+        ## get masked `ref_df`
+        ref_df.masked_df.add_masking_column(mask_col='is_valid', value_cols=channel_list)
+        masked_ref_df: pd.DataFrame = ref_df.masked_df.get_masked(copy=True)
+
         # Compute normalized values over the reference window
         normalized_ref = normalize_channels(
-            df=ref_df,
+            df=masked_ref_df,
             channel_names=channel_list,
             default_mode=self.fallback_normalization_mode,
             normalization_mode_dict=self.normalization_mode_dict,
@@ -296,17 +322,37 @@ class ChannelNormalizationModeNormalizingMixin:
 
         """
         assert (self.channel_names is not None)
+        assert (self.visible_channel_names is not None)
 
-        has_channel_items: bool = (len(self.channel_graphics_items) == len(self.channel_names))
-        plot_item_has_channel_items: bool = hasattr(plot_item, '_motion_label_items') and (getattr(plot_item, '_motion_label_items', None) is not None) and (len(plot_item._motion_label_items) == len(self.channel_names))
+        active_channel_names: List[str] = self.visible_channel_names
+
+        has_channel_items: bool = (len(self.channel_label_items) == len(active_channel_names))
+        plot_item_has_channel_items: bool = hasattr(plot_item, '_channel_label_items') and (getattr(plot_item, '_channel_label_items', None) is not None) and (len(plot_item._channel_label_items) == len(active_channel_names))
         if has_channel_items and plot_item_has_channel_items and (not force_recreate):
-            ## update existing?
             return self.channel_graphics_items, self.channel_label_items
 
-        # self.channel_graphics_items = []
-        # self.channel_label_items: List[Tuple[pg.TextItem, float]] = []
-        
-        found_channel_names: List[str] = self.channel_names
+        conn = getattr(plot_item, '_channel_label_conn', None)
+        if conn is not None:
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
+            del plot_item._channel_label_conn
+        if getattr(plot_item, '_channel_label_items', None) is not None:
+            del plot_item._channel_label_items
+        for obj in self.channel_graphics_items:
+            if obj is None:
+                continue
+            try:
+                plot_item.removeItem(obj)
+                if hasattr(obj, 'setParentItem'):
+                    obj.setParentItem(None)
+            except (AttributeError, RuntimeError):
+                pass
+        self.channel_graphics_items.clear()
+        self.channel_label_items.clear()
+
+        found_channel_names: List[str] = active_channel_names
 
         # Filter channels based on visibility if channel_visibility is set
         if hasattr(self, 'channel_visibility') and self.channel_visibility:
@@ -319,14 +365,14 @@ class ChannelNormalizationModeNormalizingMixin:
         vb = plot_item.getViewBox()
         
 
-        def _update_motion_label_positions() -> None:
+        def _update_channel_label_positions() -> None:
             left_x = vb.viewRange()[0][0]
             for label_item, y_mid in self.channel_label_items:
                 label_item.setPos(left_x, y_mid)
 
         # Plot each channel with its distinct color, grid lines at y_min/y_mid/y_max, and track label
         for i, a_found_channel_name in enumerate(found_channel_names):
-            channel_index = self.channel_names.index(a_found_channel_name)
+            channel_index = self.channel_names.index(a_found_channel_name) ## original channel index color
             channel_color = self.pen_colors[channel_index]
             y_lo = float(i) * single_channel_height
             y_mid = y_lo + 0.5 * single_channel_height
@@ -343,10 +389,10 @@ class ChannelNormalizationModeNormalizingMixin:
             plot_item.addItem(label_item)
             self.channel_graphics_items.append(label_item)
 
-        _update_motion_label_positions()
-        plot_item._motion_label_items = self.channel_label_items
-        plot_item._on_update_motion_label_positions = _update_motion_label_positions
-        plot_item._motion_label_conn = vb.sigRangeChanged.connect(plot_item._on_update_motion_label_positions)
+        _update_channel_label_positions()
+        plot_item._channel_label_items = self.channel_label_items
+        plot_item._on_update_channel_label_positions = _update_channel_label_positions
+        plot_item._channel_label_conn = vb.sigRangeChanged.connect(plot_item._on_update_channel_label_positions)
 
         return self.channel_graphics_items, self.channel_label_items
 

@@ -59,7 +59,7 @@ class Process(RemoteEventHandler):
                         is asked to quit. If you wish to specify a different target,
                         it must be picklable (bound methods are not).
         copySysPath     If True, copy the contents of sys.path to the remote process.
-                        If False, then only the path required to import pyphoplacecellanalysis.External.pyqtgraph is
+                        If False, then only the path required to import pypho_timeline.EXTERNAL.pyqtgraph is
                         added.
         debug           If True, print detailed information about communication
                         with the child process.

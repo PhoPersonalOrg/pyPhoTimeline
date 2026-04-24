@@ -3,15 +3,14 @@ from copy import deepcopy
 from PyQt5 import QtCore, QtGui
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QApplication, QVBoxLayout, QWidget
-# import pyqtgraph as pg
 import pypho_timeline.EXTERNAL.pyqtgraph as pg
 
 __all__ = ['SelectableItemMixin']
 
 class SelectableItemMixin:
     """ 
-    from pyphoplacecellanalysis.External.pyqtgraph_extensions.mixins.SelectableItemMixin import SelectableItemMixin
-    
+    from pypho_timeline.EXTERNAL.pyqtgraph_extensions.mixins.SelectableItemMixin import SelectableItemMixin
+    from pypho_timeline.EXTERNAL.pyqtgraph_extensions.mixins.SelectableItemMixin import SelectableItemMixin
     """
     sigSelectedChanged = pyqtSignal(object, bool) ## emitted when mouse is clicked. Check for event.isAccepted() to see whether the event has already been acted on.
     

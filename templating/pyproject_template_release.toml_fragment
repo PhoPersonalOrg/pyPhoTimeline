@@ -2,4 +2,4 @@
 pyphocorehelpers = { git = "https://github.com/CommanderPho/pyPhoCoreHelpers.git"}
 phopylslhelper = { git = "https://github.com/PhoPersonalOrg/phopylslhelper.git"}
 phopymnehelper = { git = "https://github.com/PhoPersonalOrg/PhoPyMNEHelper.git"}
-
+dose-analysis-python = { git = "https://github.com/CommanderPho/Dose-Analysis-Python.git", rev='origin/develop' }

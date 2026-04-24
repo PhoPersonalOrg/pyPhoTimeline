@@ -1,6 +1,6 @@
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 from qtpy import QtCore, QtGui, QtWidgets
 # from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock, DockDisplayConfig
 from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.DockArea import DockArea
@@ -12,9 +12,8 @@ class NestedDockAreaWidget(DynamicDockDisplayAreaContentMixin, QtWidgets.QWidget
     NOTE: the nesting doesn't quite work. 
     
     Usage:
-        from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
   
-        pypho_timeline.docking.nested_dock_area_widget.NestedDockAreaWidget
+        from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
         
     """
     # DynamicDockDisplayAreaContentMixin Conformance Signals _____________________________________________________________ #

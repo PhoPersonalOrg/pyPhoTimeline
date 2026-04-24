@@ -1,10 +1,10 @@
- 
 from __future__ import annotations # prevents having to specify types for typehinting as strings
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     ## typehinting only imports here
     from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import IntervalPlotDetailRenderer
+    from phopymnehelper.xdf_files import LabRecorderXDF
 
 
 """TrackDatasource and DetailRenderer protocols for timeline track rendering.
@@ -12,18 +12,63 @@ if TYPE_CHECKING:
 This module defines the protocols for datasources that provide both overview intervals
 and detailed data that can be fetched asynchronously when intervals scroll into view.
 """
-from typing import Protocol, Optional, Tuple, List, Any, Union, runtime_checkable
+from typing import Protocol, Optional, Tuple, List, Dict, Any, Union, runtime_checkable
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import numpy as np
 import pandas as pd
 from qtpy import QtCore
 
+import mne
 from pypho_timeline.rendering.datasources.interval_datasource import IntervalsDatasource
 import pyqtgraph as pg
-from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime
 from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
+from phopymnehelper.helpers.dataframe_accessor_helpers import MaskedValidDataFrameAccessor
+import phopymnehelper.type_aliases as types
 
 logger = get_rendering_logger(__name__)
+
+
+_UNCHANGED_DOWNSAMPLING = object()
+
+
+def _first_valid_scalar(series: pd.Series) -> Any:
+    valid_values = series.dropna()
+    return valid_values.iloc[0] if len(valid_values) > 0 else None
+
+
+def _series_looks_datetime(series: pd.Series) -> bool:
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return True
+    first_valid = _first_valid_scalar(series)
+    return isinstance(first_valid, (datetime, pd.Timestamp, np.datetime64))
+
+
+def _series_looks_timedelta(series: pd.Series) -> bool:
+    if pd.api.types.is_timedelta64_dtype(series):
+        return True
+    first_valid = _first_valid_scalar(series)
+    return isinstance(first_valid, (timedelta, pd.Timedelta, np.timedelta64))
+
+
+def _normalize_time_series_to_unix_seconds(series: pd.Series) -> pd.Series:
+    if _series_looks_datetime(series):
+        dt_series = pd.to_datetime(series, utc=True, errors='coerce')
+        normalized_series = pd.Series(np.nan, index=series.index, dtype=float)
+        valid_mask = dt_series.notna()
+        normalized_series.loc[valid_mask] = (dt_series.loc[valid_mask].astype('int64') / 1e9).astype(float)
+        return normalized_series
+    return pd.to_numeric(series, errors='coerce').astype(float)
+
+
+def _normalize_duration_series_to_seconds(series: pd.Series) -> pd.Series:
+    if _series_looks_timedelta(series):
+        td_series = pd.to_timedelta(series, errors='coerce')
+        normalized_series = pd.Series(np.nan, index=series.index, dtype=float)
+        valid_mask = td_series.notna()
+        normalized_series.loc[valid_mask] = td_series.loc[valid_mask].dt.total_seconds().astype(float)
+        return normalized_series
+    return pd.to_numeric(series, errors='coerce').astype(float)
 
 
 
@@ -380,19 +425,22 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """
         super().__init__(parent=parent)
         self._detail_renderer = detail_renderer
+        intervals_df = intervals_df.copy()
+        if 't_start' in intervals_df.columns:
+            intervals_df['t_start'] = _normalize_time_series_to_unix_seconds(intervals_df['t_start'])
+        if 't_duration' in intervals_df.columns:
+            intervals_df['t_duration'] = _normalize_duration_series_to_seconds(intervals_df['t_duration'])
+        if 't_end' in intervals_df.columns:
+            intervals_df['t_end'] = _normalize_time_series_to_unix_seconds(intervals_df['t_end'])
+        elif ('t_start' in intervals_df.columns) and ('t_duration' in intervals_df.columns):
+            intervals_df['t_end'] = intervals_df['t_start'] + intervals_df['t_duration']
+
+        if detailed_df is not None:
+            detailed_df = detailed_df.copy()
+            if 't' in detailed_df.columns:
+                detailed_df['t'] = _normalize_time_series_to_unix_seconds(detailed_df['t'])
         
         self.detailed_df = detailed_df
-        
-        if ('t_start_dt' not in intervals_df) or ('t_end_dt' not in intervals_df):
-            intervals_df['t_start_dt'] = intervals_df['t_start'].map(lambda x: unix_timestamp_to_datetime(x))
-            if 't_end' in intervals_df.columns:
-                intervals_df['t_end_dt'] = intervals_df['t_end'].map(lambda x: unix_timestamp_to_datetime(x))
-            elif 't_duration' in intervals_df.columns:
-                intervals_df['t_end_dt'] = intervals_df['t_start_dt'] + pd.to_timedelta(intervals_df['t_duration'], unit='s')
-            else:
-                raise ValueError("intervals_df must have either 't_end' or 't_duration' to compute t_end_dt")
-            # Change column type to datetime64[ns] for columns: 't_start_dt', 't_end_dt' -- this is so they can be matched against `detailed_df['t']`
-            intervals_df = intervals_df.astype({'t_start_dt': 'datetime64[ns]', 't_end_dt': 'datetime64[ns]'})
 
         self.intervals_df = intervals_df.copy()
         
@@ -494,6 +542,41 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """Get overview intervals."""
         return self.intervals_df
     
+    @property
+    def num_intervals(self) -> int:
+        """The num_sessions property."""
+        return len(self.get_overview_intervals())
+
+
+    def set_downsampling(self, max_points_per_second: Any = _UNCHANGED_DOWNSAMPLING, enable_downsampling: Any = _UNCHANGED_DOWNSAMPLING, *, emit_changed: bool = True) -> bool:
+        """Update runtime downsampling settings and optionally emit a refresh signal.
+
+        Returns:
+            True when at least one setting changed.
+
+        Usage:
+            timeline.track_datasources['EEG_Stream'].set_downsampling(max_points_per_second=50.0)
+            timeline.track_datasources['EEG_Stream'].set_downsampling(enable_downsampling=False, max_points_per_second=None)
+        """
+        did_change = False
+
+        if max_points_per_second is not _UNCHANGED_DOWNSAMPLING:
+            normalized_max_points_per_second = None if max_points_per_second is None else float(max_points_per_second)
+            if self.max_points_per_second != normalized_max_points_per_second:
+                self.max_points_per_second = normalized_max_points_per_second
+                did_change = True
+
+        if enable_downsampling is not _UNCHANGED_DOWNSAMPLING:
+            normalized_enable_downsampling = bool(enable_downsampling)
+            if self.enable_downsampling != normalized_enable_downsampling:
+                self.enable_downsampling = normalized_enable_downsampling
+                did_change = True
+
+        if did_change and emit_changed:
+            self.source_data_changed_signal.emit()
+
+        return did_change
+
 
     def fetch_detailed_data(self, interval: pd.Series) -> pd.DataFrame:
         """Fetch position data for an interval with optional downsampling.
@@ -501,121 +584,21 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         """
         if self.detailed_df is None:
             return pd.DataFrame()  # Return empty DataFrame if no position data available
-        
-        t_start_col_name: str = 't_start_dt'
-        t_end_col_name: str = 't_end_dt'
 
-
-        # t_start = interval['t_start']
-        t_start = interval[t_start_col_name]        
-        t_end = interval[t_end_col_name]
-
-        # Check if using datetime in intervals_df
-        intervals_is_datetime = pd.api.types.is_datetime64_any_dtype(self.intervals_df[t_start_col_name])
-        
-        # Check if detailed_df 't' column is datetime
-        detailed_is_datetime = False
-        if 't' in self.detailed_df.columns:
-            detailed_is_datetime = pd.api.types.is_datetime64_any_dtype(self.detailed_df['t'])
-        
-        # # Calculate t_end based on intervals_df type
-        # if intervals_is_datetime:
-        #     t_end = t_start + pd.to_timedelta(interval['t_duration'], unit='s')
-        # else:
-        #     t_end = t_start + interval['t_duration']
-
-        
-        # Ensure t_start and t_end match the dtype of detailed_df['t'] for comparison
-        if 't' in self.detailed_df.columns:
-            # if detailed_is_datetime:
-            #     # Check if detailed_df['t'] is timezone-aware and get its timezone
-            #     detailed_tz = None
-            #     detailed_tz_aware = False
-            #     # Check dtype first (for DatetimeTZDtype)
-            #     if hasattr(self.detailed_df['t'].dtype, 'tz') and self.detailed_df['t'].dtype.tz is not None:
-            #         detailed_tz = self.detailed_df['t'].dtype.tz
-            #         detailed_tz_aware = True
-            #     else:
-            #         # Check by sampling a value (for regular datetime64 that might have timezone-aware values)
-            #         try:
-            #             if len(self.detailed_df) > 0:
-            #                 sample_val = self.detailed_df['t'].iloc[0]
-            #                 if isinstance(sample_val, pd.Timestamp) and sample_val.tz is not None:
-            #                     detailed_tz = sample_val.tz
-            #                     detailed_tz_aware = True
-            #         except (IndexError, AttributeError, TypeError):
-            #             pass
-                
-            #     # Convert t_start and t_end to datetime if they're not already
-            #     if not isinstance(t_start, (datetime, pd.Timestamp)):
-            #         if isinstance(t_start, (int, float)):
-            #             if detailed_tz_aware and detailed_tz is not None:
-            #                 t_start = pd.Timestamp.fromtimestamp(t_start, tz=detailed_tz)
-            #             else:
-            #                 t_start = pd.Timestamp.fromtimestamp(t_start)
-            #         else:
-            #             t_start = pd.Timestamp(t_start)
-            #             # After conversion, ensure timezone matches
-            #             if detailed_tz_aware and detailed_tz is not None:
-            #                 if t_start.tzinfo is None:
-            #                     t_start = t_start.tz_localize(detailed_tz)
-            #                 elif t_start.tzinfo != detailed_tz:
-            #                     t_start = t_start.tz_convert(detailed_tz)
-            #             else:
-            #                 if t_start.tzinfo is not None:
-            #                     t_start = t_start.tz_convert('UTC').tz_localize(None)
-            #     else:
-            #         # Ensure timezone awareness matches detailed_df
-            #         if detailed_tz_aware and detailed_tz is not None:
-            #             if t_start.tzinfo is None:
-            #                 t_start = t_start.tz_localize(detailed_tz)
-            #             elif t_start.tzinfo != detailed_tz:
-            #                 t_start = t_start.tz_convert(detailed_tz)
-            #         else:
-            #             if t_start.tzinfo is not None:
-            #                 # Convert to UTC then remove timezone to make it naive
-            #                 t_start = t_start.tz_convert('UTC').tz_localize(None)
-                
-            #     if not isinstance(t_end, (datetime, pd.Timestamp)):
-            #         if isinstance(t_end, (int, float)):
-            #             if detailed_tz_aware and detailed_tz is not None:
-            #                 t_end = pd.Timestamp.fromtimestamp(t_end, tz=detailed_tz)
-            #             else:
-            #                 t_end = pd.Timestamp.fromtimestamp(t_end)
-            #         else:
-            #             t_end = pd.Timestamp(t_end)
-            #             # After conversion, ensure timezone matches
-            #             if detailed_tz_aware and detailed_tz is not None:
-            #                 if t_end.tzinfo is None:
-            #                     t_end = t_end.tz_localize(detailed_tz)
-            #                 elif t_end.tzinfo != detailed_tz:
-            #                     t_end = t_end.tz_convert(detailed_tz)
-            #             else:
-            #                 if t_end.tzinfo is not None:
-            #                     t_end = t_end.tz_convert('UTC').tz_localize(None)
-            #     else:
-            #         # Ensure timezone awareness matches detailed_df
-            #         if detailed_tz_aware and detailed_tz is not None:
-            #             if t_end.tzinfo is None:
-            #                 t_end = t_end.tz_localize(detailed_tz)
-            #             elif t_end.tzinfo != detailed_tz:
-            #                 t_end = t_end.tz_convert(detailed_tz)
-            #         else:
-            #             if t_end.tzinfo is not None:
-            #                 # Convert to UTC then remove timezone to make it naive
-            #                 t_end = t_end.tz_convert('UTC').tz_localize(None)
-            # else:
-            #     # Convert t_start and t_end to float if they're datetime
-            #     if isinstance(t_start, (datetime, pd.Timestamp)):
-            #         t_start = t_start.timestamp() if hasattr(t_start, 'timestamp') else pd.Timestamp(t_start).timestamp()
-            #     if isinstance(t_end, (datetime, pd.Timestamp)):
-            #         t_end = t_end.timestamp() if hasattr(t_end, 'timestamp') else pd.Timestamp(t_end).timestamp()
-            
-            mask = (self.detailed_df['t'] >= t_start) & (self.detailed_df['t'] < t_end)
-        else:
+        if 't' not in self.detailed_df.columns:
             mask = pd.Series([False] * len(self.detailed_df))
+        else:
+            t_start = interval.get('t_start', 0.0)
+            t_duration = interval.get('t_duration', 0.0)
+            t_end = interval.get('t_end', float(t_start) + float(t_duration))
+            if isinstance(t_start, (datetime, pd.Timestamp)):
+                t_start = _normalize_time_series_to_unix_seconds(pd.Series([t_start])).iloc[0]
+            if isinstance(t_end, (datetime, pd.Timestamp)):
+                t_end = _normalize_time_series_to_unix_seconds(pd.Series([t_end])).iloc[0]
+            mask = (self.detailed_df['t'] >= float(t_start)) & (self.detailed_df['t'] < float(t_end))
         
         result_df = self.detailed_df[mask].copy()
+        result_df = self._post_slice_detailed_dataframe(result_df, interval)
         
         # Apply downsampling if enabled
         if self.enable_downsampling and (self.max_points_per_second is not None) and (len(result_df) > 0):
@@ -636,6 +619,12 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
 
         print(f'result_df')
         return result_df
+
+
+    def _post_slice_detailed_dataframe(self, result_df: pd.DataFrame, interval: pd.Series) -> pd.DataFrame:
+        """Hook for subclasses to filter rows after interval slice and before downsampling."""
+        return result_df.masked_df.get_masked(copy=True)
+        # return result_df
     
 
     def get_detail_renderer(self):
@@ -655,85 +644,7 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
             
     def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
         """Get cache key for interval (single-row DataFrame or Series)."""
-        if isinstance(interval, pd.DataFrame):
-            interval = interval.iloc[0]
-        active_t_start = None
-        t_start_dt = interval.get('t_start_dt', interval.iloc[0] if 't_start_dt' in interval.index else None)
-        active_t_start = t_start_dt
-        if t_start_dt is None:
-            t_start = interval.get('t_start', interval.iloc[0] if 't_start' in interval.index else None)
-            active_t_start = t_start
-        t_duration = interval.get('t_duration', interval.iloc[0] if 't_duration' in interval.index else None)
-        
-        assert active_t_start is not None
-        # Convert pandas scalars/numpy types to Python native types
-        # This is critical for proper type checking and formatting
-        if hasattr(active_t_start, 'item'):
-            try:
-                active_t_start = active_t_start.item()
-            except (ValueError, AttributeError):
-                pass  # Not a scalar, keep as-is
-        if hasattr(t_duration, 'item'):
-            try:
-                t_duration = t_duration.item()
-            except (ValueError, AttributeError):
-                pass  # Not a scalar, keep as-is
-        
-        # Handle datetime objects in cache key - check datetime types first
-        t_start_str = None
-        try:
-            # Check if it's a datetime/Timestamp
-            if isinstance(active_t_start, (datetime, pd.Timestamp)):
-                timestamp_value = active_t_start.timestamp()
-                # t_start_str = f"{timestamp_value:.3f}"
-                t_start_str = str(timestamp_value)
-            else:
-                # Try to convert to Timestamp (handles string dates, numpy datetime64, etc.)
-                try:
-                    ts = pd.Timestamp(active_t_start)
-                    # t_start_str = f"{ts.timestamp():.3f}"
-                    t_start_str = str(ts.timestamp())
-                except (ValueError, TypeError, AttributeError):
-                    # Not a datetime, try as numeric
-                    try:
-                        t_start_float = float(active_t_start)
-                        # t_start_str = f"{t_start_float:.3f}"
-                        t_start_str = str(t_start_float)
-                    except (ValueError, TypeError):
-                        # Last resort: use string representation
-                        t_start_str = str(active_t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
-        except Exception as e:
-            # Ultimate fallback
-            logger.error(f"Error formatting t_start for cache key: {active_t_start} (type: {type(active_t_start)}), error: {e}")
-            t_start_str = str(active_t_start).replace(' ', '_').replace(':', '-').replace('/', '-')
-        
-        # Handle duration/timedelta objects
-        t_duration_str = None
-        try:
-            if isinstance(t_duration, timedelta):
-                t_duration_str = f"{t_duration.total_seconds()}"
-            elif isinstance(t_duration, pd.Timedelta):
-                t_duration_str = f"{t_duration.total_seconds()}"
-            else:
-                # Try to convert to Timedelta (handles string durations, numpy timedelta64, etc.)
-                try:
-                    td = pd.Timedelta(t_duration)
-                    t_duration_str = f"{td.total_seconds()}"
-                except (ValueError, TypeError, AttributeError):
-                    # Not a timedelta, try as numeric
-                    try:
-                        t_duration_float = float(t_duration)
-                        t_duration_str = f"{t_duration_float}"
-                    except (ValueError, TypeError):
-                        # Last resort: use string representation
-                        t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
-        except Exception as e:
-            # Ultimate fallback
-            logger.error(f"Error formatting t_duration for cache key: {t_duration} (type: {type(t_duration)}), error: {e}")
-            t_duration_str = str(t_duration).replace(' ', '_').replace(':', '-').replace('/', '-')
-        
-        result_key = f"{self.custom_datasource_name}_{t_start_str}_{t_duration_str}"
-        return result_key
+        return super().get_detail_cache_key(interval)
 
 
     @classmethod
@@ -775,5 +686,432 @@ class IntervalProvidingTrackDatasource(BaseTrackDatasource):
         )
 
 
-__all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource', 'IntervalProvidingTrackDatasource']
+class RawProvidingTrackDatasource(IntervalProvidingTrackDatasource):
+    """A TrackDatasource that holds access to raw MNE objects.
+
+    Inherits from IntervalProvidingTrackDatasource and implements all required methods for
+    displaying position data with async detail loading. Subclasses may implement
+    :meth:`try_extract_raw_datasets_dict` to populate ``raw_datasets_dict`` from
+    :attr:`lab_obj_dict` when the caller passes ``raw_datasets_dict=None``.
+    """
+    def __init__(self, intervals_df: pd.DataFrame, detailed_df: Optional[pd.DataFrame]=None, custom_datasource_name: Optional[str]=None, detail_renderer: Optional[IntervalPlotDetailRenderer]=None,
+            max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
+            lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None,
+            parent: Optional[QtCore.QObject] = None,
+        ):
+        """Initialize with position data and intervals.
+        
+        Args:
+            intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
+            detailed_df: DataFrame with columns ['t'] and data columns (optional)
+            custom_datasource_name: Custom name for this datasource (optional)
+            detail_renderer: Custom detail renderer (optional)
+            max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
+            enable_downsampling: Whether to enable downsampling. Default: True
+            lab_obj_dict: Map of source id (e.g. XDF filename) to optional LabRecorderXDF for that file.
+            raw_datasets_dict: Map of source id to optional list of MNE Raw objects for that source.
+                If ``None``, :meth:`try_extract_raw_datasets_dict` is used (subclass-specific).
+        """
+        if custom_datasource_name is None:
+            custom_datasource_name = "GenericRawProvidingTrack"
+        super().__init__(intervals_df, detailed_df=detailed_df, custom_datasource_name=custom_datasource_name, detail_renderer=detail_renderer,
+                            max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, parent=parent)
+        self._lab_obj_dict = dict(lab_obj_dict) if lab_obj_dict is not None else {}
+        self._raw_datasets_dict = raw_datasets_dict
+        if self._raw_datasets_dict is None:
+            self._raw_datasets_dict = self.try_extract_raw_datasets_dict()
+
+
+    def try_extract_raw_datasets_dict(self) -> Optional[Dict[str, Optional[List[Any]]]]:
+        """Build per-source raw lists from :attr:`lab_obj_dict`; base returns ``None``."""
+        return None
+
+
+    @property
+    def lab_obj_dict(self) -> Dict[str, Optional[LabRecorderXDF]]:
+        """Map of source id (e.g. XDF basename) to optional LabRecorderXDF for that file."""
+        return self._lab_obj_dict
+    @lab_obj_dict.setter
+    def lab_obj_dict(self, value: Optional[Dict[str, Optional[LabRecorderXDF]]]):
+        self._lab_obj_dict = dict(value) if value is not None else {}
+
+
+    @property
+    def raw_datasets_dict(self) -> Optional[Dict[str, Optional[List[mne.io.Raw]]]]:
+        """Map of source id to optional list of MNE Raw objects; None if never set."""
+        return self._raw_datasets_dict
+    @raw_datasets_dict.setter
+    def raw_datasets_dict(self, value: Optional[Dict[str, Optional[List[mne.io.Raw]]]]):
+        self._raw_datasets_dict = value
+
+
+    @classmethod
+    def _flatten_raw_lists_from_dict(cls, raw_datasets_dict: Optional[Dict[str, Optional[List[Any]]]]) -> List[Any]:
+        if not raw_datasets_dict:
+            return []
+        out: List[Any] = []
+        for _k in sorted(raw_datasets_dict.keys(), key=lambda x: str(x)):
+            v = raw_datasets_dict[_k]
+            if v:
+                out.extend(v)
+        return out
+
+
+    @classmethod
+    def _sort_raws_by_meas_start(cls, raws: Union[List[Any], Dict[str, Any]]) -> Union[List[Any], Dict[str, Any]]:
+        """ sorts the list of raws by the meas start """
+        def _key(x):
+            # allow either raw or (key, raw)
+            r = x[1] if isinstance(x, tuple) and len(x) == 2 else x
+
+            if isinstance(r, dict):
+                tr_m = r.get("raw_timerange")
+                info = r.get("info")
+            else:
+                tr_m = getattr(r, "raw_timerange", None)
+                info = r.info if hasattr(r, "info") else None
+
+            start = None
+
+            if callable(tr_m):
+                try:
+                    start, _end = tr_m()
+                except Exception:
+                    start = None
+
+            if start is None and info is not None:
+                if hasattr(info, "get"):
+                    start = info.get("meas_date")
+                else:
+                    try:
+                        start = info["meas_date"]
+                    except (TypeError, KeyError):
+                        start = None
+
+            if start is None:
+                return True, datetime.max.replace(tzinfo=timezone.utc)
+
+            if getattr(start, "tzinfo", None) is None:
+                start = start.replace(tzinfo=timezone.utc)
+
+            return False, start
+
+        # --- only real change is here ---
+        if isinstance(raws, dict):
+            return dict(sorted(raws.items(), key=_key))
+        else:
+            return sorted(raws, key=_key)
+
+
+    @classmethod
+    def get_sorted_and_extracted_raws(cls, raw_datasets_dict):
+        return cls._sort_raws_by_meas_start(cls._flatten_raw_lists_from_dict(raw_datasets_dict))
+
+    
+    @classmethod
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: Optional[List[pd.DataFrame]] = None, custom_datasource_name: Optional[str] = None, detail_renderer: Optional['DetailRenderer'] = None,
+                            max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True,
+                            lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, **kwargs) -> 'IntervalProvidingTrackDatasource':
+        """Create an IntervalProvidingTrackDatasource by merging data from multiple sources.
+        
+        Args:
+            intervals_dfs: List of interval DataFrames to merge (each with columns ['t_start', 't_duration'])
+            detailed_dfs: Optional list of detailed DataFrames to merge (each with column 't' and data columns)
+            custom_datasource_name: Custom name for this datasource (optional)
+            detail_renderer: Custom detail renderer (optional)
+            max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
+            enable_downsampling: Whether to enable downsampling. Default: True
+            
+        Returns:
+            IntervalProvidingTrackDatasource instance with merged data
+        """
+        if not intervals_dfs:
+            raise ValueError("intervals_dfs list cannot be empty")
+        
+        # Merge intervals
+        merged_intervals_df = pd.concat(intervals_dfs, ignore_index=True).sort_values('t_start')
+        
+        # Merge detailed data if provided
+        merged_detailed_df = None
+        if detailed_dfs:
+            filtered_detailed_dfs = [df for df in detailed_dfs if df is not None and len(df) > 0]
+            if filtered_detailed_dfs:
+                merged_detailed_df = pd.concat(filtered_detailed_dfs, ignore_index=True).sort_values('t')
+        
+        # Create instance with merged data
+        return cls(
+            intervals_df=merged_intervals_df,
+            detailed_df=merged_detailed_df,
+            custom_datasource_name=custom_datasource_name,
+            detail_renderer=detail_renderer,
+            max_points_per_second=max_points_per_second,
+            enable_downsampling=enable_downsampling,
+            lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict, **kwargs
+        )
+
+
+    @property
+    def earliest_unix_timestamp(self)-> Optional[float]:
+        """ gets the earliest timestamp for this datasource in the unix_timestamp format 
+
+        t0: float = eeg_ds.earliest_unix_timestamp
+        """
+        if self.detailed_df is None:
+            return None
+
+        detailed_df: pd.DataFrame = self.detailed_df.sort_values("t").reset_index(drop=True)
+        _t = detailed_df['t']
+        # print(f"type(_t): {type(_t)}, t: {_t}")
+        if pd.api.types.is_datetime64_any_dtype(_t):
+            t0 = float(pd.to_datetime(_t, utc=True, errors="coerce").astype(np.int64).iloc[0] / 1e9)
+        else:
+            t0 = float(pd.to_numeric(_t, errors="coerce").iloc[0])
+        # print(f'\tt0: {t0}')
+        ## OUTPUTS: t0
+        return t0
+
+
+
+    def export_all_to_EDF(self, xdf_to_exported_EDF_parent_export_path: Path) -> List[Path]:
+        """2026-04-15 - Export loaded sessions to EDF for analysis in other apps
+        Exports the `self.raw_datasets_dict` to separate .EDF files
+
+
+        exported_edf_paths: List[Path] = eeg_ds.export_all_to_EDF(xdf_to_exported_EDF_parent_export_path=xdf_to_exported_EDF_parent_export_path)
+        exported_edf_paths
+
+        """
+        import mne
+
+        ## INPUTS: xdf_to_exported_EDF_parent_export_path
+        assert xdf_to_exported_EDF_parent_export_path is not None
+        # xdf_to_exported_EDF_parent_export_path = sso.eeg_analyzed_parent_export_path
+        flat_raws: List[mne.io.Raw] = self._flatten_raw_lists_from_dict(self.raw_datasets_dict)
+        edf_export_parent_path: Path = xdf_to_exported_EDF_parent_export_path.resolve() # .joinpath("exported_EDF")
+        edf_export_parent_path.mkdir(exist_ok=True, parents=True)
+
+        exported_edf_paths: List[Path] = []
+        for raw_idx, a_raw in enumerate(flat_raws):
+            source_stem = None
+            raw_description = a_raw.info.get("description")
+            if raw_description:
+                try:
+                    source_stem = Path(str(raw_description)).stem
+                except Exception:
+                    source_stem = None
+
+            if not source_stem:
+                raw_filenames = getattr(a_raw, "filenames", None)
+                if raw_filenames and raw_filenames[0]:
+                    source_stem = Path(str(raw_filenames[0])).stem
+
+            if not source_stem:
+                source_stem = f"session_{raw_idx:03d}"
+
+            curr_file_edf_path: Path = edf_export_parent_path.joinpath(f"{source_stem}.edf").resolve()
+            exported_edf_paths.append(a_raw.save_to_edf(output_path=curr_file_edf_path))
+
+        ## END for raw_idx, a_raw in enumerate(flat_raws)....
+
+        print(f"Exported {len(exported_edf_paths)} EDF file(s) to: {edf_export_parent_path}")
+        return exported_edf_paths
+
+
+
+
+class ComputableDatasourceMixin:
+    """ implementors are able to recompute their results when a property changes
+
+    from pypho_timeline.rendering.datasources.track_datasource import ComputableDatasourceMixin
+    from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
+
+    """
+    sigSourceComputeStarted = QtCore.Signal()
+    sigSourceComputeFinished = QtCore.Signal(bool)
+
+    @property
+    def computed_result(self) -> Dict[types.EEGComputationId, Any]:
+        """The result computed this sources .compute(...) function."""
+        return self._computed_result
+    @computed_result.setter
+    def computed_result(self, value: Dict[types.EEGComputationId, Any]):
+        self._computed_result = value
+
+
+    @property
+    def eeg_comps_flat_concat_dict(self):
+        """The eeg_comps_flat_concat_dict property."""
+        return self.computed_result.get('eeg_comps_flat_concat_dict', None)
+    @eeg_comps_flat_concat_dict.setter
+    def eeg_comps_flat_concat_dict(self, value):
+        self._eeg_comps_flat_concat_dict = value
+
+    def ComputableDatasourceMixin_on_init(self):
+        """ perform any parameters setting/checking during init """
+        self._computed_result = {} ## init to a dictionary
+
+
+    def ComputableDatasourceMixin_on_setup(self):
+        """ perform setup/creation of widget/graphical/data objects. Only the core objects are expected to exist on the implementor (root widget, etc) """
+        pass
+
+
+    def ComputableDatasourceMixin_on_buildUI(self):
+        """ perform setup/creation of widget/graphical/data objects. Only the core objects are expected to exist on the implementor (root widget, etc) """
+        pass
+    
+
+    def ComputableDatasourceMixin_on_destroy(self):
+        """ perform teardown/destruction of anything that needs to be manually removed or released """
+        self.clear_computed_result()
+
+
+    def clear_computed_result(self):
+        print(f'clear_computed_result()')
+        self.computed_result.clear()
+
+
+    def compute(self, **kwargs):
+        """ a function to perform recomputation of the datasource properties at runtime 
+
+        datasource: EEGSpectrogramTrackDatasource
+        datasource = self
+
+        from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
+
+        active_compute_goals_list = ("time_independent_bad_channels", "bad_epochs",)
+        eeg_comps_flat_concat_dict = self.computed_result
+        for a_specific_computed_goal_name in active_compute_goals_list:
+            if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+                eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = [] ## create a list
+
+
+        for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items():
+            if eeg_raw_list is not None:
+                for eeg_raw in eeg_raw_list:
+                    if eeg_raw is not None:
+                        # if a_sess_xdf_filename not in eeg_comps_results_dict:
+                        #     eeg_comps_results_dict[a_sess_xdf_filename] = []
+
+                        ## do the computation:
+                        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=active_compute_goals_list)
+                        # eeg_comps_results_dict[a_sess_xdf_filename].append(eeg_comps_result) ## append to the result
+
+                        for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+                            if a_specific_computed_value is not None:
+                                if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+                                    eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = []
+                                eeg_comps_flat_concat_dict[a_specific_computed_goal_name].append(a_specific_computed_value)
+
+        ## END for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items()...
+
+        ## OUTPUTS: eeg_comps_flat_concat_dict
+
+
+
+        """
+        raise NotImplementedError(f'Implementors must override to perform their computations')
+
+        self.clear_computed_result()
+        self.sigSourceComputeStarted.emit()
+
+        active_compute_goals_list = ("time_independent_bad_channels", "bad_epochs",)
+        eeg_comps_flat_concat_dict = self.computed_result
+        for a_specific_computed_goal_name in active_compute_goals_list:
+            if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+                eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = [] ## create a list
+
+
+        for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items():
+            if eeg_raw_list is not None:
+                for eeg_raw in eeg_raw_list:
+                    if eeg_raw is not None:
+                        # if a_sess_xdf_filename not in eeg_comps_results_dict:
+                        #     eeg_comps_results_dict[a_sess_xdf_filename] = []
+
+                        ## do the computation:
+                        eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=active_compute_goals_list)
+                        # eeg_comps_results_dict[a_sess_xdf_filename].append(eeg_comps_result) ## append to the result
+
+                        ## do basic extraction from result here either way:
+                        for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+                            if a_specific_computed_value is not None:
+                                if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+                                    eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = []
+                                eeg_comps_flat_concat_dict[a_specific_computed_goal_name].append(a_specific_computed_value)
+
+        ## END for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items()...
+
+        ## OUTPUTS: eeg_comps_flat_concat_dict
+        self.on_compute_finished()
+
+
+    def on_compute_finished(self, **kwargs):
+        """ called to indicate that a recompute is finished """
+        print(f'on_compute_finished()')
+
+
+
+    def extract_all_datasets_results(self, eeg_comps_results_dict: Dict[types.xdf_file_name, List]) -> Dict[types.EEGComputationId, Any]:
+        """ PURE: doesn't alter self
+
+        """
+        # eeg_comps_results_dict: Dict[types.xdf_file_name, Dict] = {}
+
+        eeg_comps_flat_concat_dict: Dict[types.EEGComputationId, Any] = {} ## A dict with keys like {"time_independent_bad_channels": {}, "bad_epochs": {}}
+
+        for a_sess_xdf_filename, a_sess_comps_results_list in eeg_comps_results_dict.items():
+            if a_sess_comps_results_list is None:
+                continue
+            for eeg_comps_result in a_sess_comps_results_list:
+                if eeg_comps_result is None:
+                    continue
+                ## main extract from result
+                if isinstance(eeg_comps_result, dict):
+                    for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+                        if a_specific_computed_value is None:
+                            continue
+                        if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+                            eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = []
+                        eeg_comps_flat_concat_dict[a_specific_computed_goal_name].append(a_specific_computed_value)
+                else:
+                    print(f'WARN')
+
+        ## END for a_sess_xdf_filename, a_sess_comps_results_list in eeg_comps_results_dict.items()...
+        return eeg_comps_flat_concat_dict
+
+        # for a_sess_xdf_filename, eeg_raw_list in self.raw_datasets_dict.items():
+        #     if eeg_raw_list is not None:
+        #         for eeg_raw in eeg_raw_list:
+        #             if eeg_raw is not None:
+        #                 eeg_comps_result = run_eeg_computations_graph(eeg_raw, session=session_fingerprint_for_raw_or_path(eeg_raw), goals=("time_independent_bad_channels", "bad_epochs",))
+        #                 if a_sess_xdf_filename not in eeg_comps_results_dict:
+        #                     eeg_comps_results_dict[a_sess_xdf_filename] = []
+        #                 eeg_comps_results_dict[a_sess_xdf_filename].append(eeg_comps_result)
+        #                 for a_specific_computed_goal_name, a_specific_computed_value in eeg_comps_result.items():
+        #                     if a_specific_computed_value is not None:
+        #                         if a_specific_computed_goal_name not in eeg_comps_flat_concat_dict:
+        #                             eeg_comps_flat_concat_dict[a_specific_computed_goal_name] = []
+        #                         eeg_comps_flat_concat_dict[a_specific_computed_goal_name].append(a_specific_computed_value)
+
+        #                 # time_independent_bad_channels = eeg_comps_result["time_independent_bad_channels"]
+        #                 # bad_epochs = eeg_comps_result["bad_epochs"]
+        #                 # time_independent_bad_channels
+        #                 # bad_epochs
+
+        #                 # bad_epoch_intervals_rel = bad_epochs['bad_epoch_intervals_rel']
+        #                 # bad_epoch_intervals_df: pd.DataFrame = pd.DataFrame(bad_epoch_intervals_rel, columns=['start_t_rel', 'end_t_rel'])
+        #                 # t_col_names: str = ['start_t', 'end_t']
+        #                 # for a_t_col in t_col_names:
+        #                 #     bad_epoch_intervals_df[a_t_col] = bad_epoch_intervals_df[f'{a_t_col}_rel'] + t0
+
+        # ## OUTPUTS: eeg_comps_flat_concat_dict
+        # return eeg_comps_flat_concat_dict
+
+
+
+
+
+
+__all__ = ['TrackDatasource', 'DetailRenderer', 'BaseTrackDatasource', 'IntervalProvidingTrackDatasource', 'RawProvidingTrackDatasource']
 

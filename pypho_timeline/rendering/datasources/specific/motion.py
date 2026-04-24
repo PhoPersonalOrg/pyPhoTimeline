@@ -1,7 +1,10 @@
+from __future__ import annotations
+
+import hashlib
 import numpy as np
 import pandas as pd
 from qtpy import QtCore
-from typing import Dict, List, Tuple, Optional, Callable, Union, Any, Sequence, Mapping
+from typing import Dict, List, Tuple, Optional, Callable, Union, Any, Sequence, Mapping, TYPE_CHECKING
 from datetime import datetime
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 # import pyqtgraph as pg
@@ -12,12 +15,28 @@ from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 # from pypho_timeline.core.pyqtgraph_time_synchronized_widget import PyqtgraphTimeSynchronizedWidget
 # from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsItem, IntervalRectsItemData
 import pyqtgraph as pg
-from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, IntervalProvidingTrackDatasource, DetailRenderer
+from phopymnehelper.helpers.dataframe_accessor_helpers import CommonDataFrameAccessorMixin
+from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, RawProvidingTrackDatasource, DetailRenderer
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import GenericPlotDetailRenderer
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode, ChannelNormalizationModeNormalizingMixin
+from phopymnehelper.motion_data import MotionData, MotionDataFrame, BadMotionDataFrame
+from phopymnehelper.SavedSessionsProcessor import DataModalityType
+import phopymnehelper.type_aliases as types
 
 from pypho_timeline.utils.logging_util import get_rendering_logger
 logger = get_rendering_logger(__name__)
+
+if TYPE_CHECKING:
+    import mne
+    from phopymnehelper.xdf_files import LabRecorderXDF
+
+try:
+    from pyqtgraph.graphicsItems.LinearRegionItem import LinearRegionItem
+except ImportError:
+    LinearRegionItem = pg.LinearRegionItem
+
+
+
 
 # ==================================================================================================================================================================================================================================================================================== #
 # MotionPlotDetailRenderer - Renders motion data as line plots.                                                                                                                                                                                                                              #
@@ -41,6 +60,7 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
                  arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
                  normalize: bool = True, normalize_over_full_data: bool = True,
                  normalization_reference_df: Optional[pd.DataFrame] = None,
+                 bad_intervals_unix_df: Optional[pd.DataFrame] = None, bad_overlay_alpha: float = 0.9,
                  **kwargs,
                  ):
         """Initialize the motion plot renderer.
@@ -49,6 +69,8 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
             pen_width: Width of the plot lines (default: 2)
             channel_names: List of channel names to plot (default: ['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'])
             pen_colors: Optional list of colors for each channel (default: None, auto-generated)
+            bad_intervals_unix_df: Optional DataFrame with columns t_start, t_duration (Unix seconds); vertical dark overlays
+            bad_overlay_alpha: Opacity of bad-interval fill (default 0.9 = 90% opaque black)
         """
         ChannelNormalizationModeNormalizingMixin.__init__(self, channel_names=channel_names, fallback_normalization_mode=fallback_normalization_mode, normalization_mode_dict=normalization_mode_dict, arbitrary_bounds=arbitrary_bounds,
                                                          normalize=normalize, normalize_over_full_data=normalize_over_full_data, normalization_reference_df=normalization_reference_df)
@@ -58,6 +80,8 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         self.pen_colors = pen_colors
         self.pen_width = pen_width
         self.channel_names = channel_names
+        self.bad_intervals_unix_df = bad_intervals_unix_df if bad_intervals_unix_df is not None else pd.DataFrame(columns=['t_start', 't_duration'])
+        self.bad_overlay_alpha = float(bad_overlay_alpha)
         # self.fallback_normalization_mode = fallback_normalization_mode
         # self.normalization_mode_dict = normalization_mode_dict
         # self.arbitrary_bounds = arbitrary_bounds
@@ -132,12 +156,23 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         # Extract t_values aligned with normalized_channel_df's index to ensure shape matches
         # normalized_channel_df may have fewer rows due to index intersection during normalization
         t_col_aligned = df_sorted.loc[normalized_channel_df.index, 't']
-        if pd.api.types.is_datetime64_any_dtype(t_col_aligned):
-            # Convert datetime to Unix timestamps
-            from datetime import datetime
-            t_values = t_col_aligned.apply(lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x).values
-        else:
-            t_values = t_col_aligned.values
+        t_values = t_col_aligned.to_numpy(dtype=float, copy=False)
+
+        # Clamp motion x-values to owning interval bounds (mirrors EEG fix)
+        if interval is not None and len(interval) > 0 and 't_start' in interval.columns and 't_duration' in interval.columns and len(t_values) > 0:
+            _t_start_raw = interval['t_start'].iloc[0]
+            _t_dur = float(interval['t_duration'].iloc[0])
+            _t_start_unix = float(datetime_to_unix_timestamp(_t_start_raw)) if isinstance(_t_start_raw, (datetime, pd.Timestamp)) else float(_t_start_raw)
+            _t_end_unix = _t_start_unix + _t_dur
+            in_interval_mask = np.logical_and(t_values >= _t_start_unix, t_values <= _t_end_unix)
+            if np.any(in_interval_mask):
+                t_values = t_values[in_interval_mask]
+                normalized_channel_df = normalized_channel_df.loc[normalized_channel_df.index[in_interval_mask]]
+            elif len(t_values) > 1:
+                t_values = np.linspace(_t_start_unix, _t_end_unix, num=len(t_values), endpoint=True)
+
+        if len(t_values) == 0:
+            return graphics_objects
 
 
         nPlots: int = len(found_channel_names)
@@ -157,7 +192,32 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
             plot_data_item.setPos(0, (float(i)*single_channel_height)) ## position aligned with the channel
             graphics_objects.append(plot_data_item)
 
+        # self._append_bad_interval_regions(plot_item=plot_item, interval=interval, graphics_objects=graphics_objects)
         return graphics_objects
+
+
+    # def _append_bad_interval_regions(self, plot_item: pg.PlotItem, interval: pd.DataFrame, graphics_objects: List[pg.GraphicsObject]) -> None:
+    #     if self.bad_intervals_unix_df is None or len(self.bad_intervals_unix_df) == 0:
+    #         return
+    #     if interval is None or len(interval) == 0 or 't_start' not in interval.columns or 't_duration' not in interval.columns:
+    #         return
+    #     _t_start_raw = interval['t_start'].iloc[0]
+    #     _t_dur = float(interval['t_duration'].iloc[0])
+    #     iv0 = float(datetime_to_unix_timestamp(_t_start_raw)) if isinstance(_t_start_raw, (datetime, pd.Timestamp)) else float(_t_start_raw)
+    #     iv1 = iv0 + _t_dur
+    #     brush_color = pg.mkColor('black')
+    #     brush_color.setAlphaF(self.bad_overlay_alpha)
+    #     brush = pg.mkBrush(brush_color)
+    #     for row in self.bad_intervals_unix_df.itertuples(index=False):
+    #         b0 = float(row.t_start)
+    #         b1 = b0 + float(row.t_duration)
+    #         x0 = max(b0, iv0)
+    #         x1 = min(b1, iv1)
+    #         if x1 <= x0:
+    #             continue
+    #         region = LinearRegionItem(values=(x0, x1), orientation='vertical', brush=brush, movable=False, pen=None)
+    #         plot_item.addItem(region)
+    #         graphics_objects.append(region)
     
 
     def clear_detail(self, plot_item: pg.PlotItem, graphics_objects: List[pg.GraphicsObject]) -> None:
@@ -169,15 +229,15 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
         """
         if graphics_objects is None:
             return
-        conn = getattr(plot_item, '_motion_label_conn', None)
+        conn = getattr(plot_item, '_channel_label_conn', None)
         if conn is not None:
             try:
                 conn.disconnect()
             except Exception:
                 pass
-            del plot_item._motion_label_conn
-        if getattr(plot_item, '_motion_label_items', None) is not None:
-            del plot_item._motion_label_items
+            del plot_item._channel_label_conn
+        if getattr(plot_item, '_channel_label_items', None) is not None:
+            del plot_item._channel_label_items
 
         for obj in graphics_objects:
             if obj is None:
@@ -289,11 +349,10 @@ class MotionPlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, DetailR
 # MotionTrackDatasource                                                                                                                                                                                                                                                                   #
 # ==================================================================================================================================================================================================================================================================================== #
 
-class MotionTrackDatasource(IntervalProvidingTrackDatasource):
-    """Example TrackDatasource for motion data.
-    
-    Inherits from IntervalProvidingTrackDatasource and implements motion-specific
-    detail rendering for displaying motion data with async detail loading.
+class MotionTrackDatasource(RawProvidingTrackDatasource):
+    """TrackDatasource for motion data with optional LabRecorderXDF / MNE raws (via RawProvidingTrackDatasource).
+
+    Extends RawProvidingTrackDatasource for motion-specific detail rendering and async detail loading.
 
     Usage:
 
@@ -303,7 +362,9 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
     def __init__(self, intervals_df: pd.DataFrame, motion_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
                  fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
                  normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
-                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None, parent: Optional[QtCore.QObject] = None):
+                 arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, parent: Optional[QtCore.QObject] = None,
+                 bad_intervals_df: Optional[pd.DataFrame] = None, bad_intervals_time_origin_unix: Optional[float] = None,
+                 exclude_bad_from_detail: bool = True, bad_overlay_alpha: float = 0.9):
         """Initialize with motion data and intervals.
         
         Args:
@@ -312,43 +373,119 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
             custom_datasource_name: Custom name for this datasource (optional)
             max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
             enable_downsampling: Whether to enable downsampling. Default: True
+            lab_obj_dict: Map of source id to optional LabRecorderXDF for that file.
+            raw_datasets_dict: Map of source id to optional list of MNE Raw objects for that source.
+            bad_intervals_df: Optional intervals to mark and optionally exclude (see ``normalize_motion_bad_intervals_df``).
+            bad_intervals_time_origin_unix: Required when bad_intervals_df uses MNE ``onset``/``duration`` (recording start, Unix s).
+            exclude_bad_from_detail: If True, drop samples whose time falls inside a bad interval before downsampling.
+            bad_overlay_alpha: Opacity of bad-interval overlay in the motion detail view (default 0.9).
         """
         if custom_datasource_name is None:
             custom_datasource_name = "MotionTrack"
-        super().__init__(intervals_df, detailed_df=motion_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, parent=parent)
+        super().__init__(intervals_df, detailed_df=motion_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict, parent=parent)
 
         self.fallback_normalization_mode = fallback_normalization_mode
         self.normalization_mode_dict = normalization_mode_dict
         self.arbitrary_bounds = arbitrary_bounds
-        
-        # Override visualization properties (parent sets blue, we want blue too, but keep same height)
-        # Parent already sets series_height=1.0, which is what we want, so no change needed
-        # Parent already sets blue color, which is what we want, so no change needed
+        self.exclude_bad_from_detail = bool(exclude_bad_from_detail)
+        self.bad_overlay_alpha = float(bad_overlay_alpha)
+        self._bad_intervals_unix_df: pd.DataFrame = BadMotionDataFrame.normalize_motion_bad_intervals_df(bad_intervals_df, bad_intervals_time_origin_unix)
+        self._bad_intervals_key_suffix: str = BadMotionDataFrame.motion_bad_intervals_key_suffix(self._bad_intervals_unix_df)
+        self._motion_plot_detail_renderer: Optional[MotionPlotDetailRenderer] = None
+
+
+    def try_extract_raw_datasets_dict(self) -> Optional[Dict[str, Optional[List[Any]]]]:
+        out: Dict[str, Optional[List[Any]]] = {}
+        for k, lab in self.lab_obj_dict.items():
+            if lab is None or not lab.datasets_dict:
+                out[k] = None
+                continue
+            elst = list(lab.datasets_dict.get(DataModalityType.MOTION.value, []) or [])
+            out[k] = elst if len(elst) > 0 else None
+
+        # return out if out else None
+        return self._sort_raws_by_meas_start(out) if out else None
+
+
+
+    def set_bad_intervals(self, bad_intervals_df: Optional[pd.DataFrame], bad_intervals_time_origin_unix: Optional[float] = None, *, emit_changed: bool = True) -> None:
+        """Replace bad/exclusion intervals. Updates the cached detail renderer if present.
+
+        Emits ``source_data_changed_signal`` when ``emit_changed`` is True so the timeline can refresh the track
+        overview; for already-added tracks, also replace the track's detail renderer reference if your UI caches it
+        (e.g. call ``track_renderer.detail_renderer = datasource.get_detail_renderer()`` after this).
+        """
+        from phopymnehelper.helpers.dataframe_accessor_helpers import MaskedValidDataFrameAccessor
+        from phopymnehelper.motion_data import MotionData, MotionDataFrame, BadMotionDataFrame
+
+        # is_timestamp_format: bool = bad_intervals_df.bad_motion_epochs_df.is_timestamp_format()
+        # if is_timestamp_format and (bad_intervals_time_origin_unix is None):
+        #     t_unix: float = BadMotionDataFrame._detail_t_column_to_unix_numpy(self.detailed_df['t'])[0]
+        #     bad_intervals_time_origin_unix = t_unix
+
+        bad_intervals_df = bad_intervals_df.bad_motion_epochs_df.adding_unix_float_columns(inplace=False)
+        # self._bad_intervals_unix_df = self._bad_intervals_unix_df.masked_df.masking_by_intervals(mask_bad_intervals_df=bad_intervals_df, time_col_name='t', bool_mask_column_name='is_bad_motion',
+        #                                                             intervals_start_col_name='onset', intervals_end_col_name='onset_end')
+        # self._bad_intervals_unix_df.masked_df.add_masking_column(mask_col='is_valid', value_cols=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'])
+        # self._bad_intervals_unix_df
+        # masked_detailed_eeg_df: pd.DataFrame = detailed_eeg_df.masked_df.get_masked(copy=True)
+
+
+        self._bad_intervals_unix_df = BadMotionDataFrame.normalize_motion_bad_intervals_df(bad_intervals_df, bad_intervals_time_origin_unix)
+        self._bad_intervals_key_suffix = BadMotionDataFrame.motion_bad_intervals_key_suffix(self._bad_intervals_unix_df)
+        if self._motion_plot_detail_renderer is not None:
+            self._motion_plot_detail_renderer.bad_intervals_unix_df = self._bad_intervals_unix_df
+            self._motion_plot_detail_renderer.bad_overlay_alpha = self.bad_overlay_alpha
+        if emit_changed:
+            self.source_data_changed_signal.emit()
+
+
+    # def _post_slice_detailed_dataframe(self, result_df: pd.DataFrame, interval: pd.Series) -> pd.DataFrame:
+    #     if not self.exclude_bad_from_detail or len(self._bad_intervals_unix_df) == 0 or len(result_df) == 0:
+    #         return result_df
+    #     if 't' not in result_df.columns:
+    #         return result_df
+    #     t_unix = BadMotionDataFrame._detail_t_column_to_unix_numpy(result_df['t'])
+    #     bad = np.zeros(len(result_df), dtype=bool)
+    #     for row in self._bad_intervals_unix_df.itertuples(index=False):
+    #         b0 = float(row.t_start)
+    #         b1 = b0 + float(row.t_duration)
+    #         bad |= (t_unix >= b0) & (t_unix < b1)
+    #     return result_df.loc[~bad].copy()
     
+
     def get_detail_renderer(self):
-        """Get detail renderer for motion data."""
-        if self.detailed_df is None:
-            print(f'WARN: self.detailed_df is None!')
-            return MotionPlotDetailRenderer(
+        """Get detail renderer for motion data (singleton per datasource so ``set_bad_intervals`` can update overlays)."""
+        if self._motion_plot_detail_renderer is None:
+            self._motion_plot_detail_renderer = MotionPlotDetailRenderer(
                 pen_width=2,
                 fallback_normalization_mode=self.fallback_normalization_mode,
                 normalization_mode_dict=self.normalization_mode_dict,
                 arbitrary_bounds=self.arbitrary_bounds,
+                bad_intervals_unix_df=self._bad_intervals_unix_df,
+                bad_overlay_alpha=self.bad_overlay_alpha,
             )
-        return MotionPlotDetailRenderer(
-            pen_width=2,
-            fallback_normalization_mode=self.fallback_normalization_mode,
-            normalization_mode_dict=self.normalization_mode_dict,
-            arbitrary_bounds=self.arbitrary_bounds,
-        )
+        else:
+            self._motion_plot_detail_renderer.bad_intervals_unix_df = self._bad_intervals_unix_df
+            self._motion_plot_detail_renderer.bad_overlay_alpha = self.bad_overlay_alpha
+        if self.detailed_df is None:
+            print(f'WARN: self.detailed_df is None!')
+        return self._motion_plot_detail_renderer
 
 
     def get_detail_cache_key(self, interval: Union[pd.Series, pd.DataFrame]) -> str:
-        """Get cache key for interval (single-row DataFrame or Series)."""
-        return super().get_detail_cache_key(interval)
+        """Get cache key for interval (single-row DataFrame or Series); includes suffix when bad intervals affect fetch."""
+        base = super().get_detail_cache_key(interval)
+        if self.exclude_bad_from_detail and self._bad_intervals_key_suffix:
+            return f"{base}_bad{self._bad_intervals_key_suffix}"
+        return base
+
 
     @classmethod
-    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None) -> 'MotionTrackDatasource':
+    def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None,
+            max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True,
+            fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
+            bad_intervals_df: Optional[pd.DataFrame] = None, bad_intervals_time_origin_unix: Optional[float] = None, exclude_bad_from_detail: bool = True, bad_overlay_alpha: float = 0.9, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None) -> 'MotionTrackDatasource':
         """Create a MotionTrackDatasource by merging data from multiple sources.
         
         Args:
@@ -360,6 +497,12 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
             fallback_normalization_mode: Fallback normalization mode for channels
             normalization_mode_dict: Dictionary mapping channel groups to normalization modes
             arbitrary_bounds: Optional dictionary mapping channel names to (min, max) bounds
+            bad_intervals_df: Optional bad intervals (``t_start``/``t_duration`` or MNE ``onset``/``duration``).
+            bad_intervals_time_origin_unix: Recording start in Unix seconds when using MNE-style onsets.
+            exclude_bad_from_detail: Drop samples in bad intervals before downsampling.
+            bad_overlay_alpha: Opacity of the dark overlay bands in the detail view.
+            lab_obj_dict: Map of source id to optional LabRecorderXDF for that file.
+            raw_datasets_dict: Map of source id to optional list of MNE Raw objects for that source.
             
         Returns:
             MotionTrackDatasource instance with merged data
@@ -387,9 +530,15 @@ class MotionTrackDatasource(IntervalProvidingTrackDatasource):
             enable_downsampling=enable_downsampling,
             fallback_normalization_mode=fallback_normalization_mode,
             normalization_mode_dict=normalization_mode_dict,
-            arbitrary_bounds=arbitrary_bounds
+            arbitrary_bounds=arbitrary_bounds,
+            bad_intervals_df=bad_intervals_df,
+            bad_intervals_time_origin_unix=bad_intervals_time_origin_unix,
+            exclude_bad_from_detail=exclude_bad_from_detail,
+            bad_overlay_alpha=bad_overlay_alpha,
+            lab_obj_dict=lab_obj_dict,
+            raw_datasets_dict=raw_datasets_dict,
         )
 
 
-__all__ = ['MotionPlotDetailRenderer', 'MotionTrackDatasource']
+__all__ = ['MotionPlotDetailRenderer', 'MotionTrackDatasource', 'normalize_motion_bad_intervals_df', 'motion_bad_intervals_key_suffix']
 

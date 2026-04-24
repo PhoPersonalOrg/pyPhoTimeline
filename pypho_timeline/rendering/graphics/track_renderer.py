@@ -1,5 +1,6 @@
 """TrackRenderer - Manages overview rectangles and detail overlays for timeline tracks."""
 import numpy as np
+from pathlib import Path
 from typing import Dict, List, Optional, Set, Any
 import logging
 from datetime import datetime
@@ -12,13 +13,10 @@ from pypho_timeline.rendering.graphics.interval_rects_item import IntervalRectsI
 from pypho_timeline.rendering.async_detail_fetcher import AsyncDetailFetcher
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
-from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime
+from pypho_timeline.utils.datetime_helpers import unix_timestamp_to_datetime, to_display_timezone
 
 # Import VideoTrackDatasource for type checking
-try:
-    from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
-except ImportError:
-    VideoTrackDatasource = None
+from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
 
 # Import vispy renderer
 try:
@@ -110,6 +108,10 @@ class TrackRenderer(QtCore.QObject):
         # Connect to async fetcher
         self.async_fetcher.detail_data_ready.connect(self._on_detail_data_ready)
         logger.debug(f"TrackRenderer[{self.track_id}] Connected to async_fetcher.detail_data_ready signal")
+
+        if hasattr(self.datasource, 'source_data_changed_signal'):
+            self.datasource.source_data_changed_signal.connect(self._on_datasource_changed)
+            logger.debug(f"TrackRenderer[{self.track_id}] Connected to datasource change signal")
         
         # Initialize overview rendering
         self._update_overview()
@@ -117,12 +119,36 @@ class TrackRenderer(QtCore.QObject):
         enable_time_crosshair = kwargs.pop('enable_time_crosshair', False)
         if enable_time_crosshair:
             self.enable_time_crosshair_overlay()
-    
+
+
+    def refresh_overview(self) -> None:
+        """Rebuild overview interval rectangles from the current datasource (e.g. after mutating ``intervals_df``)."""
+        self._update_overview()
+
+
+    def _detail_cache_prefix(self) -> str:
+        datasource_name = getattr(self.datasource, 'custom_datasource_name', None)
+        if datasource_name is None:
+            return self.track_id
+        return str(datasource_name)
+
+
+    def _on_datasource_changed(self) -> None:
+        """Refresh overview and visible detail when the datasource mutates in place."""
+        logger.info(f"TrackRenderer[{self.track_id}] _on_datasource_changed()")
+        self.async_fetcher.cancel_all_pending_fetches(self.track_id)
+        self.async_fetcher.clear_cache(self._detail_cache_prefix())
+        self.detail_renderer = self.datasource.get_detail_renderer()
+        self.refresh_overview()
+        self._trigger_visibility_render()
+
 
     def _update_overview(self):
         """Update the overview interval rectangles."""
         logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - starting")
         try:
+            old_overview_rects_item = self.overview_rects_item
+
             # Get overview intervals
             overview_df = self.datasource.get_overview_intervals()
             num_intervals = len(overview_df)
@@ -257,7 +283,7 @@ class TrackRenderer(QtCore.QObject):
             
             # Create format_label_fn for video tracks to display filename
             format_label_fn = None
-            if VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource):
+            if isinstance(self.datasource, VideoTrackDatasource):
                 def video_label_formatter(rect_index: int, rect_data_tuple) -> str:
                     """Format label for video track intervals - extracts filename from label field."""
                     if isinstance(rect_data_tuple, IntervalRectsItemData):
@@ -307,14 +333,43 @@ class TrackRenderer(QtCore.QObject):
                 
                 detail_render_callback = detail_render_callback_fn
             
+            extra_menu_callbacks_dict = {}
+            if isinstance(self.datasource, VideoTrackDatasource):
+                from pypho_timeline.rendering.datasources.specific.video import VideoThumbnailDetailRenderer, VlcLaunchableVideoThumbnailImageItem
+
+                def show_in_vlc_callback_fn(rect_index: int, click_t: float):
+                    """ captures: self """
+                    if self._overview_df is None or rect_index < 0 or rect_index >= len(self._overview_df):
+                        logger.warning(f"TrackRenderer[{self.track_id}] show_in_vlc - invalid rect_index={rect_index} overview len={len(self._overview_df) if self._overview_df is not None else 0}")
+                        return
+                    row = self._overview_df.iloc[rect_index]
+                    if 'video_file_path' not in self._overview_df.columns:
+                        return
+                    vp = row.get('video_file_path')
+                    if vp is None or str(vp).strip() == '' or (isinstance(vp, float) and np.isnan(vp)):
+                        return
+                    t_start_sec = VideoThumbnailDetailRenderer.scalar_interval_t_start_to_unix_seconds(row['t_start'])
+                    t_duration_sec = VideoThumbnailDetailRenderer.scalar_interval_t_duration_seconds(row['t_duration'])
+                    offset_seconds = float(click_t) - t_start_sec
+                    if offset_seconds < 0:
+                        offset_seconds = 0.0
+                    if offset_seconds > t_duration_sec:
+                        offset_seconds = t_duration_sec
+                    parent_w = VlcLaunchableVideoThumbnailImageItem.message_box_parent_for_plot_item(self.plot_item)
+                    VlcLaunchableVideoThumbnailImageItem.launch_video_player_vlc(Path(str(vp)), offset_seconds, parent_w)
+
+                extra_menu_callbacks_dict["Show in VLC..."] = show_in_vlc_callback_fn
+
+
             # Build the interval rects item
             self.overview_rects_item = Render2DEventRectanglesHelper.build_IntervalRectsItem_from_interval_datasource(
-                self.datasource, format_label_fn=format_label_fn, detail_render_callback=detail_render_callback
+                self.datasource, format_label_fn=format_label_fn, detail_render_callback=detail_render_callback,
+                extra_menu_callbacks_dict=extra_menu_callbacks_dict,
             )
             
             # Remove old overview if exists
-            if self.overview_rects_item is not None and self.overview_rects_item in self.plot_item.listDataItems():
-                self.plot_item.removeItem(self.overview_rects_item)
+            if old_overview_rects_item is not None:
+                self.plot_item.removeItem(old_overview_rects_item)
                 logger.debug(f"TrackRenderer[{self.track_id}] _update_overview() - removed old overview item")
             
             # Add new overview
@@ -393,7 +448,8 @@ class TrackRenderer(QtCore.QObject):
         if self._reference_datetime is not None:
             try:
                 dt = unix_timestamp_to_datetime(x_point)
-                time_str = dt.strftime('%H:%M:%S.%f')[:-3] if hasattr(dt, 'strftime') else str(dt)
+                display_dt = to_display_timezone(dt)
+                time_str = display_dt.strftime('%H:%M:%S.%f')[:-3] if hasattr(display_dt, 'strftime') else str(display_dt)
             except Exception:
                 time_str = f"t = {x_point:.2f} s"
         else:
@@ -542,17 +598,13 @@ class TrackRenderer(QtCore.QObject):
         if len(interval) > 0:
             t_start = interval.iloc[0].get('t_start', None)
             t_duration = interval.iloc[0].get('t_duration', None)
+            t_end = interval.iloc[0].get('t_end', None)
+            if (t_end is None) and (t_start is not None) and (t_duration is not None):
+                t_end = float(t_start) + float(t_duration)
+            if (t_start is not None) and (t_end is not None) and isinstance(detail_data, pd.DataFrame) and ('t' in detail_data.columns):
+                logger.debug(f"TrackRenderer[{self.track_id}] _render_detail - filtering df down to interval bounds: (t_start={t_start}, t_end={t_end})")
+                detail_data = detail_data[np.logical_and((detail_data['t'] >= float(t_start)), (detail_data['t'] < float(t_end)))]
 
-            ## datetime converted versions for filtering `detailed_df`
-            t_start_dt = interval.iloc[0].get('t_start_dt', None)
-            t_end_dt = interval.iloc[0].get('t_end_dt', None)
-
-            if ((t_start_dt is not None) and (t_end_dt is not None) and isinstance(detail_data, pd.DataFrame)):
-                ## filter detail_data down to the current interval range... I hope this is right at least, I think it could be so long as `interval` is the data interval to render and not the viewport or somethings
-                logger.debug(f"TrackRenderer[{self.track_id}] _render_detail - filtering df down to correct interval range: (t_start_dt='{t_start_dt}', t_end_dt={t_end_dt}, t_start={t_start})")
-                detail_data = detail_data[np.logical_and((detail_data['t'] >= t_start_dt), (detail_data['t'] <= t_end_dt))] 
-                
-                
             t_start_str = f"{t_start}" if t_start is not None else "?"
             t_duration_str = f"{t_duration}" if t_duration is not None else "?"
         else:
@@ -672,6 +724,13 @@ class TrackRenderer(QtCore.QObject):
             logger.debug(f"TrackRenderer[{self.track_id}] remove() - disconnected from async_fetcher signal")
         except (TypeError, RuntimeError) as e:
             logger.debug(f"TrackRenderer[{self.track_id}] remove() - signal already disconnected: {e}")
+
+        if hasattr(self.datasource, 'source_data_changed_signal'):
+            try:
+                self.datasource.source_data_changed_signal.disconnect(self._on_datasource_changed)
+                logger.debug(f"TrackRenderer[{self.track_id}] remove() - disconnected from datasource change signal")
+            except (TypeError, RuntimeError) as e:
+                logger.debug(f"TrackRenderer[{self.track_id}] remove() - datasource signal already disconnected: {e}")
         
         logger.info(f"TrackRenderer[{self.track_id}] remove() - track removal complete")
     
@@ -799,6 +858,34 @@ class TrackRenderer(QtCore.QObject):
 
 
 
+    def apply_channel_visibility_bulk(self, visibility: Dict[str, bool]) -> bool:
+        """Apply multiple channel visibility updates and re-render at most once.
+
+        Args:
+            visibility: Map of channel name to visible flag; keys not in ``channel_visibility`` are skipped.
+
+        Returns:
+            True if any value changed and a re-render was triggered.
+        """
+        if not self.channel_visibility or not visibility:
+            return False
+        changed = False
+        for channel_name, is_visible in visibility.items():
+            if channel_name not in self.channel_visibility:
+                continue
+            v = bool(is_visible)
+            if self.channel_visibility[channel_name] != v:
+                self.channel_visibility[channel_name] = v
+                changed = True
+        if not changed:
+            return False
+        logger.info(f"TrackRenderer[{self.track_id}] apply_channel_visibility_bulk updated visibility")
+        if self._options_panel is not None:
+            self._options_panel.set_visibility_state(self.channel_visibility.copy(), emit_signals=False)
+        self._trigger_visibility_render()
+        return True
+
+
     def update_channel_visibility(self, channel_name: str, is_visible: bool):
         """Update visibility state for a channel and re-render visible intervals.
         
@@ -825,8 +912,20 @@ class TrackRenderer(QtCore.QObject):
         
         # Trigger re-render
         self._trigger_visibility_render()
-    
-    
+
+
+    def apply_eeg_spectrogram_options_from_datasource(self) -> None:
+        """Refresh the detail renderer from the datasource and re-render visible intervals (EEG spectrogram options panel)."""
+        self.detail_renderer = self.datasource.get_detail_renderer()
+        self._trigger_visibility_render()
+
+
+    def apply_line_power_gfp_options_from_datasource(self) -> None:
+        """Refresh the detail renderer from the datasource and re-render visible intervals (EEG GFP band-power options panel)."""
+        self.detail_renderer = self.datasource.get_detail_renderer()
+        self._trigger_visibility_render()
+
+
     def set_options_panel(self, options_panel):
         """Set the options panel reference for bidirectional updates.
         
