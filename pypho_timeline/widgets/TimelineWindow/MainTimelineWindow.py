@@ -80,6 +80,60 @@ class MainTimelineWindow(QMainWindow):
             self.collapsedDockOverflowStrip.setVisible(False)
 
 
+    @classmethod
+    def init_with_timeline(cls, timeline: SimpleTimelineWidget, builder: Optional[Any] = None, **kwargs) -> "MainTimelineWindow":
+        """ 
+
+        """
+        # Create main window (do not show until timeline is added and configured)
+        main_window = cls(show_immediately=False, builder=builder)
+        # Create the timeline widget with reference datetime, parented to main window content area
+        # timeline = SimpleTimelineWidget(total_start_time=total_start_time, total_end_time=total_end_time, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, reference_datetime=reference_datetime, parent=main_window.contentWidget)
+        main_window.contentWidget.layout().addWidget(timeline)
+        # Add tracks to the timeline
+        timeline.add_tracks_from_datasources(datasources=datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
+        self._sync_main_window_session_jump_controls(main_window=main_window)
+
+        added_timeline_idx: int = len(self.current_main_windows)
+        assert len(self.current_timeline_widgets) == len(self.current_main_windows), f"len(self.current_timeline_widgets): {len(self.current_timeline_widgets)} != len(self.current_main_windows): {len(self.current_main_windows)}.\n\t proposed_added_timeline_idx: {added_timeline_idx}"
+        print(f'added_timeline_idx: {added_timeline_idx}')
+        logger.info(f"\nadded_timeline_idx: {added_timeline_idx}")
+
+
+        self.current_main_windows.append(main_window)
+        self.current_timeline_widgets.append(timeline)
+        # Configure and show main window
+        main_window.setWindowTitle(window_title or "pyPhoTimeline")
+        main_window.resize(window_size[0], window_size[1])
+        main_window.show()
+
+        ## Add the calendar widget
+        if enable_calendar_widget_track:
+            a_cal_nav = timeline.add_calendar_navigator()
+
+        self._embed_log_widget_in_timeline(timeline)
+        main_window.attach_collapsed_dock_overflow(timeline.ui.dynamic_docked_widget_container)
+
+        ## add the table widget:
+        if enable_log_table_widget:
+            if "LOG_TextLogger" in timeline.track_datasources:
+                table_widget = timeline.add_dataframe_table_track("Text Log", timeline.track_datasources["LOG_TextLogger"].df) # timeline.add_dataframe_table_track()
+        
+        logger.info("\nTimeline widget created with tracks:")
+        for ds in datasources:
+            logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
+        
+        logger.info("\nScroll on the timeline to see loaded intervals for each stream.")
+        logger.info("Close the window to exit.\n")
+
+        ## hide the extra/redundant xaxis labels
+        timeline.hide_extra_xaxis_labels_and_axes()
+        return main_window
+
+
+
+
+
     def attach_collapsed_dock_overflow(self, nested_dock_area: "NestedDockAreaWidget") -> None:
         from pypho_timeline.docking.collapsed_dock_overflow_controller import CollapsedDockOverflowController
         if not hasattr(self, "collapsedDockOverflowContents") or not hasattr(self, "collapsedDockOverflowStrip"):

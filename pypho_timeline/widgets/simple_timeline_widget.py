@@ -158,7 +158,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
 
 
     # Init/Setup/Lifecycle _______________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
-    def __init__(self, total_start_time: Union[float, datetime, pd.Timestamp] = 0.0, total_end_time: Union[float, datetime, pd.Timestamp] = 100.0, window_duration: Union[float, timedelta] = 10.0, window_start_time: Union[float, datetime, pd.Timestamp] = 30.0, add_example_tracks=False, reference_datetime: Optional[datetime] = None, parent=None):
+    def __init__(self, total_start_time: Union[float, datetime, pd.Timestamp] = 0.0, total_end_time: Union[float, datetime, pd.Timestamp] = 100.0, window_duration: Union[float, timedelta] = 10.0, window_start_time: Union[float, datetime, pd.Timestamp] = 30.0,
+             add_example_tracks=False, reference_datetime: Optional[datetime] = None, parent=None):
         super().__init__(parent=parent)
         
         # Store whether to add example tracks
@@ -223,9 +224,7 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
         else:
             self.active_window_end_time = self.active_window_start_time + float(window_duration)
         
-        self.spikes_window = SimpleTimeWindow(
-            self.total_data_start_time, self.total_data_end_time, window_duration, self.active_window_start_time
-        )
+        self.spikes_window = SimpleTimeWindow(start=self.total_data_start_time, end=self.total_data_end_time, window_dur=window_duration, window_start=self.active_window_start_time)
         self._last_applied_plot_window_x0 = self._window_value_to_signal_float(self.active_window_start_time)
         self._last_applied_plot_window_x1 = self._window_value_to_signal_float(self.active_window_end_time)
         self._applying_window_from_signal = False
@@ -301,6 +300,79 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
         self.sigTrackRemoved.connect(lambda _n: self._update_interval_jump_buttons_enabled())
         self._update_interval_jump_buttons_enabled()
         QtCore.QTimer.singleShot(0, self._update_interval_jump_buttons_enabled)
+
+
+    def create_child_window(self, child_window_name: str='a child window', 
+            track_names: Optional[List[str]] = None, compare_window_start_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_window_end_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_suffix: str = '', enable_time_crosshair: bool = False,
+            **kwargs) -> SimpleTimelineWidget:
+        """ creates a separate child timeline window that's independent from this one """
+        _out_timeline: SimpleTimelineWidget = SimpleTimelineWidget(total_start_time=self.total_data_start_time, total_end_time=self.total_data_end_time,
+            window_duration=self.spikes_window.window_duration, window_start_time=self.spikes_window.active_window_start_time,
+            reference_datetime=self.reference_datetime,
+        )
+        ## Add the required tracks/etc
+        source_timeline: SimpleTimelineWidget = self
+        # target_timeline = self
+        target_timeline: SimpleTimelineWidget = _out_timeline
+
+        if track_names is None:
+            track_names = source_timeline.get_track_names_for_window_sync_group(window_sync_group='primary')
+
+        created_compare_tracks = {}
+        for track_name in track_names:
+            compare_track_name = f"{track_name}{compare_suffix}"
+            # created_compare_tracks[track_name] = _out_timeline.add_compare_track_view(track_name=track_name, compare_track_name=compare_track_name, compare_window_start_time=compare_window_start_time, compare_window_end_time=compare_window_end_time, enable_time_crosshair=enable_time_crosshair)
+
+
+            # def add_compare_track_view(self, track_name: str, compare_track_name: Optional[str] = None, compare_window_start_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_window_end_time: Optional[Union[float, datetime, pd.Timestamp]] = None, dockSize: Optional[Tuple[int, int]] = None, enable_time_crosshair: bool = True):
+
+
+            primary_widget, primary_track_renderer, primary_datasource = source_timeline.get_track_tuple(track_name)
+            if (primary_widget is None) or (primary_track_renderer is None) or (primary_datasource is None):
+                raise ValueError(f'Cannot create compare view for missing track "{track_name}".')
+
+            if compare_track_name is None:
+                compare_track_name = f"{track_name}__compare"
+
+            compare_window_start_time, compare_window_end_time = source_timeline._resolve_window_bounds(compare_window_start_time, compare_window_end_time, source_timeline.compare_window_start_time, source_timeline.compare_window_end_time)
+            extant_compare_widget, extant_compare_renderer, _ = target_timeline.get_track_tuple(compare_track_name)
+            if (extant_compare_widget is not None) and (extant_compare_renderer is not None):
+                extant_compare_plot_item = extant_compare_widget.getRootPlotItem()
+                extant_compare_dock = self.ui.dynamic_docked_widget_container.find_display_dock(compare_track_name)
+                extant_compare_widget.on_window_changed(compare_window_start_time, compare_window_end_time)
+                target_timeline._set_compare_window_state(compare_window_start_time, compare_window_end_time, emit_signal=True)
+                created_compare_tracks[track_name] = (extant_compare_widget, extant_compare_widget.getRootGraphicsLayoutWidget(), extant_compare_plot_item, extant_compare_dock)
+
+            else:
+                ## needs create new:
+                primary_dock = target_timeline.ui.dynamic_docked_widget_container.find_display_dock(track_name)
+                dock_add_location_opts = [primary_dock, 'right'] if primary_dock is not None else ['bottom']
+                # if dockSize is None:
+                dockSize = (max(primary_widget.width(), 500), max(primary_widget.height(), 80))
+
+                compare_widget, root_graphics, compare_plot_item, compare_dock = target_timeline.add_new_embedded_pyqtgraph_render_plot_widget(name=compare_track_name, dockSize=dockSize, dockAddLocationOpts=dock_add_location_opts, sync_mode=SynchronizedPlotMode.NO_SYNC, dock_group_names=[target_timeline.SPLIT_COMPARE_DOCK_GROUP])
+                primary_plot_item = primary_widget.getRootPlotItem()
+                self._copy_track_plot_configuration(primary_plot_item, compare_plot_item)
+                target_timeline.add_track(primary_datasource, name=compare_track_name, plot_item=compare_plot_item, enable_time_crosshair=enable_time_crosshair, window_sync_group='compare')
+
+                target_timeline.ui.compare_track_names.add(compare_track_name)
+                if target_timeline.ui.compare_track_master_name is None:
+                    target_timeline._set_compare_track_master(compare_track_name)
+                else:
+                    master_plot_item = target_timeline.ui.matplotlib_view_widgets[target_timeline.ui.compare_track_master_name].getRootPlotItem()
+                    compare_plot_item.setXLink(master_plot_item)
+
+                compare_widget.on_window_changed(compare_window_start_time, compare_window_end_time)
+                target_timeline._set_compare_window_state(compare_window_start_time, compare_window_end_time, emit_signal=True)
+
+                created_compare_tracks[track_name] = (compare_widget, root_graphics, compare_plot_item, compare_dock)
+            # return compare_widget, root_graphics, compare_plot_item, compare_dock
+
+
+        _out_timeline._rebuild_split_track_dock_groups()
+
+        return _out_timeline
+
 
 
     def _on_split_all_tracks_clicked(self):
@@ -914,6 +986,189 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
                 self.hide_extra_xaxis_labels_and_axes()
             
             return video_widget, root_graphics, plot_item, dock
+
+
+
+    # Refactored from TimelineBuilder
+    # @function_attributes(short_name=None, tags=['MAIN', 'add'], input_requires=[], output_provides=[], uses=[], used_by=['self.update_timeline', 'self.build_from_datasources'], creation_date='2026-02-03 19:57', related_items=[])
+    def add_tracks_from_datasources(self, datasources: List[TrackDatasource], enable_hide_extra_track_x_axes: bool=False, use_absolute_datetime_track_mode: bool = True) -> None:
+        """Add tracks to a timeline widget.
+        
+        Args:
+            timeline: SimpleTimelineWidget instance
+            datasources: List of TrackDatasource instances to add
+
+        Renamed `add_tracks_from_datasources` from `TimelineBuilder._add_tracks_to_timeline`
+        """
+        from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockButtonConfig
+        from pypho_timeline.EXTERNAL.pyqtgraph.icons import getGraphIcon
+        from pypho_timeline.docking.dock_display_configs import CustomCyclicColorsDockDisplayConfig, CustomDockDisplayConfig, NamedColorScheme, get_utility_dock_colors
+
+        from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_all_streams_multi_xdf, default_dock_named_color_scheme_key
+
+
+        def _is_eeg_spectrogram_datasource(ds: TrackDatasource) -> bool:
+            if EEGSpectrogramTrackDatasource is not None and isinstance(ds, EEGSpectrogramTrackDatasource):
+                return True
+            return ds.custom_datasource_name.startswith('EEG_Spectrogram_')
+
+        spec_names = [d.custom_datasource_name for d in datasources if _is_eeg_spectrogram_datasource(d)]
+        logger.info(f"[dock_group:eeg_spec] spectrogram datasource count={len(spec_names)} names={spec_names!r}")
+
+        for datasource in datasources:
+            # Get detail renderer
+            a_detail_renderer = datasource.get_detail_renderer()
+            _scheme_key = default_dock_named_color_scheme_key(datasource.custom_datasource_name)
+            _is_spec = _is_eeg_spectrogram_datasource(datasource)
+            display_config = CustomCyclicColorsDockDisplayConfig(named_color_scheme=NamedColorScheme[_scheme_key], showCloseButton=True, showCollapseButton=True, showGroupButton=_is_spec, corner_radius='3px')
+
+            if getattr(display_config, 'custom_button_configs', None) is None:
+                setattr(display_config, 'custom_button_configs', {})
+                # setattr(display_config, 'custom_button_callback_connections', {})
+
+            # else:
+            #     ## disconnect before setting now
+            #     for k, v in getattr(display_config, 'custom_button_callback_connections', {}).items():
+            #         a_dock.sigCustomButtonClicked.disconnect(v)
+
+
+
+            if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
+                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonQIcon=getGraphIcon('table'), buttonToolTip='Show table')})
+            elif getattr(datasource, 'detailed_df', None) is not None:
+                ## enable for all tracks with a detailed_df
+                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonQIcon=getGraphIcon('table'), buttonToolTip='Show table')})
+
+
+            track_widget, a_root_graphics, a_plot_item, a_dock = self.add_new_embedded_pyqtgraph_render_plot_widget(
+                name=datasource.custom_datasource_name,
+                dockSize=((500, 80 // 4) if datasource.custom_datasource_name == 'LOG_EventBoard' else (500, 80)),
+                dockAddLocationOpts=['bottom'],
+                display_config=display_config,
+                sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA,
+                dock_group_names=[SimpleTimelineWidget.EEG_SPECTROGRAM_DOCK_GROUP] if _is_spec else None
+            )
+            # if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
+
+
+            # for a_custom_button_key, a_dock_button_config in display_config.custom_button_configs.items():
+            #     if a_custom_button_key == 'show_table':
+
+            if getattr(datasource, 'detailed_df', None) is not None:
+                if ('show_table' in display_config.custom_button_configs):
+                    def _on_show_table(dock, button_id, tl=self, ds=datasource):
+                        if button_id != 'show_table':
+                            return
+                        table_name = f"{ds.custom_datasource_name}_table"
+                        existing = tl.ui.dynamic_docked_widget_container.find_display_dock(table_name)
+                        if existing is not None:
+                            existing.show()
+                            existing.raise_()
+                            return
+
+                        _scheme_key = default_dock_named_color_scheme_key(datasource.custom_datasource_name)
+                        table_dock_display_config = CustomCyclicColorsDockDisplayConfig(named_color_scheme=NamedColorScheme[_scheme_key], showCloseButton=True, showCollapseButton=True, showGroupButton=True, corner_radius='1px')
+                        tl.add_dataframe_table_track(track_name=table_name, dataframe=getattr(ds, 'detailed_df'), time_column='t', dockSize=(400, 200), display_config=table_dock_display_config, sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA)
+                    a_dock.sigCustomButtonClicked.connect(_on_show_table)
+            
+
+
+            assert a_detail_renderer is not None, f"Detail renderer is None for datasource: {datasource.custom_datasource_name}"
+            #TODO 2026-03-28 06:30: - [ ] note `track_widget.set_track_renderer(a_detail_renderer)` was removed
+            # track_widget.set_track_renderer(a_detail_renderer)
+            # bottom_label_text: str = 'Time'
+            bottom_label_text: str = ''
+
+            # Set the plot to show the full time range
+            # Handle datetime objects directly
+            if isinstance(self.total_data_start_time, (datetime, pd.Timestamp)):
+                if not use_absolute_datetime_track_mode:
+                    # Timeline uses datetime objects - convert directly to Unix timestamps
+                    unix_start = datetime_to_unix_timestamp(self.total_data_start_time)
+                    unix_end = datetime_to_unix_timestamp(self.total_data_end_time)
+                    a_plot_item.setXRange(unix_start, unix_end, padding=0)
+                else:
+                    ## use_absolute_datetime_track_mode - use the datetimes directly
+                    unix_start = datetime_to_unix_timestamp(self.total_data_start_time)
+                    unix_end = datetime_to_unix_timestamp(self.total_data_end_time)
+                    # a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0) ## performs So min and max (your timeline.total_data_start_time and timeline.total_data_end_time) are datetime objects. In Python, datetime + datetime is invalid (only datetime - datetime or datetime + timedelta are defined), so you get that TypeError.
+                    a_plot_item.setXRange(unix_start, unix_end, padding=0)
+
+                a_plot_item.setLabel('bottom', bottom_label_text)
+            elif (self.reference_datetime is not None):
+                # Timeline uses float timestamps with reference_datetime - convert to datetime then Unix timestamp
+                dt_start = float_to_datetime(self.total_data_start_time, self.reference_datetime)
+                dt_end = float_to_datetime(self.total_data_end_time, self.reference_datetime)
+                # Convert datetime to Unix timestamp for PyQtGraph (DateAxisItem expects timestamps but displays as dates)
+                unix_start = datetime_to_unix_timestamp(dt_start)
+                unix_end = datetime_to_unix_timestamp(dt_end)
+                a_plot_item.setXRange(unix_start, unix_end, padding=0)
+                a_plot_item.setLabel('bottom', bottom_label_text)
+            else:
+                # Fallback: use float timestamps directly
+                a_plot_item.setXRange(self.total_data_start_time, self.total_data_end_time, padding=0)
+                a_plot_item.setLabel('bottom', bottom_label_text, units='s')
+
+            # a_plot_item.showLabel('bottom', False)
+
+            a_plot_item.setYRange(0, 1, padding=0)
+            a_plot_item.setLabel('left', datasource.custom_datasource_name)
+            a_plot_item.hideAxis('left')  # Hide Y-axis for cleaner look
+            
+            # Add the track to the plot (installs TrackRenderer on track_widget; options panel must be created after this)
+            a_track_name: str = datasource.custom_datasource_name
+            self.add_track(datasource, name=a_track_name, plot_item=a_plot_item)
+
+            # Explicitly set the optionsPanel attribute:
+            track_widget.optionsPanel = track_widget.getOptionsPanel()
+            # Or if available:
+            a_dock.updateWidgetsHaveOptionsPanel()
+            a_dock.update()
+
+            # Or if available:
+            if hasattr(a_dock, 'updateTitleBar') or hasattr(a_dock, 'refresh'):
+                a_dock.updateTitleBar()
+        ## END for datasource in datasources...
+
+        if spec_names:
+            _dock_container = self.ui.dynamic_docked_widget_container
+            _spec_group_id = SimpleTimelineWidget.EEG_SPECTROGRAM_DOCK_GROUP
+            logger.info(f"[dock_group:eeg_spec] calling layout_dockGroups for group={_spec_group_id!r}")
+            _pre_groups = _dock_container.get_dockGroup_dock_dict()
+            _pre_members = {k: [d.name() for d in v] for k, v in _pre_groups.items()}
+            logger.debug(f"[dock_group:eeg_spec] dock groups before layout keys={list(_pre_groups.keys())!r} members={_pre_members!r}")
+            try:
+                _dock_container.layout_dockGroups(dock_group_names_order=[_spec_group_id], dock_group_add_location_opts={_spec_group_id: ['bottom']})
+            except Exception:
+                logger.exception("[dock_group:eeg_spec] EEG spectrogram dock grouping failed")
+            else:
+                logger.info(f"[dock_group:eeg_spec] layout_dockGroups finished; matplotlib_view_widgets count={len(self.ui.matplotlib_view_widgets)}")
+                if hasattr(_dock_container, 'nested_dock_items') and getattr(_dock_container, 'nested_dock_items', None):
+                    logger.debug(f"[dock_group:eeg_spec] nested_dock_items keys={list(_dock_container.nested_dock_items.keys())!r}")
+
+        # Hide x-axis labels for all tracks except the bottom-most one
+        if len(self.ui.matplotlib_view_widgets) > 1:
+            # Get all plot items
+            all_plot_items = []
+            for widget_name, widget in self.ui.matplotlib_view_widgets.items():
+                plot_item = widget.getRootPlotItem()
+                if plot_item is not None:
+                    all_plot_items.append((widget_name, plot_item))
+            
+            # Hide x-axis for all except the last one (bottom-most)
+            if len(all_plot_items) > 1:
+                # Hide x-axis for all tracks except the last one
+                if enable_hide_extra_track_x_axes:
+                    for widget_name, plot_item in all_plot_items[:-3]:
+                        plot_item.hideAxis('bottom')
+                    # Ensure the last track shows its x-axis
+                    all_plot_items[-1][1].showAxis('bottom')
+                else:
+                    ## show all
+                    for widget_name, plot_item in all_plot_items:
+                        plot_item.showAxis('bottom')
+
+
 
 
     # ==================================================================================================================================================================================================================================================================================== #
