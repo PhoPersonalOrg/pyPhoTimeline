@@ -134,6 +134,48 @@ def _build_dose_curve_records_detail_renderer():
 
 
 
+def perform_process_xdf_file(xdf_path_for_raw: Path):
+    """ takes an XDF file path and tries to build a full `LabRecorderXDF` object (a_lab_obj) and a raws dict from it
+
+        History: renamed from `_subfn_process_xdf_file` and extracted from `perform_process_all_streams_multi_xdf` to a top-level fn `perform_process_xdf_file` 
+
+        xdf_paths_for_raw = [v[1] for v in stream_file_pairs]
+        raws_dict_dict = {}
+        lab_obj_dict = {}
+        for a_xdf_path in xdf_paths_for_raw:
+            a_lab_obj, a_raws_dict = perform_process_xdf_file(xdf_path_for_raw=a_xdf_path)
+            lab_obj_dict[a_xdf_path] = a_lap_obj
+            raws_dict_dict[a_xdf_path] = a_raws_dict
+
+
+    """
+    from phopymnehelper.xdf_files import LabRecorderXDF
+
+    a_lab_obj = None
+    a_raws_dict = {}
+    logger.info(f'enable_raw_xdf_processing is True so this stream will be processed as MNE raw...')
+    # xdf_path_for_raw = stream_file_pairs[0][1]
+    if not xdf_path_for_raw.exists():
+        return a_lab_obj, None
+    # logger.info(f'\ttrying to load raw XDF file load for stream_name: "{stream_name}" with xdf_path: "{xdf_path_for_raw}"...')
+    logger.info(f'\ttrying to load raw XDF file load with xdf_path: "{xdf_path_for_raw}"...')
+
+    try:
+        a_lab_obj: LabRecorderXDF = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_path_for_raw, should_load_full_file_data=True)
+    except ValueError as e:
+        if 'datetime' in str(e).lower() or 'UTC' in str(e):
+            logger.warning(f'\tSkipping raw XDF file load with xdf_path: {xdf_path_for_raw}: LabRecorderXDF load failed (UTC/datetime issue): {e}')
+        else:
+            raise
+    
+    if a_lab_obj is not None:
+        a_raws_dict = a_lab_obj.datasets_dict or {}
+        logger.info(f'\traws_dict: {a_raws_dict}')
+
+    return a_lab_obj, a_raws_dict
+
+
+
 
 @function_attributes(short_name=None, tags=['MAIN', 'multi_xdf_files', 'multi-streams'], input_requires=[], output_provides=[], uses=['merge_streams_by_name', 'float_to_datetime', 'datetime_to_unix_timestamp'], used_by=['TimelineBuilder'], creation_date='2026-03-02 03:00', related_items=['perform_process_single_xdf_file_all_streams'])
 def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[Optional[dict]]] = None, enable_raw_xdf_processing: bool=True, spectrogram_channel_groups: Optional[List[SpectrogramChannelGroupConfig]] = EMOTIV_EPOC_X_SPECTROGRAM_GROUPS) -> Tuple[Dict, Dict]:
@@ -156,40 +198,6 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
     """
     from phopymnehelper.historical_data import HistoricalData
     from phopymnehelper.xdf_files import LabRecorderXDF
-
-
-    def _subfn_process_xdf_file(xdf_path_for_raw: Path):
-        """ 
-            xdf_paths_for_raw = [v[1] for v in stream_file_pairs]
-            raws_dict_dict = {}
-            lab_obj_dict = {}
-            for a_xdf_path in xdf_paths_for_raw:
-                a_lab_obj, a_raws_dict = _subfn_process_xdf_file(xdf_path_for_raw=a_xdf_path)
-                lab_obj_dict[a_xdf_path] = a_lap_obj
-                raws_dict_dict[a_xdf_path] = a_raws_dict
-
-
-        """
-        a_lab_obj = None
-        a_raws_dict = {}
-        logger.info(f'enable_raw_xdf_processing is True so this stream will be processed as MNE raw...')
-        # xdf_path_for_raw = stream_file_pairs[0][1]
-        if not xdf_path_for_raw.exists():
-            return a_lab_obj, None
-        logger.info(f'\ttrying to load raw XDF file load for stream_name: "{stream_name}" with xdf_path: "{xdf_path_for_raw}"...')
-        try:
-            a_lab_obj = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_path_for_raw, should_load_full_file_data=True)
-        except ValueError as e:
-            if 'datetime' in str(e).lower() or 'UTC' in str(e):
-                logger.warning(f'\tSkipping raw XDF file load for "{stream_name}" with xdf_path: {xdf_path_for_raw}: LabRecorderXDF load failed (UTC/datetime issue): {e}')
-            else:
-                raise
-        
-        if a_lab_obj is not None:
-            a_raws_dict = a_lab_obj.datasets_dict or {}
-            logger.info(f'\traws_dict: {a_raws_dict}')
-
-        return a_lab_obj, a_raws_dict
 
     # ==================================================================================================================================================================================================================================================================================== #
     # BEGIN FUNCTION BODY                                                                                                                                                                                                                                                                  #
@@ -310,7 +318,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
 
             for a_xdf_path in xdf_paths_for_raw:
                 lab_obj_dict[a_xdf_path.name] = None
-                a_lab_obj, _a_raws_dict = _subfn_process_xdf_file(xdf_path_for_raw=a_xdf_path)
+                a_lab_obj, _a_raws_dict = perform_process_xdf_file(xdf_path_for_raw=a_xdf_path)
                 lab_obj_dict[a_xdf_path.name] = a_lab_obj
 
 
