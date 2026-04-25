@@ -337,7 +337,7 @@ class DoseTrackDatasource(ComputableDatasourceMixin, DataframePlotDetailRenderer
 
 
     @classmethod
-    def parse_message_logs_to_dose_events(cls, detailed_txt_log_df):
+    def _perform_parse_message_logs_to_dose_events(cls, detailed_txt_log_df):
         """ Parse message logs for dose-like entries 
         """
         ## INPUTS: detailed_txt_log_df
@@ -402,7 +402,7 @@ class DoseTrackDatasource(ComputableDatasourceMixin, DataframePlotDetailRenderer
 
 
         ## INPUTS: detailed_txt_log_df
-        recordSeries_df = cls.parse_message_logs_to_dose_events(detailed_txt_log_df)
+        recordSeries_df = cls._perform_parse_message_logs_to_dose_events(detailed_txt_log_df)
         recordSeries_df
 
         ## INPUTS: timeline, recordSeries_df
