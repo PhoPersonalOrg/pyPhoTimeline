@@ -29,9 +29,7 @@ from datetime import datetime, timedelta
 from dose_analysis_python.Helpers.quantization import Quanta, ComputationTimeBlock
 
 
-from pypho_timeline import SynchronizedPlotMode
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
-from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
 
 
@@ -260,14 +258,14 @@ class DosePlotDetailRenderer(LogTextDataFramePlotDetailRenderer):
 # ==================================================================================================================================================================================================================================================================================== #
 # DoseTrackDatasource                                                                                                                                                                                                                                                                   #
 # ==================================================================================================================================================================================================================================================================================== #
-class DoseTrackDatasource(ComputableDatasourceMixin, DataframePlotDetailRenderer):
+class DoseTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource):
     """TrackDatasource for Dose data with optional LabRecorderXDF / MNE raws (via RawProvidingTrackDatasource).
 
     Extends RawProvidingTrackDatasource for eeg-specific detail rendering and async detail loading.
 
     Usage:
 
-        from pypho_timeline.rendering.datasources.specific.dose import DosePlotDetailRenderer, DoseTrackDatasource
+        from pypho_timeline.rendering.datasources.specific.dose import DoseTrackDatasource
 
         dose_curve_ds: DoseTrackDatasource = DoseTrackDatasource.init_from_timeline_text_log_tracks(timeline=timeline)
         dose_curve_ds
@@ -277,51 +275,28 @@ class DoseTrackDatasource(ComputableDatasourceMixin, DataframePlotDetailRenderer
     """
     sigSourceComputeStarted = QtCore.Signal()
     sigSourceComputeFinished = QtCore.Signal(bool)
+    DEFAULT_CURVE_CHANNEL_NAMES = ['AMPH_gut', 'AMPH_blood', 'AMPH_brain', 'AMPH_ecf', 'DA_str', 'NE_pfc', 'DA_pfc']
+    DEFAULT_NORMALIZATION_MODE_DICT = {('AMPH_gut', 'AMPH_blood', 'AMPH_brain', 'AMPH_ecf'): ChannelNormalizationMode.GROUPMINMAXRANGE, ('DA_str', 'DA_pfc'): ChannelNormalizationMode.GROUPMINMAXRANGE, ('NE_pfc',): ChannelNormalizationMode.GROUPMINMAXRANGE}
 
-    def __init__(self, intervals_df: pd.DataFrame, recordSeries_df: pd.DataFrame, complete_curve_df: pd.DataFrame, custom_datasource_name: Optional[str]=None,
-                 max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True,
-                 fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.GROUPMINMAXRANGE,
-                 normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None,
-                 arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None,
-                 normalize: bool = True, normalize_over_full_data: bool = True,
-                 normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, parent: Optional[QtCore.QObject] = None,
-                 plot_pen_colors: Optional[List[str]] = None, plot_pen_width: Optional[float] = None,
-                 ):
-        """Initialize with eeg data and intervals.
-        
-        Args:
-            intervals_df: DataFrame with columns ['t_start', 't_duration'] for intervals
-            eeg_df: DataFrame with columns ['t'] and channel columns (e.g., ['AF3', 'F7', 'F3', ...])
-            custom_datasource_name: Custom name for this datasource (optional)
-            max_points_per_second: Maximum points per second for downsampling. If None, no downsampling. Default: 1000.0
-            enable_downsampling: Whether to enable downsampling. Default: True
-            plot_pen_colors: Optional per-channel line colors for :class:`DosePlotDetailRenderer` (default: auto palette).
-            plot_pen_width: Optional line width for :class:`DosePlotDetailRenderer` (default: same as renderer default used here, 2).
-        """
+
+    def __init__(self, intervals_df: pd.DataFrame, recordSeries_df: pd.DataFrame, complete_curve_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, parent: Optional[QtCore.QObject] = None, plot_pen_colors: Optional[List[str]] = None, plot_pen_width: Optional[float] = None):
+        """Initialize a dataframe-backed datasource for precomputed dose curves."""
         if custom_datasource_name is None:
             custom_datasource_name = "DoseTrack"
-        super().__init__(intervals_df, detailed_df=complete_curve_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict, parent=parent)
-        self.recordSeries_df = recordSeries_df
+        if channel_names is None:
+            channel_names = self._get_curve_channel_names(complete_curve_df)
+        curve_df = self._build_curve_detail_df(complete_curve_df=complete_curve_df, curve_channel_names=channel_names)
+        super().__init__(intervals_df, detailed_df=curve_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict, parent=parent)
+        self.recordSeries_df = recordSeries_df.copy()
+        self.complete_curve_df = complete_curve_df.copy()
 
         if (normalization_reference_df is None) and (self.detailed_df is not None):
             normalization_reference_df = self.detailed_df
 
-        # self._detail_renderer = DosePlotDetailRenderer(
-        #         pen_width=2,
-        #         fallback_normalization_mode=fallback_normalization_mode,
-        #         normalization_mode_dict=normalization_mode_dict,
-        #         arbitrary_bounds=arbitrary_bounds,
-        #         normalize=normalize,
-        #         normalize_over_full_data=normalize_over_full_data,
-        #         normalization_reference_df=normalization_reference_df,
-        #     )
-
         self.fallback_normalization_mode = fallback_normalization_mode
-        self.normalization_mode_dict = normalization_mode_dict
+        self.normalization_mode_dict = normalization_mode_dict if normalization_mode_dict is not None else self.DEFAULT_NORMALIZATION_MODE_DICT
         self.arbitrary_bounds = arbitrary_bounds
         self.normalize = normalize
-        self.normalization_mode_dict = normalization_mode_dict
-        self.arbitrary_bounds = arbitrary_bounds
         self.normalize_over_full_data = normalize_over_full_data
         self.normalization_reference_df = normalization_reference_df
         self.channel_names = channel_names
@@ -337,140 +312,75 @@ class DoseTrackDatasource(ComputableDatasourceMixin, DataframePlotDetailRenderer
 
 
     @classmethod
-    def _perform_parse_message_logs_to_dose_events(cls, detailed_txt_log_df):
-        """ Parse message logs for dose-like entries 
-        """
-        ## INPUTS: detailed_txt_log_df
-        # detailed_txt_log_df['msg']
-        # detailed_txt_log_df 
+    def _get_curve_channel_names(cls, complete_curve_df: pd.DataFrame) -> List[str]:
+        return [col for col in cls.DEFAULT_CURVE_CHANNEL_NAMES if col in complete_curve_df.columns]
 
-        # r'\d+\s*\.?\s*\d*\s*plus'
 
-        # dose_event_pattern = r'\d+\s*\.?\s*\d*\s*plus'
-        # matching_rows = detailed_txt_log_df[detailed_txt_log_df['msg'].astype(str).str.contains(dose_event_pattern, regex=True, na=False)]
-        # matching_rows
+    @classmethod
+    def _build_curve_detail_df(cls, complete_curve_df: pd.DataFrame, curve_channel_names: Optional[List[str]]=None) -> pd.DataFrame:
+        if curve_channel_names is None:
+            curve_channel_names = cls._get_curve_channel_names(complete_curve_df)
+        if 't' not in complete_curve_df.columns:
+            raise ValueError("complete_curve_df must include a 't' column")
+        if len(curve_channel_names) == 0:
+            raise ValueError("complete_curve_df does not include any known dose curve channels")
+        return complete_curve_df[['t'] + curve_channel_names].copy()
 
+
+    @classmethod
+    def _perform_parse_message_logs_to_dose_events(cls, detailed_txt_log_df: pd.DataFrame) -> pd.DataFrame:
+        """Parse message logs for dose-like entries."""
+        if 'msg' not in detailed_txt_log_df.columns:
+            raise ValueError("detailed_txt_log_df must include a 'msg' column")
         dose_event_pattern = r'(\d+\s*\.?\s*\d*)\s*plus'
-
-        matched_with_quantity = (
-            detailed_txt_log_df.loc[detailed_txt_log_df['msg'].astype(str).str.contains(dose_event_pattern, regex=True, na=False), ['msg']]
-            .assign(quantity=lambda df: df['msg'].astype(str).str.extract(dose_event_pattern, expand=False).str.replace(r'\s+', '', regex=True))
-        )
-
-        matched_with_quantity
-
-        # matched_with_quantity['dt']
-
-        # a_parsed_dose_record = DoseNoteFragmentParser.parse_numeric_dose([a_parsed_dose])[0]
-
+        matched_with_quantity = detailed_txt_log_df.loc[detailed_txt_log_df['msg'].astype(str).str.contains(dose_event_pattern, regex=True, na=False), ['msg']].assign(quantity=lambda df: df['msg'].astype(str).str.extract(dose_event_pattern, expand=False).str.replace(r'\s+', '', regex=True))
+        if len(matched_with_quantity) == 0:
+            return pd.DataFrame(columns=['recordDoseValue', 'modifier', 'medication']).rename_axis('recordDoseDate')
         parsed_dose_records_dict: Dict[pd.Timestamp, Dict] = dict(zip(matched_with_quantity.index.to_list(), DoseNoteFragmentParser.parse_numeric_dose(matched_with_quantity['quantity'].to_list())))
-        parsed_dose_records_dict
-        ## OUTPUTS: parsed_dose_records_dict
-
-
-        ## build records
         default_med_name: str='AMPH'
-        recordSeries_df: pd.DataFrame = pd.DataFrame({'recordDoseDate': list(parsed_dose_records_dict.keys()), 
-                                                    'recordDoseValue': [a_dose_record_dict['value'] for k, a_dose_record_dict in parsed_dose_records_dict.items()],
-                                                    'modifier': [a_dose_record_dict.get('modifier', '') for k, a_dose_record_dict in parsed_dose_records_dict.items()],
-                                })
+        recordSeries_df: pd.DataFrame = pd.DataFrame({'recordDoseDate': list(parsed_dose_records_dict.keys()), 'recordDoseValue': [a_dose_record_dict['value'] for a_dose_record_dict in parsed_dose_records_dict.values()], 'modifier': [a_dose_record_dict.get('modifier', '') for a_dose_record_dict in parsed_dose_records_dict.values()]})
         recordSeries_df = recordSeries_df.set_index('recordDoseDate', drop=True, inplace=False)
-        # recordSeries.index = pd.DatetimeIndex(recordSeries.index).tz_localize("US/Eastern")
-        recordSeries_df.index = pd.DatetimeIndex(recordSeries_df.index).tz_convert("US/Eastern")
+        recordSeries_idx = cast(Any, pd.DatetimeIndex(recordSeries_df.index))
+        if recordSeries_idx.tz is None:
+            recordSeries_df.index = recordSeries_idx.tz_localize("US/Eastern")
+        else:
+            recordSeries_df.index = recordSeries_idx.tz_convert("US/Eastern")
         recordSeries_df['medication'] = default_med_name
-        ## OUTPUTS: recordSeries_df
         return recordSeries_df
 
 
     @classmethod
-    def init_from_timeline_text_log_tracks(cls, timeline) -> "DoseTrackDatasource":
-        """ only implemented init function """
-
-        all_track_names = timeline.get_all_track_names()
-        print(f"all_track_names: {all_track_names}")
-        txt_log_widget, txt_log_renderer, txt_log_ds = timeline.get_track_tuple('LOG_TextLogger')
-        txt_log_ds
-
-        detailed_txt_log_df: pd.DataFrame = deepcopy(txt_log_ds.detailed_df).reset_index(drop=True) #.set_index('t')
-
+    def init_from_timeline_text_log_tracks(cls, timeline, track_name: str='DOSE_CURVES_Computed', source_track_name: str='LOG_TextLogger', backend: str='scipy', max_events: int=120, follow_h_after_last: float=12.0) -> "DoseTrackDatasource":
+        """Build dose curves from the timeline text-log track."""
+        _, _, txt_log_ds = timeline.get_track_tuple(source_track_name)
+        detailed_txt_log_df: pd.DataFrame = txt_log_ds.detailed_df.copy().reset_index(drop=True)
+        if 't' not in detailed_txt_log_df.columns:
+            raise ValueError(f"Text log track {source_track_name!r} must include a 't' column")
         if 'dt' not in detailed_txt_log_df.columns:
             detailed_txt_log_df['dt'] = float_to_datetime(detailed_txt_log_df['t'].to_numpy(), reference_datetime=timeline.reference_datetime)
-
         detailed_txt_log_df = detailed_txt_log_df.set_index('dt', drop=False, inplace=False)
-        ## OUTPUTS: detailed_txt_log_df
-        detailed_txt_log_df
-
-
-        ## INPUTS: detailed_txt_log_df
         recordSeries_df = cls._perform_parse_message_logs_to_dose_events(detailed_txt_log_df)
-        recordSeries_df
-
-        ## INPUTS: timeline, recordSeries_df
-        # def build_dose_curve_track(timeline, recordSeries_df):
-        ## compute specific datetime windows by passing the initial/final state vector to the calculation
-        start_date: datetime = timeline.total_data_start_time # datetime(2026, 4, 13)
-        # end_date: Optional[datetime] = None
+        if len(recordSeries_df) == 0:
+            raise ValueError(f"No dose events found in text log track {source_track_name!r}")
+        start_date: datetime = timeline.total_data_start_time
         end_date: Optional[datetime] = timeline.total_data_end_time
-
-        computation_blocks, complete_curve_df = ComputationTimeBlock.init_from_start_end_date(parsed_record_df=recordSeries_df, start_date=start_date, end_date=end_date)
-        ## OUTPUTS: computation_blocks, complete_curve_df
-        # print(list(complete_curve_df.columns)) # ['t_h', 'AMPH_gut', 'AMPH_blood', 'AMPH_brain', 'AMPH_ecf', 'DA_str', 'NE_pfc', 'DA_pfc', 'compute_block_idx', 't']
-
-
-        ## INPUTS: complete_curve_df
-        ## time_column_names = ['t_h', 't']
-        curve_channel_names = [col for col in ['AMPH_gut', 'AMPH_blood', 'AMPH_brain', 'AMPH_ecf', 'DA_str', 'NE_pfc', 'DA_pfc'] if col in complete_curve_df.columns]
-        curve_df = complete_curve_df[['t'] + curve_channel_names].copy()
-        interval_start = curve_df['t'].min()
-        interval_duration_seconds = (curve_df['t'].max() - interval_start).total_seconds()
+        compute_result = cast(Any, ComputationTimeBlock.init_from_start_end_date(parsed_record_df=recordSeries_df, start_date=start_date, end_date=end_date, backend=backend, max_events=max_events, follow_h_after_last=follow_h_after_last))
+        _, complete_curve_df = compute_result
+        complete_curve_df = cast(pd.DataFrame, complete_curve_df)
+        curve_channel_names = cls._get_curve_channel_names(complete_curve_df)
+        curve_df = cls._build_curve_detail_df(complete_curve_df=complete_curve_df, curve_channel_names=curve_channel_names)
+        interval_start = pd.Timestamp(curve_df['t'].min())
+        interval_end = pd.Timestamp(curve_df['t'].max())
+        interval_duration_seconds = (interval_end - interval_start).total_seconds()
         intervals_df = pd.DataFrame({'t_start': [interval_start], 't_duration': [interval_duration_seconds]})
-        curve_renderer = DataframePlotDetailRenderer(channel_names=curve_channel_names, normalize=True, 
-                                                    normalization_mode_dict={
-                ('AMPH_gut', 'AMPH_blood', 'AMPH_brain', 'AMPH_ecf'): ChannelNormalizationMode.GROUPMINMAXRANGE,
-                ('DA_str', 'DA_pfc'): ChannelNormalizationMode.GROUPMINMAXRANGE,
-                ('NE_pfc',): ChannelNormalizationMode.GROUPMINMAXRANGE,
-            }, fallback_normalization_mode = ChannelNormalizationMode.INDIVIDUAL,
-            pen_width=1.5,
-        )
-
-        ## INPUTS: complete_curve_df, recordSeries_df
-
-        # dose_curve_ds = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=curve_df, custom_datasource_name=track_name, detail_renderer=curve_renderer, enable_downsampling=False)
-        dose_curve_ds = cls(intervals_df=intervals_df, recordSeries_df=recordSeries_df, complete_curve_df=complete_curve_df, custom_datasource_name=track_name, detail_renderer=curve_renderer, enable_downsampling=False)
-
-        return dose_curve_ds
+        return cls(intervals_df=intervals_df, recordSeries_df=recordSeries_df, complete_curve_df=complete_curve_df, custom_datasource_name=track_name, channel_names=curve_channel_names, enable_downsampling=False, plot_pen_width=1.5)
 
 
-
-
+    
     @classmethod
     def build_dose_curve_track(cls, timeline, complete_curve_df: pd.DataFrame, track_name = 'DOSE_CURVES_Computed'):
-        ## INPUTS: complete_curve_df
-        ## time_column_names = ['t_h', 't']
-        curve_channel_names = [col for col in ['AMPH_gut', 'AMPH_blood', 'AMPH_brain', 'AMPH_ecf', 'DA_str', 'NE_pfc', 'DA_pfc'] if col in complete_curve_df.columns]
-        curve_df = complete_curve_df[['t'] + curve_channel_names].copy()
-        interval_start = curve_df['t'].min()
-        interval_duration_seconds = (curve_df['t'].max() - interval_start).total_seconds()
-        intervals_df = pd.DataFrame({'t_start': [interval_start], 't_duration': [interval_duration_seconds]})
-        curve_renderer = DataframePlotDetailRenderer(channel_names=curve_channel_names, normalize=True, 
-                                                    normalization_mode_dict={
-                ('AMPH_gut', 'AMPH_blood', 'AMPH_brain', 'AMPH_ecf'): ChannelNormalizationMode.GROUPMINMAXRANGE,
-                ('DA_str', 'DA_pfc'): ChannelNormalizationMode.GROUPMINMAXRANGE,
-                ('NE_pfc',): ChannelNormalizationMode.GROUPMINMAXRANGE,
-            }, fallback_normalization_mode = ChannelNormalizationMode.INDIVIDUAL,
-            pen_width=1.5,
-        )
-
-        dose_curve_ds = IntervalProvidingTrackDatasource(intervals_df=intervals_df, detailed_df=curve_df, custom_datasource_name=track_name, detail_renderer=curve_renderer, enable_downsampling=False)
-
-        if track_name in timeline.get_all_track_names():
-            print(f"Track '{track_name}' already exists; skipping add.")
-        else:
-            track_widget, root_graphics, plot_item, dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(name=track_name, dockSize=(500, 120), dockAddLocationOpts=['bottom'], sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA)
-            timeline.add_track(dose_curve_ds, name=track_name, plot_item=plot_item)
-
-        
-        return dose_curve_ds, curve_renderer
+        """Unfinished timeline-mutating helper disabled; use init_from_timeline_text_log_tracks."""
+        raise NotImplementedError("Use DoseTrackDatasource.init_from_timeline_text_log_tracks(...) instead.")
 
 
     @property
@@ -481,35 +391,19 @@ class DoseTrackDatasource(ComputableDatasourceMixin, DataframePlotDetailRenderer
 
 
     def try_extract_raw_datasets_dict(self) -> Optional[Dict[str, Optional[List[Any]]]]:
-        if not self.lab_obj_dict:
-            return None
-        from phopymnehelper.SavedSessionsProcessor import DataModalityType
-        from phopymnehelper.MNE_helpers import up_convert_raw_objects
-        from phopymnehelper.Dose_data import DoseData
-        out: Dict[str, Optional[List[Any]]] = {}
-        for k, lab in self.lab_obj_dict.items():
-            if lab is None or not lab.datasets_dict:
-                out[k] = None
-                continue
-            elst = list(lab.datasets_dict.get(DataModalityType.Dose.value, []) or [])
-            out[k] = up_convert_raw_objects(elst) if len(elst) > 0 else None
-        if not out:
-            return None
-        _all_eeg_for_montage = [r for _lst in out.values() if _lst for r in _lst]
-        if len(_all_eeg_for_montage) > 0:
-            DoseData.set_montage(datasets_Dose=_all_eeg_for_montage)
-        return cast(Dict[str, Optional[List[Any]]], self._sort_raws_by_meas_start(out))
+        """Unfinished raw/lab-object extraction disabled for the text-log dose curve path."""
+        return None
 
 
     def get_detail_renderer(self):
-        """Get detail renderer for eeg data."""
-        _extra_kw = {'channel_names': self.channel_names} if self.channel_names is not None else {}
+        """Get detail renderer for computed dose curve data."""
+        _extra_kw: Dict[str, Any] = {'channel_names': self.channel_names} if self.channel_names is not None else {}
         if self.plot_pen_colors is not None:
             _extra_kw['pen_colors'] = self.plot_pen_colors
-        _pen_width = 2 if self.plot_pen_width is None else self.plot_pen_width
+        _pen_width = 1.5 if self.plot_pen_width is None else self.plot_pen_width
         if self.detailed_df is None:
             print(f'WARN: self.detailed_df is None!')
-        return DosePlotDetailRenderer(pen_width=_pen_width, fallback_normalization_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds, normalize=self.normalize, normalize_over_full_data=self.normalize_over_full_data, normalization_reference_df=self.normalization_reference_df, **_extra_kw)
+        return DataframePlotDetailRenderer(pen_width=cast(Any, _pen_width), fallback_normalization_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds, normalize=self.normalize, normalize_over_full_data=self.normalize_over_full_data, normalization_reference_df=self.normalization_reference_df, **_extra_kw)
 
 
 
@@ -517,6 +411,10 @@ class DoseTrackDatasource(ComputableDatasourceMixin, DataframePlotDetailRenderer
         """Get cache key for interval (single-row DataFrame or Series)."""
         return super().get_detail_cache_key(interval)
 
+
+    '''
+    Unfinished copied methods below are intentionally disabled while DoseTrackDatasource only supports
+    the init_from_timeline_text_log_tracks path.
 
     # @classmethod
     # def from_multiple_sources(cls, intervals_dfs: List[pd.DataFrame], detailed_dfs: List[pd.DataFrame], custom_datasource_name: Optional[str] = None, max_points_per_second: Optional[float] = 1000.0, enable_downsampling: bool = True,
@@ -905,5 +803,8 @@ class DoseTrackDatasource(ComputableDatasourceMixin, DataframePlotDetailRenderer
 
 
 
-__all__ = ['DosePlotDetailRenderer', 'DoseTrackDatasource'] # , 'DoseTrackDatasource'
+    '''
+
+
+__all__ = ['DoseTrackDatasource']
 

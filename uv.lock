@@ -1531,7 +1531,7 @@ wheels = [
 
 [[package]]
 name = "dose-analysis-python"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "../Dose-Analysis-Python" }
 dependencies = [
     { name = "bionetgen" },
@@ -5219,7 +5219,7 @@ wheels = [
 
 [[package]]
 name = "py-pho-timeline"
-version = "0.5.2"
+version = "0.5.3"
 source = { editable = "." }
 dependencies = [
     { name = "attrs" },
