@@ -4,18 +4,11 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 from qtpy import QtCore
-from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence, TYPE_CHECKING, cast
+from typing import Dict, List, Mapping, Tuple, Optional, Callable, Union, Any, Sequence, cast
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, BaseTrackDatasource, RawProvidingTrackDatasource, ComputableDatasourceMixin
-if TYPE_CHECKING:
-    import mne
-    import phopymnehelper.type_aliases as types
-    from phopymnehelper.xdf_files import LabRecorderXDF
-    from pypho_timeline.timeline_builder import TimelineBuilder
-    from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget
+from pypho_timeline.rendering.datasources.track_datasource import IntervalProvidingTrackDatasource, ComputableDatasourceMixin
 
-from phopymnehelper.analysis.computations.eeg_registry import run_eeg_computations_graph, session_fingerprint_for_raw_or_path
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 from pypho_timeline.utils.logging_util import get_rendering_logger
@@ -23,7 +16,6 @@ logger = get_rendering_logger(__name__)
 
 from dose_analysis_python.DoseCurveCalculation.pysb_pkpd_da_ne_monoamine import PySbPKPD_DA_NE_DoseCurveModel
 from dose_analysis_python.FileImportExport.DoseImporter import DoseNoteFragmentParser
-from phopymnehelper.MNE_helpers import MNEHelpers
 from phopylslhelper.datetime_helpers import to_display_timezone, unix_timestamp_to_datetime, float_to_datetime
 from datetime import datetime, timedelta
 from dose_analysis_python.Helpers.quantization import Quanta, ComputationTimeBlock
@@ -258,10 +250,10 @@ class DosePlotDetailRenderer(LogTextDataFramePlotDetailRenderer):
 # ==================================================================================================================================================================================================================================================================================== #
 # DoseTrackDatasource                                                                                                                                                                                                                                                                   #
 # ==================================================================================================================================================================================================================================================================================== #
-class DoseTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource):
-    """TrackDatasource for Dose data with optional LabRecorderXDF / MNE raws (via RawProvidingTrackDatasource).
+class DoseTrackDatasource(ComputableDatasourceMixin, IntervalProvidingTrackDatasource):
+    """TrackDatasource for text-log-derived dose curves backed by interval/detail DataFrames.
 
-    Extends RawProvidingTrackDatasource for eeg-specific detail rendering and async detail loading.
+    Extends IntervalProvidingTrackDatasource for dose-curve detail rendering and async detail loading.
 
     Usage:
 
@@ -279,14 +271,14 @@ class DoseTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource
     DEFAULT_NORMALIZATION_MODE_DICT = {('AMPH_gut', 'AMPH_blood', 'AMPH_brain', 'AMPH_ecf'): ChannelNormalizationMode.GROUPMINMAXRANGE, ('DA_str', 'DA_pfc'): ChannelNormalizationMode.GROUPMINMAXRANGE, ('NE_pfc',): ChannelNormalizationMode.GROUPMINMAXRANGE}
 
 
-    def __init__(self, intervals_df: pd.DataFrame, recordSeries_df: pd.DataFrame, complete_curve_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, parent: Optional[QtCore.QObject] = None, plot_pen_colors: Optional[List[str]] = None, plot_pen_width: Optional[float] = None):
+    def __init__(self, intervals_df: pd.DataFrame, recordSeries_df: pd.DataFrame, complete_curve_df: pd.DataFrame, custom_datasource_name: Optional[str]=None, max_points_per_second: Optional[float]=1000.0, enable_downsampling: bool=True, fallback_normalization_mode: ChannelNormalizationMode = ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict: Optional[Dict[Sequence[str], ChannelNormalizationMode]] = None, arbitrary_bounds: Optional[Mapping[str, Tuple[float, float]]] = None, normalize: bool = True, normalize_over_full_data: bool = True, normalization_reference_df: Optional[pd.DataFrame] = None, channel_names: Optional[List[str]] = None, parent: Optional[QtCore.QObject] = None, plot_pen_colors: Optional[List[str]] = None, plot_pen_width: Optional[float] = None):
         """Initialize a dataframe-backed datasource for precomputed dose curves."""
         if custom_datasource_name is None:
             custom_datasource_name = "DoseTrack"
         if channel_names is None:
             channel_names = self._get_curve_channel_names(complete_curve_df)
         curve_df = self._build_curve_detail_df(complete_curve_df=complete_curve_df, curve_channel_names=channel_names)
-        super().__init__(intervals_df, detailed_df=curve_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, lab_obj_dict=lab_obj_dict, raw_datasets_dict=raw_datasets_dict, parent=parent)
+        super().__init__(intervals_df, detailed_df=curve_df, custom_datasource_name=custom_datasource_name, max_points_per_second=max_points_per_second, enable_downsampling=enable_downsampling, parent=parent)
         self.recordSeries_df = recordSeries_df.copy()
         self.complete_curve_df = complete_curve_df.copy()
 
@@ -387,13 +379,6 @@ class DoseTrackDatasource(ComputableDatasourceMixin, RawProvidingTrackDatasource
     def num_sessions(self) -> int:
         """The num_sessions property."""
         return len(self.intervals_df)
-
-
-
-    def try_extract_raw_datasets_dict(self) -> Optional[Dict[str, Optional[List[Any]]]]:
-        """Unfinished raw/lab-object extraction disabled for the text-log dose curve path."""
-        return None
-
 
     def get_detail_renderer(self):
         """Get detail renderer for computed dose curve data."""
