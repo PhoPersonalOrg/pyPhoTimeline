@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: verify-dose-file
     content: Check lints and run a narrow syntax/import verification if available.
-    status: in_progress
+    status: completed
 isProject: false
 ---
 
