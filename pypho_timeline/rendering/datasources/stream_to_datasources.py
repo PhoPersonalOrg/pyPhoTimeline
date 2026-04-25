@@ -165,8 +165,13 @@ def perform_process_xdf_file(xdf_path_for_raw: Path):
     except ValueError as e:
         if 'datetime' in str(e).lower() or 'UTC' in str(e):
             logger.warning(f'\tSkipping raw XDF file load with xdf_path: {xdf_path_for_raw}: LabRecorderXDF load failed (UTC/datetime issue): {e}')
+
         else:
             raise
+
+    except TypeError as e:
+        logger.warning(f'\tSkipping raw XDF file load with xdf_path: {xdf_path_for_raw}: LabRecorderXDF load failed not header or streams issue): {e}')
+
     
     if a_lab_obj is not None:
         a_raws_dict = a_lab_obj.datasets_dict or {}
