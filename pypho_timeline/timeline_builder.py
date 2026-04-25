@@ -20,7 +20,7 @@ from qtpy import QtWidgets, QtCore
 from qtpy.QtCore import QObject
 from pypho_timeline.widgets import SimpleTimelineWidget
 from pypho_timeline.widgets.TimelineWindow.MainTimelineWindow import MainTimelineWindow
-from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_all_streams_multi_xdf, default_dock_named_color_scheme_key
+from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_all_streams_multi_xdf, perform_process_xdf_file, default_dock_named_color_scheme_key
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockButtonConfig
@@ -230,8 +230,11 @@ class TimelineBuilder(QObject):
         return discover_xdf_files_for_timeline(xdf_discovery_dirs=xdf_discovery_dirs, n_most_recent=n_most_recent).xdf_paths
 
 
-    def _load_and_filter_xdf_file(self, file_index: int, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> Dict[str, Any]:
+    def _load_and_filter_xdf_file(self, file_index: int, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, enable_raw_xdf_processing: bool=True) -> Dict[str, Any]:
+        """ called in parallel for each XDF file 
+        """
         logger.info(f"Loading XDF file: {xdf_file_path} ...")
+        extra_out_dict_kwargs = {'lab_obj': None, 'raws_dict': None}
         try:
             streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
 
@@ -246,15 +249,35 @@ class TimelineBuilder(QObject):
             # streams = obj.xdf_streams
             # file_header = obj.xdf_header  # streams, file_header = pyxdf.load_xdf(str(xdf_file_path), verbose=True)
 
+
             logger.info(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
             if (stream_allowlist is not None) or (stream_blocklist is not None):
                 streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
             logger.info(f"  Streams kept for {xdf_file_path.name}: {[s['info']['name'][0] for s in streams]}")
-            return {"file_index": file_index, "xdf_file_path": xdf_file_path, "streams": streams, "file_header": file_header, "error": None}
+            active_xdf_out_dict = {"file_index": file_index, "xdf_file_path": xdf_file_path, "streams": streams, "file_header": file_header, "error": None, **extra_out_dict_kwargs}
+
 
         except (OSError, FileExistsError, FileNotFoundError, ValueError) as err:
             # For a currently open/writing XDF file, I'm getting "ValueError: read length must be non-negative or -1"
-            return {"file_index": file_index, "xdf_file_path": xdf_file_path, "streams": None, "file_header": None, "error": err}
+            logger.error(f'\tencountered error {err} when trying to use `pyxdf.load_xdf(...)` or `self._filter_streams_by_name(...)`. Entire XDF file will be excluded')
+            return {"file_index": file_index, "xdf_file_path": xdf_file_path, "streams": None, "file_header": None, "error": err, **extra_out_dict_kwargs}
+
+
+        if enable_raw_xdf_processing:
+            try:
+                ## adds active_xdf_out_dict['a_lab_obj'], 
+                # lab_obj_dict[xdf_file_path.name] = None
+                a_lab_obj, _a_raws_dict = perform_process_xdf_file(xdf_path_for_raw=xdf_file_path)
+                active_xdf_out_dict['lab_obj'] = a_lab_obj
+                active_xdf_out_dict['raws_dict'] = _a_raws_dict
+                # lab_obj_dict[xdf_file_path.name] = a_lab_obj
+
+            except (OSError, FileExistsError, FileNotFoundError, ValueError) as err:
+                # For a currently open/writing XDF file, I'm getting "ValueError: read length must be non-negative or -1"
+                logger.error(f'\tencountered error {err} when trying `enable_raw_xdf_processing == True` processing via perform_process_xdf_file(...). Skipping.')
+                active_xdf_out_dict['err'] = err
+
+        return active_xdf_out_dict
 
 
 
@@ -386,7 +409,7 @@ class TimelineBuilder(QObject):
     
 
     # @function_attributes(short_name=None, tags=['MAIN', 'used], input_requires=[], output_provides=[], uses=['self.build_from_datasources', 'perform_process_all_streams_multi_xdf], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
-    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, add_overview_strip: bool = True, **kwargs) -> Optional[SimpleTimelineWidget]:
+    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, enable_raw_xdf_processing: bool=True, add_overview_strip: bool = True, **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from multiple XDF files, merging streams by name.
         
         Streams with the same name across different files will be merged into a single track.
@@ -443,16 +466,20 @@ class TimelineBuilder(QObject):
         all_streams_by_file = []
         all_file_headers = []
         all_loaded_xdf_file_paths = []
+        all_loaded_xdf_obj_and_results = []
+
         max_workers = max(1, min(len(xdf_file_paths), (os.cpu_count() or 4)))
         completed_results_by_index: Dict[int, Dict[str, Any]] = {}
         with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='xdf_load') as executor:
             future_to_path = {
-                executor.submit(self._load_and_filter_xdf_file, file_index, xdf_file_path, stream_allowlist, stream_blocklist): xdf_file_path
+                executor.submit(self._load_and_filter_xdf_file, file_index, xdf_file_path, stream_allowlist, stream_blocklist, enable_raw_xdf_processing): xdf_file_path
                 for file_index, xdf_file_path in enumerate(xdf_file_paths)
             }
             for future in as_completed(future_to_path):
                 result = future.result()
                 completed_results_by_index[result["file_index"]] = result
+        ## END with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='xdf_load') as executor...
+
 
         # Reassemble in input order so downstream xdf_file_paths/file_headers stay positionally aligned.
         for file_index in range(len(xdf_file_paths)):
@@ -466,10 +493,18 @@ class TimelineBuilder(QObject):
             all_file_headers.append(result["file_header"])
             all_loaded_xdf_file_paths.append(result["xdf_file_path"])
 
+            if enable_raw_xdf_processing:
+                lab_obj = result.get('lab_obj', None)
+                raws_dict = result.get('raws_dict', None)
+                if lab_obj is not None:
+                    all_loaded_xdf_obj_and_results.append(lab_obj)
+
+
+        ## END for file_index in range(len(xdf_file_paths))...
+
         ## OUTPUTS: all_streams_by_file, all_loaded_xdf_file_paths, all_file_headers
         ## Calls `perform_process_all_streams_multi_xdf(...)` to process streams from all files and merge by stream name
-        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_xdf_file_paths, file_headers=all_file_headers)
-
+        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_xdf_file_paths, file_headers=all_file_headers) ## ~4.5min for 25 XDF files
 
         ## INPUTS: all_streams_datasources, all_streams
         ## TODO 2026-04-13 19:10: - [ ] new async method that calls something equivalent of `perform_process_all_streams_multi_xdf`... but iteratively
