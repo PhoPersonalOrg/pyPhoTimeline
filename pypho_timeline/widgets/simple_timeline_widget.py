@@ -302,6 +302,78 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
         QtCore.QTimer.singleShot(0, self._update_interval_jump_buttons_enabled)
 
 
+    def create_duplicate_timeline_widget(self, #child_window_name: str='a child window', 
+            # track_names: Optional[List[str]] = None, compare_window_start_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_window_end_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_suffix: str = '', enable_time_crosshair: bool = False,
+            **kwargs) -> SimpleTimelineWidget:
+        """ creates a separate child timeline window that's independent from this one """
+        _out_timeline: SimpleTimelineWidget = SimpleTimelineWidget(total_start_time=self.total_data_start_time, total_end_time=self.total_data_end_time,
+            window_duration=self.spikes_window.window_duration, window_start_time=self.spikes_window.active_window_start_time,
+            reference_datetime=self.reference_datetime,
+        )
+        # ## Add the required tracks/etc
+        # source_timeline: SimpleTimelineWidget = self
+        # # target_timeline = self
+        # target_timeline: SimpleTimelineWidget = _out_timeline
+
+        # if track_names is None:
+        #     track_names = source_timeline.get_track_names_for_window_sync_group(window_sync_group='primary')
+
+        # created_compare_tracks = {}
+        # for track_name in track_names:
+        #     compare_track_name = f"{track_name}{compare_suffix}"
+        #     # created_compare_tracks[track_name] = _out_timeline.add_compare_track_view(track_name=track_name, compare_track_name=compare_track_name, compare_window_start_time=compare_window_start_time, compare_window_end_time=compare_window_end_time, enable_time_crosshair=enable_time_crosshair)
+
+
+        #     # def add_compare_track_view(self, track_name: str, compare_track_name: Optional[str] = None, compare_window_start_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_window_end_time: Optional[Union[float, datetime, pd.Timestamp]] = None, dockSize: Optional[Tuple[int, int]] = None, enable_time_crosshair: bool = True):
+
+
+        #     primary_widget, primary_track_renderer, primary_datasource = source_timeline.get_track_tuple(track_name)
+        #     if (primary_widget is None) or (primary_track_renderer is None) or (primary_datasource is None):
+        #         raise ValueError(f'Cannot create compare view for missing track "{track_name}".')
+
+        #     if compare_track_name is None:
+        #         compare_track_name = f"{track_name}__compare"
+
+        #     compare_window_start_time, compare_window_end_time = source_timeline._resolve_window_bounds(compare_window_start_time, compare_window_end_time, source_timeline.compare_window_start_time, source_timeline.compare_window_end_time)
+        #     extant_compare_widget, extant_compare_renderer, _ = target_timeline.get_track_tuple(compare_track_name)
+        #     if (extant_compare_widget is not None) and (extant_compare_renderer is not None):
+        #         extant_compare_plot_item = extant_compare_widget.getRootPlotItem()
+        #         extant_compare_dock = self.ui.dynamic_docked_widget_container.find_display_dock(compare_track_name)
+        #         extant_compare_widget.on_window_changed(compare_window_start_time, compare_window_end_time)
+        #         target_timeline._set_compare_window_state(compare_window_start_time, compare_window_end_time, emit_signal=True)
+        #         created_compare_tracks[track_name] = (extant_compare_widget, extant_compare_widget.getRootGraphicsLayoutWidget(), extant_compare_plot_item, extant_compare_dock)
+
+        #     else:
+        #         ## needs create new:
+        #         primary_dock = target_timeline.ui.dynamic_docked_widget_container.find_display_dock(track_name)
+        #         dock_add_location_opts = [primary_dock, 'right'] if primary_dock is not None else ['bottom']
+        #         # if dockSize is None:
+        #         dockSize = (max(primary_widget.width(), 500), max(primary_widget.height(), 80))
+
+        #         compare_widget, root_graphics, compare_plot_item, compare_dock = target_timeline.add_new_embedded_pyqtgraph_render_plot_widget(name=compare_track_name, dockSize=dockSize, dockAddLocationOpts=dock_add_location_opts, sync_mode=SynchronizedPlotMode.NO_SYNC, dock_group_names=[target_timeline.SPLIT_COMPARE_DOCK_GROUP])
+        #         primary_plot_item = primary_widget.getRootPlotItem()
+        #         self._copy_track_plot_configuration(primary_plot_item, compare_plot_item)
+        #         target_timeline.add_track(primary_datasource, name=compare_track_name, plot_item=compare_plot_item, enable_time_crosshair=enable_time_crosshair, window_sync_group='compare')
+
+        #         target_timeline.ui.compare_track_names.add(compare_track_name)
+        #         if target_timeline.ui.compare_track_master_name is None:
+        #             target_timeline._set_compare_track_master(compare_track_name)
+        #         else:
+        #             master_plot_item = target_timeline.ui.matplotlib_view_widgets[target_timeline.ui.compare_track_master_name].getRootPlotItem()
+        #             compare_plot_item.setXLink(master_plot_item)
+
+        #         compare_widget.on_window_changed(compare_window_start_time, compare_window_end_time)
+        #         target_timeline._set_compare_window_state(compare_window_start_time, compare_window_end_time, emit_signal=True)
+
+        #         created_compare_tracks[track_name] = (compare_widget, root_graphics, compare_plot_item, compare_dock)
+        #     # return compare_widget, root_graphics, compare_plot_item, compare_dock
+
+
+        # _out_timeline._rebuild_split_track_dock_groups()
+
+        return _out_timeline
+
+
     def create_child_window(self, child_window_name: str='a child window', 
             track_names: Optional[List[str]] = None, compare_window_start_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_window_end_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_suffix: str = '', enable_time_crosshair: bool = False,
             **kwargs) -> SimpleTimelineWidget:
@@ -310,66 +382,66 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
             window_duration=self.spikes_window.window_duration, window_start_time=self.spikes_window.active_window_start_time,
             reference_datetime=self.reference_datetime,
         )
-        ## Add the required tracks/etc
-        source_timeline: SimpleTimelineWidget = self
-        # target_timeline = self
-        target_timeline: SimpleTimelineWidget = _out_timeline
+        # ## Add the required tracks/etc
+        # source_timeline: SimpleTimelineWidget = self
+        # # target_timeline = self
+        # target_timeline: SimpleTimelineWidget = _out_timeline
 
-        if track_names is None:
-            track_names = source_timeline.get_track_names_for_window_sync_group(window_sync_group='primary')
+        # if track_names is None:
+        #     track_names = source_timeline.get_track_names_for_window_sync_group(window_sync_group='primary')
 
-        created_compare_tracks = {}
-        for track_name in track_names:
-            compare_track_name = f"{track_name}{compare_suffix}"
-            # created_compare_tracks[track_name] = _out_timeline.add_compare_track_view(track_name=track_name, compare_track_name=compare_track_name, compare_window_start_time=compare_window_start_time, compare_window_end_time=compare_window_end_time, enable_time_crosshair=enable_time_crosshair)
-
-
-            # def add_compare_track_view(self, track_name: str, compare_track_name: Optional[str] = None, compare_window_start_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_window_end_time: Optional[Union[float, datetime, pd.Timestamp]] = None, dockSize: Optional[Tuple[int, int]] = None, enable_time_crosshair: bool = True):
+        # created_compare_tracks = {}
+        # for track_name in track_names:
+        #     compare_track_name = f"{track_name}{compare_suffix}"
+        #     # created_compare_tracks[track_name] = _out_timeline.add_compare_track_view(track_name=track_name, compare_track_name=compare_track_name, compare_window_start_time=compare_window_start_time, compare_window_end_time=compare_window_end_time, enable_time_crosshair=enable_time_crosshair)
 
 
-            primary_widget, primary_track_renderer, primary_datasource = source_timeline.get_track_tuple(track_name)
-            if (primary_widget is None) or (primary_track_renderer is None) or (primary_datasource is None):
-                raise ValueError(f'Cannot create compare view for missing track "{track_name}".')
-
-            if compare_track_name is None:
-                compare_track_name = f"{track_name}__compare"
-
-            compare_window_start_time, compare_window_end_time = source_timeline._resolve_window_bounds(compare_window_start_time, compare_window_end_time, source_timeline.compare_window_start_time, source_timeline.compare_window_end_time)
-            extant_compare_widget, extant_compare_renderer, _ = target_timeline.get_track_tuple(compare_track_name)
-            if (extant_compare_widget is not None) and (extant_compare_renderer is not None):
-                extant_compare_plot_item = extant_compare_widget.getRootPlotItem()
-                extant_compare_dock = self.ui.dynamic_docked_widget_container.find_display_dock(compare_track_name)
-                extant_compare_widget.on_window_changed(compare_window_start_time, compare_window_end_time)
-                target_timeline._set_compare_window_state(compare_window_start_time, compare_window_end_time, emit_signal=True)
-                created_compare_tracks[track_name] = (extant_compare_widget, extant_compare_widget.getRootGraphicsLayoutWidget(), extant_compare_plot_item, extant_compare_dock)
-
-            else:
-                ## needs create new:
-                primary_dock = target_timeline.ui.dynamic_docked_widget_container.find_display_dock(track_name)
-                dock_add_location_opts = [primary_dock, 'right'] if primary_dock is not None else ['bottom']
-                # if dockSize is None:
-                dockSize = (max(primary_widget.width(), 500), max(primary_widget.height(), 80))
-
-                compare_widget, root_graphics, compare_plot_item, compare_dock = target_timeline.add_new_embedded_pyqtgraph_render_plot_widget(name=compare_track_name, dockSize=dockSize, dockAddLocationOpts=dock_add_location_opts, sync_mode=SynchronizedPlotMode.NO_SYNC, dock_group_names=[target_timeline.SPLIT_COMPARE_DOCK_GROUP])
-                primary_plot_item = primary_widget.getRootPlotItem()
-                self._copy_track_plot_configuration(primary_plot_item, compare_plot_item)
-                target_timeline.add_track(primary_datasource, name=compare_track_name, plot_item=compare_plot_item, enable_time_crosshair=enable_time_crosshair, window_sync_group='compare')
-
-                target_timeline.ui.compare_track_names.add(compare_track_name)
-                if target_timeline.ui.compare_track_master_name is None:
-                    target_timeline._set_compare_track_master(compare_track_name)
-                else:
-                    master_plot_item = target_timeline.ui.matplotlib_view_widgets[target_timeline.ui.compare_track_master_name].getRootPlotItem()
-                    compare_plot_item.setXLink(master_plot_item)
-
-                compare_widget.on_window_changed(compare_window_start_time, compare_window_end_time)
-                target_timeline._set_compare_window_state(compare_window_start_time, compare_window_end_time, emit_signal=True)
-
-                created_compare_tracks[track_name] = (compare_widget, root_graphics, compare_plot_item, compare_dock)
-            # return compare_widget, root_graphics, compare_plot_item, compare_dock
+        #     # def add_compare_track_view(self, track_name: str, compare_track_name: Optional[str] = None, compare_window_start_time: Optional[Union[float, datetime, pd.Timestamp]] = None, compare_window_end_time: Optional[Union[float, datetime, pd.Timestamp]] = None, dockSize: Optional[Tuple[int, int]] = None, enable_time_crosshair: bool = True):
 
 
-        _out_timeline._rebuild_split_track_dock_groups()
+        #     primary_widget, primary_track_renderer, primary_datasource = source_timeline.get_track_tuple(track_name)
+        #     if (primary_widget is None) or (primary_track_renderer is None) or (primary_datasource is None):
+        #         raise ValueError(f'Cannot create compare view for missing track "{track_name}".')
+
+        #     if compare_track_name is None:
+        #         compare_track_name = f"{track_name}__compare"
+
+        #     compare_window_start_time, compare_window_end_time = source_timeline._resolve_window_bounds(compare_window_start_time, compare_window_end_time, source_timeline.compare_window_start_time, source_timeline.compare_window_end_time)
+        #     extant_compare_widget, extant_compare_renderer, _ = target_timeline.get_track_tuple(compare_track_name)
+        #     if (extant_compare_widget is not None) and (extant_compare_renderer is not None):
+        #         extant_compare_plot_item = extant_compare_widget.getRootPlotItem()
+        #         extant_compare_dock = self.ui.dynamic_docked_widget_container.find_display_dock(compare_track_name)
+        #         extant_compare_widget.on_window_changed(compare_window_start_time, compare_window_end_time)
+        #         target_timeline._set_compare_window_state(compare_window_start_time, compare_window_end_time, emit_signal=True)
+        #         created_compare_tracks[track_name] = (extant_compare_widget, extant_compare_widget.getRootGraphicsLayoutWidget(), extant_compare_plot_item, extant_compare_dock)
+
+        #     else:
+        #         ## needs create new:
+        #         primary_dock = target_timeline.ui.dynamic_docked_widget_container.find_display_dock(track_name)
+        #         dock_add_location_opts = [primary_dock, 'right'] if primary_dock is not None else ['bottom']
+        #         # if dockSize is None:
+        #         dockSize = (max(primary_widget.width(), 500), max(primary_widget.height(), 80))
+
+        #         compare_widget, root_graphics, compare_plot_item, compare_dock = target_timeline.add_new_embedded_pyqtgraph_render_plot_widget(name=compare_track_name, dockSize=dockSize, dockAddLocationOpts=dock_add_location_opts, sync_mode=SynchronizedPlotMode.NO_SYNC, dock_group_names=[target_timeline.SPLIT_COMPARE_DOCK_GROUP])
+        #         primary_plot_item = primary_widget.getRootPlotItem()
+        #         self._copy_track_plot_configuration(primary_plot_item, compare_plot_item)
+        #         target_timeline.add_track(primary_datasource, name=compare_track_name, plot_item=compare_plot_item, enable_time_crosshair=enable_time_crosshair, window_sync_group='compare')
+
+        #         target_timeline.ui.compare_track_names.add(compare_track_name)
+        #         if target_timeline.ui.compare_track_master_name is None:
+        #             target_timeline._set_compare_track_master(compare_track_name)
+        #         else:
+        #             master_plot_item = target_timeline.ui.matplotlib_view_widgets[target_timeline.ui.compare_track_master_name].getRootPlotItem()
+        #             compare_plot_item.setXLink(master_plot_item)
+
+        #         compare_widget.on_window_changed(compare_window_start_time, compare_window_end_time)
+        #         target_timeline._set_compare_window_state(compare_window_start_time, compare_window_end_time, emit_signal=True)
+
+        #         created_compare_tracks[track_name] = (compare_widget, root_graphics, compare_plot_item, compare_dock)
+        #     # return compare_widget, root_graphics, compare_plot_item, compare_dock
+
+
+        # _out_timeline._rebuild_split_track_dock_groups()
 
         return _out_timeline
 

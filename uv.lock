@@ -1536,7 +1536,7 @@ wheels = [
 
 [[package]]
 name = "dose-analysis-python"
-version = "0.2.3"
+version = "0.2.4"
 source = { editable = "../Dose-Analysis-Python" }
 dependencies = [
     { name = "bionetgen" },
@@ -5218,6 +5218,7 @@ dependencies = [
     { name = "polars", extra = ["all"] },
     { name = "pyedflib" },
     { name = "pyphocorehelpers" },
+    { name = "pyqt5-tools" },
     { name = "pyqt6" },
     { name = "pyqt6-tools" },
     { name = "pyqtgraph" },
@@ -5255,6 +5256,7 @@ requires-dist = [
     { name = "polars", extras = ["all"], specifier = ">=1.39.3" },
     { name = "pyedflib", specifier = ">=0.1.42" },
     { name = "pyphocorehelpers", editable = "../pyPhoCoreHelpers" },
+    { name = "pyqt5-tools", specifier = ">=5.15.9.3.3" },
     { name = "pyqt6", specifier = ">=6.4.2" },
     { name = "pyqt6-tools", specifier = ">=6.4.2.3.3" },
     { name = "pyqtgraph", specifier = ">=0.13.7" },
@@ -5724,19 +5726,35 @@ wheels = [
 
 [[package]]
 name = "pyqt5"
-version = "5.15.11"
+version = "5.15.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyqt5-qt5" },
     { name = "pyqt5-sip" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/07/c9ed0bd428df6f87183fca565a79fee19fa7c88c7f00a7f011ab4379e77a/PyQt5-5.15.11.tar.gz", hash = "sha256:fda45743ebb4a27b4b1a51c6d8ef455c4c1b5d610c90d2934c7802b5c1557c52", size = 3216775, upload-time = "2024-07-19T08:39:57.756Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/46/b4b6eae1e24d9432905ef1d4e7c28b6610e28252527cdc38f2a75997d8b5/PyQt5-5.15.9.tar.gz", hash = "sha256:dc41e8401a90dc3e2b692b411bd5492ab559ae27a27424eed4bd3915564ec4c0", size = 3241160, upload-time = "2023-02-06T11:23:06.121Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/11/64/42ec1b0bd72d87f87bde6ceb6869f444d91a2d601f2e67cd05febc0346a1/PyQt5-5.15.11-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:c8b03dd9380bb13c804f0bdb0f4956067f281785b5e12303d529f0462f9afdc2", size = 6579776, upload-time = "2024-07-19T08:39:19.775Z" },
-    { url = "https://files.pythonhosted.org/packages/49/f5/3fb696f4683ea45d68b7e77302eff173493ac81e43d63adb60fa760b9f91/PyQt5-5.15.11-cp38-abi3-macosx_11_0_x86_64.whl", hash = "sha256:6cd75628f6e732b1ffcfe709ab833a0716c0445d7aec8046a48d5843352becb6", size = 7016415, upload-time = "2024-07-19T08:39:32.977Z" },
-    { url = "https://files.pythonhosted.org/packages/b4/8c/4065950f9d013c4b2e588fe33cf04e564c2322842d84dbcbce5ba1dc28b0/PyQt5-5.15.11-cp38-abi3-manylinux_2_17_x86_64.whl", hash = "sha256:cd672a6738d1ae33ef7d9efa8e6cb0a1525ecf53ec86da80a9e1b6ec38c8d0f1", size = 8188103, upload-time = "2024-07-19T08:39:40.561Z" },
-    { url = "https://files.pythonhosted.org/packages/f3/f0/ae5a5b4f9b826b29ea4be841b2f2d951bcf5ae1d802f3732b145b57c5355/PyQt5-5.15.11-cp38-abi3-win32.whl", hash = "sha256:76be0322ceda5deecd1708a8d628e698089a1cea80d1a49d242a6d579a40babd", size = 5433308, upload-time = "2024-07-19T08:39:46.932Z" },
-    { url = "https://files.pythonhosted.org/packages/56/d5/68eb9f3d19ce65df01b6c7b7a577ad3bbc9ab3a5dd3491a4756e71838ec9/PyQt5-5.15.11-cp38-abi3-win_amd64.whl", hash = "sha256:bdde598a3bb95022131a5c9ea62e0a96bd6fb28932cc1619fd7ba211531b7517", size = 6865864, upload-time = "2024-07-19T08:39:53.572Z" },
+    { url = "https://files.pythonhosted.org/packages/77/c7/82f92662afdd85b69d126353d498f71e0fce03cbf1c01b700e0e495adf16/PyQt5-5.15.9-cp37-abi3-macosx_10_13_x86_64.whl", hash = "sha256:883ba5c8a348be78c8be6a3d3ba014c798e679503bce00d76c666c2dc6afe828", size = 7043123, upload-time = "2023-02-06T11:22:34.625Z" },
+    { url = "https://files.pythonhosted.org/packages/28/99/78db05e606dbb4a9425c159e7f1f64b69683c16ee3dcd0f97ed9ede6b205/PyQt5-5.15.9-cp37-abi3-manylinux_2_17_x86_64.whl", hash = "sha256:dd5ce10e79fbf1df29507d2daf99270f2057cdd25e4de6fbf2052b46c652e3a5", size = 8401684, upload-time = "2023-02-06T11:22:44.872Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/b5/00a3c80a4c738e92e9d9e144c9bb5bd9d0842bac5517c63d42e7c9633826/PyQt5-5.15.9-cp37-abi3-win32.whl", hash = "sha256:e45c5cc15d4fd26ab5cb0e5cdba60691a3e9086411f8e3662db07a5a4222a696", size = 5424142, upload-time = "2023-02-06T11:22:50.337Z" },
+    { url = "https://files.pythonhosted.org/packages/55/5d/8df8a2aa0de6588965d048fca9306cf15a5801be3078f195e8f8f41fa863/PyQt5-5.15.9-cp37-abi3-win_amd64.whl", hash = "sha256:e030d795df4cbbfcf4f38b18e2e119bcc9e177ef658a5094b87bb16cac0ce4c5", size = 6841448, upload-time = "2023-02-06T11:22:57.653Z" },
+]
+
+[[package]]
+name = "pyqt5-plugins"
+version = "5.15.9.2.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "pyqt5" },
+    { name = "pyqt5-qt5" },
+    { name = "qt5-tools" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e7/be/b6cb8bd5b2e05e74178e9bb2b2ecdce76b2067bac41919aff80cb8b17ad0/pyqt5_plugins-5.15.9.2.3-cp311-cp311-macosx_10_13_universal2.whl", hash = "sha256:078b1564a54c1549e40a87c32deb9cf9e77d72f004cd0f5f42a2acfd4d6aea36", size = 59121, upload-time = "2023-03-27T18:36:59.223Z" },
+    { url = "https://files.pythonhosted.org/packages/fe/2b/11790a554b49d590cb02b466ea496670b2291c3e828bb9576219d812d0f8/pyqt5_plugins-5.15.9.2.3-cp311-cp311-manylinux2014_x86_64.whl", hash = "sha256:c883469f6d17859c8991d44d72fff6b2b9e3fa18b371c86ff002afb5e790f9c6", size = 68457, upload-time = "2023-03-27T18:37:54.196Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/56/616d43b195330f0f322a36fee70a0bea55b641baf57afc58b383d870f471/pyqt5_plugins-5.15.9.2.3-cp311-cp311-win32.whl", hash = "sha256:f48754c09ed46a0b6305109c0c19ed7cd8b13925ba81ef2df2e8a870437b3aa7", size = 64715, upload-time = "2023-03-27T18:37:26.249Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/29/b9e0ad2d345b425a111f22eac83e45c68afe8d3475a0adabc2da5dbfa5b3/pyqt5_plugins-5.15.9.2.3-cp311-cp311-win_amd64.whl", hash = "sha256:1d9acf423062c6694a5e68782fb54ce90355481d33281c9193da45c43426853c", size = 66790, upload-time = "2023-03-27T18:37:42.184Z" },
 ]
 
 [[package]]
@@ -5761,6 +5779,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/79/53/64373ba9311288b0ea6b5ab375d9c9743a41ac93df7137655498c95a08e5/pyqt5_sip-12.18.0-cp311-cp311-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:521729e4ce44db555005f4e6987c4a5164d45ea03f5a7d08519813d4776acd15", size = 277067, upload-time = "2026-01-13T15:52:51.22Z" },
     { url = "https://files.pythonhosted.org/packages/ce/dd/4026bba8355ceaba222db0369fe4a480d55aa61d3f14dbe1458886ccc032/pyqt5_sip-12.18.0-cp311-cp311-win32.whl", hash = "sha256:c738949863d88b78f86f28e13151989ca3b1a302934811af41856dc8a27838bd", size = 49323, upload-time = "2026-01-13T15:52:55.859Z" },
     { url = "https://files.pythonhosted.org/packages/41/35/39e549ca7f7c9fbb025912a5db7f55f3b9c22d7f9718f41c2e7a17c806e9/pyqt5_sip-12.18.0-cp311-cp311-win_amd64.whl", hash = "sha256:ac0be1a8ce145ed78c7e8d45243749405bee7e3a87e9810b0542bca010c50bd7", size = 58795, upload-time = "2026-01-13T15:52:54.995Z" },
+]
+
+[[package]]
+name = "pyqt5-tools"
+version = "5.15.9.3.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "pyqt5" },
+    { name = "pyqt5-plugins" },
+    { name = "python-dotenv" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/11/7e/3a5bce0e31650e091a16826d7a588be8bd56c2ac30871286b6c90d68ceeb/pyqt5_tools-5.15.9.3.3-py3-none-any.whl", hash = "sha256:4b45b26111c583a34fa364b98d7120f5aeca4f96ac72e251f1b37a9cca809f86", size = 29165, upload-time = "2023-03-27T19:26:56.526Z" },
 ]
 
 [[package]]
@@ -6262,6 +6294,29 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/49/0e/3f0d0d335c6b3abb9b7b723776d0b21fa7f3a6c819a0db6097059aada160/pyzmq-27.1.0-pp311-pypy311_pp73-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:53b40f8ae006f2734ee7608d59ed661419f087521edbfc2149c3932e9c14808c", size = 567747, upload-time = "2025-09-08T23:09:52.698Z" },
     { url = "https://files.pythonhosted.org/packages/a1/cf/f2b3784d536250ffd4be70e049f3b60981235d70c6e8ce7e3ef21e1adb25/pyzmq-27.1.0-pp311-pypy311_pp73-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:f605d884e7c8be8fe1aa94e0a783bf3f591b84c24e4bc4f3e7564c82ac25e271", size = 747371, upload-time = "2025-09-08T23:09:54.563Z" },
     { url = "https://files.pythonhosted.org/packages/01/1b/5dbe84eefc86f48473947e2f41711aded97eecef1231f4558f1f02713c12/pyzmq-27.1.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:c9f7f6e13dff2e44a6afeaf2cf54cee5929ad64afaf4d40b50f93c58fc687355", size = 544862, upload-time = "2025-09-08T23:09:56.509Z" },
+]
+
+[[package]]
+name = "qt5-applications"
+version = "5.15.2.2.3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/14/32/a2fcd818fe62dfcd24600782c7b71bc7c476406bbb4c5680a992fcb7b9d9/qt5_applications-5.15.2.2.3-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:45395074b742ca6765990d3645d5e24a59415c1d968c40c6a3443da22c621ba8", size = 98367680, upload-time = "2023-03-27T14:19:16.344Z" },
+    { url = "https://files.pythonhosted.org/packages/35/e3/f5ab9980d601e62a75bb4d5d01d2324cb0d2a414f36474e26a83de409548/qt5_applications-5.15.2.2.3-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:9ac537caf18fc339149391f58e6716c472296df4431d68e76670e75a14238de0", size = 85694098, upload-time = "2023-03-27T14:18:31.036Z" },
+    { url = "https://files.pythonhosted.org/packages/96/32/5f6b843992c28efde2c3dadbe67296064d09c506c2fc9f9ebe76090eb00a/qt5_applications-5.15.2.2.3-py3-none-win32.whl", hash = "sha256:8d4ebdd955653f693edac4697f80e016270efcf861ebb1b8b7e238fd6faba5f5", size = 54471526, upload-time = "2023-03-27T14:17:54.8Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/a9/cd64cda6f58321c4a0021ced80117b225562efc42f1318ff2cea69c23eb7/qt5_applications-5.15.2.2.3-py3-none-win_amd64.whl", hash = "sha256:5156cc710ed3942f736ec2c46889f73d829fcd4093bed8dbddf2fd83929fdf0b", size = 64462445, upload-time = "2023-03-27T14:18:25.916Z" },
+]
+
+[[package]]
+name = "qt5-tools"
+version = "5.15.2.1.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "qt5-applications" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e2/45/3062d0df2bbc88ee4ea04b1073072b337b9e287c0b4ac12109729b413e2e/qt5_tools-5.15.2.1.3-py3-none-any.whl", hash = "sha256:3e73b7aa3cd03abba6e703aa1d21a5934eff42a068292500a1f02c9bc6da95cb", size = 13756, upload-time = "2023-03-27T15:03:21.749Z" },
 ]
 
 [[package]]

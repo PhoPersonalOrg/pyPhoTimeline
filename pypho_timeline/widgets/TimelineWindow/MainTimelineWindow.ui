@@ -186,7 +186,7 @@
               <rect>
                <x>0</x>
                <y>0</y>
-               <width>138</width>
+               <width>132</width>
                <height>28</height>
               </rect>
              </property>
@@ -213,15 +213,32 @@
         <widget class="QPushButton" name="logToggleButton">
          <property name="minimumSize">
           <size>
-           <width>0</width>
+           <width>24</width>
            <height>24</height>
           </size>
          </property>
          <property name="text">
           <string>Show Log</string>
          </property>
+         <property name="icon">
+          <iconset resource="../../resources/icons/Icons.qrc">
+           <normaloff>:/buttons/LogActivityButton/Hidden@2x.png</normaloff>
+           <normalon>:/buttons/LogActivityButton/Visible@2x.png</normalon>
+           <activeoff>:/buttons/LogActivityButton/Hidden@2x.png</activeoff>
+           <activeon>:/buttons/LogActivityButton/Visible@2x.png</activeon>
+          </iconset>
+         </property>
+         <property name="iconSize">
+          <size>
+           <width>24</width>
+           <height>24</height>
+          </size>
+         </property>
          <property name="checkable">
           <bool>true</bool>
+         </property>
+         <property name="flat">
+          <bool>false</bool>
          </property>
         </widget>
        </item>
@@ -334,6 +351,8 @@
     <property name="title">
      <string>Window</string>
     </property>
+    <addaction name="separator"/>
+    <addaction name="actionSecondary_Window"/>
    </widget>
    <widget class="QMenu" name="menuAbout">
     <property name="title">
@@ -413,8 +432,15 @@
     <string>Open Recording Directory</string>
    </property>
   </action>
+  <action name="actionSecondary_Window">
+   <property name="text">
+    <string>Secondary Window...</string>
+   </property>
+  </action>
  </widget>
- <resources/>
+ <resources>
+  <include location="../../resources/icons/Icons.qrc"/>
+ </resources>
  <connections>
   <connection>
    <sender>btnOpenRecordingDirectory</sender>

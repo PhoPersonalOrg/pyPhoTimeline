@@ -31,6 +31,7 @@ dependencies = [
     "wheel>=0.46.3",
     "dose-analysis-python",
     "pyedflib>=0.1.42",
+    "pyqt5-tools>=5.15.9.3.3",
 ]
 
 [tool.uv.sources]
@@ -56,3 +57,7 @@ tools = []
 
 [tool.hatch.build.targets.wheel]
 packages = ["pypho_timeline"]
+
+[tool.hatch.envs.dev.scripts]
+compile-icons = "python scripts/compile_qt_resources.py"
+check-icons-rc = "python scripts/check_icons_rc_uptodate.py"

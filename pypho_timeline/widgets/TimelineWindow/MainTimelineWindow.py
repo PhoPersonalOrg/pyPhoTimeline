@@ -21,6 +21,7 @@ from pypho_timeline.utils.window_icon import ensure_timeline_application_window_
 from pypho_timeline.xdf_session_discovery import discover_xdf_files_for_timeline
 from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget, SimpleTimeWindow
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
+import pypho_timeline.resources.icons.icons_rc  # noqa: F401
 
 
 ## Define the .ui file path
@@ -33,6 +34,8 @@ _logger = get_rendering_logger(__name__)
 
 
 class MainTimelineWindow(QMainWindow):
+    """ the main timeline application root window """
+
     def __init__(self, parent=None, show_immediately: bool = True, refresh_callback: Optional[Callable[[], None]] = None, builder: Optional[Any] = None):
         super().__init__(parent=parent) # Call the inherited classes __init__ method
         self._refresh_callback = refresh_callback
@@ -42,6 +45,13 @@ class MainTimelineWindow(QMainWindow):
         self.initUI()
         if show_immediately:
             self.show() # Show the GUI
+
+
+    @property
+    def builder(self):
+        """The builder property."""
+        return self._timeline_builder
+
 
     def initUI(self):
         self.statusBar().hide()
@@ -86,7 +96,10 @@ class MainTimelineWindow(QMainWindow):
 
 
     @classmethod
-    def init_with_timeline(cls, timeline: SimpleTimelineWidget, builder: Optional[Any] = None, **kwargs) -> "MainTimelineWindow":
+    def init_with_timeline(cls, timeline: SimpleTimelineWidget, builder: Optional[Any] = None,
+            window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800),
+            **kwargs,
+        ) -> "MainTimelineWindow":
         """ 
 
         """
@@ -96,43 +109,56 @@ class MainTimelineWindow(QMainWindow):
         # timeline = SimpleTimelineWidget(total_start_time=total_start_time, total_end_time=total_end_time, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, reference_datetime=reference_datetime, parent=main_window.contentWidget)
         main_window.contentWidget.layout().addWidget(timeline)
         # Add tracks to the timeline
-        timeline.add_tracks_from_datasources(datasources=datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
-        self._sync_main_window_session_jump_controls(main_window=main_window)
+        datasources = kwargs.pop('datasources', None)
+        if datasources is not None:
+            timeline.add_tracks_from_datasources(datasources=datasources, **kwargs) # use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, 
 
-        added_timeline_idx: int = len(self.current_main_windows)
-        assert len(self.current_timeline_widgets) == len(self.current_main_windows), f"len(self.current_timeline_widgets): {len(self.current_timeline_widgets)} != len(self.current_main_windows): {len(self.current_main_windows)}.\n\t proposed_added_timeline_idx: {added_timeline_idx}"
-        print(f'added_timeline_idx: {added_timeline_idx}')
-        logger.info(f"\nadded_timeline_idx: {added_timeline_idx}")
+        main_window.sync_session_jump_controls()
 
 
-        self.current_main_windows.append(main_window)
-        self.current_timeline_widgets.append(timeline)
+
+        if builder is not None:
+            added_timeline_idx: int = len(builder.current_main_windows)
+            assert len(builder.current_timeline_widgets) == len(builder.current_main_windows), f"len(builder.current_timeline_widgets): {len(builder.current_timeline_widgets)} != len(builder.current_main_windows): {len(builder.current_main_windows)}.\n\t proposed_added_timeline_idx: {added_timeline_idx}"
+            print(f'added_timeline_idx: {added_timeline_idx}')
+            _logger.info(f"\nadded_timeline_idx: {added_timeline_idx}")
+
+            builder.current_main_windows.append(main_window)
+            builder.current_timeline_widgets.append(timeline)
+        else:
+            raise ValueError(f'builder is None!')
+
+
         # Configure and show main window
         main_window.setWindowTitle(window_title or "pyPhoTimeline")
         main_window.resize(window_size[0], window_size[1])
         main_window.show()
 
-        ## Add the calendar widget
-        if enable_calendar_widget_track:
-            a_cal_nav = timeline.add_calendar_navigator()
+        # ## Add the calendar widget
+        # if enable_calendar_widget_track:
+        #     a_cal_nav = timeline.add_calendar_navigator()
 
-        self._embed_log_widget_in_timeline(timeline)
+
+        if builder is not None:
+            builder._embed_log_widget_in_timeline(timeline)
+
         main_window.attach_collapsed_dock_overflow(timeline.ui.dynamic_docked_widget_container)
 
-        ## add the table widget:
-        if enable_log_table_widget:
-            if "LOG_TextLogger" in timeline.track_datasources:
-                table_widget = timeline.add_dataframe_table_track("Text Log", timeline.track_datasources["LOG_TextLogger"].df) # timeline.add_dataframe_table_track()
+        # ## add the table widget:
+        # if enable_log_table_widget:
+        #     if "LOG_TextLogger" in timeline.track_datasources:
+        #         table_widget = timeline.add_dataframe_table_track("Text Log", timeline.track_datasources["LOG_TextLogger"].df) # timeline.add_dataframe_table_track()
         
-        logger.info("\nTimeline widget created with tracks:")
-        for ds in datasources:
-            logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
+        # _logger.info("\nTimeline widget created with tracks:")
+        # for ds in datasources:
+        #     _logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
         
-        logger.info("\nScroll on the timeline to see loaded intervals for each stream.")
-        logger.info("Close the window to exit.\n")
+        # _logger.info("\nScroll on the timeline to see loaded intervals for each stream.")
+        # _logger.info("Close the window to exit.\n")
 
         ## hide the extra/redundant xaxis labels
-        timeline.hide_extra_xaxis_labels_and_axes()
+        # timeline.hide_extra_xaxis_labels_and_axes()
+
         return main_window
 
 
