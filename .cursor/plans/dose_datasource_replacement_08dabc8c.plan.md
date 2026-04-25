@@ -4,10 +4,10 @@ overview: Remove the legacy `DosePlotDetailRenderer` and route EventBoard dose s
 todos:
   - id: remove-renderer
     content: Delete `DosePlotDetailRenderer` and renderer-only imports/constants from `dose.py`.
-    status: in_progress
+    status: completed
   - id: add-helper
     content: Add a `DoseTrackDatasource` helper for building from EventBoard interval/detail DataFrames without a timeline object.
-    status: pending
+    status: in_progress
   - id: wire-streams
     content: Update EventBoard handling in `stream_to_datasources.py` to create `DoseTrackDatasource` and remove `_build_dose_curve_records_detail_renderer`.
     status: pending
