@@ -16,7 +16,7 @@ from typing import Tuple, List, Dict, Optional, Union, Any
 from datetime import datetime, timedelta
 from pathlib import Path
 from qtpy import QtWidgets, QtCore
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.utils.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, datetime_to_float, get_reference_datetime_from_xdf_header, unix_timestamp_to_datetime
