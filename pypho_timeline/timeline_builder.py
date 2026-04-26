@@ -232,6 +232,9 @@ class TimelineBuilder(QObject):
 
     def _load_and_filter_xdf_file(self, file_index: int, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, enable_raw_xdf_processing: bool=True) -> Dict[str, Any]:
         """ called in parallel for each XDF file 
+
+        Modified on 2026-04-24 to also call `perform_processess_xdf_file(...)` in paralell if `enable_raw_xdf_processing == True` (which it is hardcoded True by default).
+
         """
         logger.info(f"Loading XDF file: {xdf_file_path} ...")
         extra_out_dict_kwargs = {'lab_obj': None, 'raws_dict': None}
@@ -466,7 +469,7 @@ class TimelineBuilder(QObject):
         all_streams_by_file = []
         all_file_headers = []
         all_loaded_xdf_file_paths = []
-        all_loaded_xdf_obj_and_results = []
+        all_loaded_xdf_obj_and_results: List[Dict[str, Any]] = []
 
         max_workers = max(1, min(len(xdf_file_paths), (os.cpu_count() or 4)))
         completed_results_by_index: Dict[int, Dict[str, Any]] = {}
@@ -493,18 +496,17 @@ class TimelineBuilder(QObject):
             all_file_headers.append(result["file_header"])
             all_loaded_xdf_file_paths.append(result["xdf_file_path"])
 
-            if enable_raw_xdf_processing:
-                lab_obj = result.get('lab_obj', None)
-                raws_dict = result.get('raws_dict', None)
-                if lab_obj is not None:
-                    all_loaded_xdf_obj_and_results.append(lab_obj)
+            # if enable_raw_xdf_processing:
+            lab_obj = result.get('lab_obj', None)
+            raws_dict = result.get('raws_dict', None)
+            all_loaded_xdf_obj_and_results.append({'lab_obj': lab_obj, 'raws_dict': raws_dict})
 
 
         ## END for file_index in range(len(xdf_file_paths))...
 
         ## OUTPUTS: all_streams_by_file, all_loaded_xdf_file_paths, all_file_headers
         ## Calls `perform_process_all_streams_multi_xdf(...)` to process streams from all files and merge by stream name
-        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_xdf_file_paths, file_headers=all_file_headers) ## ~4.5min for 25 XDF files
+        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_xdf_file_paths, file_headers=all_file_headers, all_loaded_xdf_obj_and_results=all_loaded_xdf_obj_and_results) ## ~4.5min for 25 XDF files
 
         ## INPUTS: all_streams_datasources, all_streams
         ## TODO 2026-04-13 19:10: - [ ] new async method that calls something equivalent of `perform_process_all_streams_multi_xdf`... but iteratively

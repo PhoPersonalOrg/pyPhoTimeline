@@ -100,6 +100,7 @@ def _build_intervals_df(stream_info: Dict, timestamps, series_vertical_offset: f
     intervals_df['brush'] = [pg.mkBrush(color)]
     return timestamps, intervals_df
 
+
 def _build_detailed_df(stream_info: Dict, stream_type: str, stream_name: str, timestamps: np.ndarray, time_series, strict_validation: bool = False) -> Optional[pd.DataFrame]:
     if time_series is None or len(time_series) == 0:
         return None
@@ -178,7 +179,7 @@ def perform_process_xdf_file(xdf_path_for_raw: Path):
 
 
 @function_attributes(short_name=None, tags=['MAIN', 'multi_xdf_files', 'multi-streams'], input_requires=[], output_provides=[], uses=['merge_streams_by_name', 'float_to_datetime', 'datetime_to_unix_timestamp'], used_by=['TimelineBuilder'], creation_date='2026-03-02 03:00', related_items=['perform_process_single_xdf_file_all_streams'])
-def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[Optional[dict]]] = None, enable_raw_xdf_processing: bool=True, spectrogram_channel_groups: Optional[List[SpectrogramChannelGroupConfig]] = EMOTIV_EPOC_X_SPECTROGRAM_GROUPS) -> Tuple[Dict, Dict]:
+def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_paths: List[Path], file_headers: Optional[List[Optional[dict]]] = None, all_loaded_xdf_obj_and_results: Optional[List] = None, enable_raw_xdf_processing: bool=True, spectrogram_channel_groups: Optional[List[SpectrogramChannelGroupConfig]] = EMOTIV_EPOC_X_SPECTROGRAM_GROUPS) -> Tuple[Dict, Dict]:
     """Process streams from multiple XDF files and **merge streams with the same name**.
 
     Streams with the same name across different files will be merged into a single datasource.
@@ -313,15 +314,23 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
         datasource = None
 
         ## Load the XDF raw if needed
+        # if enable_raw_xdf_processing:
+        #     xdf_paths_for_raw = [v[1] for v in stream_file_pairs]
+
+        #     for a_xdf_path in xdf_paths_for_raw:
+        #         lab_obj_dict[a_xdf_path.name] = None
+        #         a_lab_obj, _a_raws_dict = perform_process_xdf_file(xdf_path_for_raw=a_xdf_path)
+        #         lab_obj_dict[a_xdf_path.name] = a_lab_obj
+
         if enable_raw_xdf_processing:
-            xdf_paths_for_raw = [v[1] for v in stream_file_pairs]
-
-            for a_xdf_path in xdf_paths_for_raw:
-                lab_obj_dict[a_xdf_path.name] = None
-                a_lab_obj, _a_raws_dict = perform_process_xdf_file(xdf_path_for_raw=a_xdf_path)
+            assert all_loaded_xdf_obj_and_results is not None
+            assert len(all_loaded_xdf_obj_and_results) == len(xdf_file_paths), f"len(xdf_file_paths): {xdf_file_paths} != len(all_loaded_xdf_obj_and_results): {len(all_loaded_xdf_obj_and_results)}"
+            for idx, a_result_dict in enumerate(all_loaded_xdf_obj_and_results):
+                a_xdf_path = xdf_file_paths[idx] 
+                a_lab_obj = a_result_dict.get('lab_obj', None)
+                raws_dict = a_result_dict.get('raws_dict', None)
+                ## OUTPUT THE RESULT
                 lab_obj_dict[a_xdf_path.name] = a_lab_obj
-
-
 
 
         # ==================================================================================================================================================================================================================================================================================== #
