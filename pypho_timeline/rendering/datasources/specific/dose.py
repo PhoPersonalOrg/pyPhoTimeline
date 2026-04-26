@@ -143,9 +143,22 @@ class DoseTrackDatasource(ComputableDatasourceMixin, IntervalProvidingTrackDatas
 
     
     @classmethod
-    def build_dose_curve_track(cls, timeline, complete_curve_df: pd.DataFrame, track_name = 'DOSE_CURVES_Computed'):
-        """Unfinished timeline-mutating helper disabled; use init_from_timeline_text_log_tracks."""
-        raise NotImplementedError("Use DoseTrackDatasource.init_from_timeline_text_log_tracks(...) instead.")
+    def build_dose_curve_track(cls, timeline: "SimpleTimelineWidget", timeline_builder: "TimelineBuilder", track_name: str='DOSE_CURVES_Computed', source_track_name: str='LOG_TextLogger', backend: str='scipy', max_events: int=120, follow_h_after_last: float=12.0, *, update_time_range: bool=False, skip_existing_names: bool=True) -> Optional["DoseTrackDatasource"]:
+        """Build dose curves from a timeline text-log track and add as a new track.
+
+        Builds a DoseTrackDatasource via init_from_timeline_text_log_tracks, then adds it to the
+        timeline using timeline_builder.update_timeline. If the track already exists and
+        skip_existing_names is True, the existing datasource is returned without rebuilding.
+
+        Usage:
+            dose_curve_ds = DoseTrackDatasource.build_dose_curve_track(timeline=timeline, timeline_builder=builder, source_track_name='LOG_EventBoard')
+        """
+        if skip_existing_names and (track_name in timeline.track_datasources):
+            logger.debug("build_dose_curve_track: skip existing track %r", track_name)
+            return cast(Optional["DoseTrackDatasource"], timeline.track_datasources.get(track_name))
+        dose_curve_ds = cls.init_from_timeline_text_log_tracks(timeline=timeline, track_name=track_name, source_track_name=source_track_name, backend=backend, max_events=max_events, follow_h_after_last=follow_h_after_last)
+        timeline_builder.update_timeline(timeline, [dose_curve_ds], update_time_range=update_time_range)
+        return dose_curve_ds
 
 
     @property

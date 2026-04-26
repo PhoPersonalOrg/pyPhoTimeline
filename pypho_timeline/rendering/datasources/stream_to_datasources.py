@@ -128,11 +128,6 @@ def _build_log_detail_renderer():
     return cast(Any, LogTextDataFramePlotDetailRenderer(text_color='white', text_size=10, channel_names=modality_channels_dict['LOG']))
 
 
-def _build_dose_curve_records_detail_renderer():
-    from pypho_timeline.rendering.datasources.specific.dose import DosePlotDetailRenderer
-    return cast(Any, DosePlotDetailRenderer(text_color='orange', text_size=10, channel_names=modality_channels_dict['LOG']))
-
-
 
 def perform_process_xdf_file(xdf_path_for_raw: Path):
     """ takes an XDF file path and tries to build a full `LabRecorderXDF` object (a_lab_obj) and a raws dict from it
@@ -404,13 +399,7 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
 
         elif _is_log_stream(stream_type, stream_name):
             if (has_valid_intervals and has_detailed_data):
-                if stream_name == 'EventBoard':
-                    ## treat EventBoard streams a "Dose" record type streams
-                    a_detail_renderer = _build_dose_curve_records_detail_renderer()
-
-                else:                   
-                    a_detail_renderer = _build_log_detail_renderer()
-
+                a_detail_renderer = _build_log_detail_renderer()
                 datasource = IntervalProvidingTrackDatasource.from_multiple_sources(intervals_dfs=all_intervals_dfs, detailed_dfs=all_detailed_dfs, custom_datasource_name=f"LOG_{stream_name}", detail_renderer=a_detail_renderer, enable_downsampling=False)
 
         elif has_valid_intervals:
