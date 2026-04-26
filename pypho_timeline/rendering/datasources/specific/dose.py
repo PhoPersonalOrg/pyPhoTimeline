@@ -18,8 +18,31 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from dose_analysis_python.Helpers.quantization import Quanta, ComputationTimeBlock
 
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
+
+
+# ==================================================================================================================================================================================================================================================================================== #
+# DoseCurvePlotDetailRenderer                                                                                                                                                                                                                                                           #
+# ==================================================================================================================================================================================================================================================================================== #
+class DoseCurvePlotDetailRenderer(DataframePlotDetailRenderer):
+    """DataframePlotDetailRenderer subclass that adds a top-right PyQtGraph legend for dose curve channels.
+
+    The legend is created (or reused if already present) via ``PlotItem.addLegend`` before handing off
+    to the parent ``render_detail``.  Because the parent already constructs every ``PlotDataItem`` with
+    ``name=channel_name``, and PyQtGraph's ``PlotItem.addItem`` auto-registers named items in an
+    existing legend, no extra bookkeeping is required.
+
+    Usage:
+        renderer = DoseCurvePlotDetailRenderer(channel_names=['AMPH_gut', 'DA_str'], pen_width=1.5)
+    """
+
+    def render_detail(self, plot_item: pg.PlotItem, interval, detail_data) -> list:
+        if detail_data is None or (hasattr(detail_data, '__len__') and len(detail_data) == 0):
+            return []
+        plot_item.addLegend(offset=(-10, 10), labelTextColor='w', brush=(30, 30, 30, 180), labelTextSize='7pt', horSpacing=10, verSpacing=-2)
+        return super().render_detail(plot_item, interval, detail_data)
 
 
 # ==================================================================================================================================================================================================================================================================================== #
@@ -259,7 +282,7 @@ class DoseTrackDatasource(ComputableDatasourceMixin, IntervalProvidingTrackDatas
         _pen_width = 1.5 if self.plot_pen_width is None else self.plot_pen_width
         if self.detailed_df is None:
             print(f'WARN: self.detailed_df is None!')
-        return DataframePlotDetailRenderer(pen_width=cast(Any, _pen_width), fallback_normalization_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds, normalize=self.normalize, normalize_over_full_data=self.normalize_over_full_data, normalization_reference_df=self.normalization_reference_df, **_extra_kw)
+        return DoseCurvePlotDetailRenderer(pen_width=cast(Any, _pen_width), fallback_normalization_mode=self.fallback_normalization_mode, normalization_mode_dict=self.normalization_mode_dict, arbitrary_bounds=self.arbitrary_bounds, normalize=self.normalize, normalize_over_full_data=self.normalize_over_full_data, normalization_reference_df=self.normalization_reference_df, **_extra_kw)
 
 
 

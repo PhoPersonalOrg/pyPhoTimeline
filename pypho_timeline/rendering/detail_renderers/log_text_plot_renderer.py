@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple, Any
 from datetime import datetime
 import numpy as np
 import pandas as pd
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
 

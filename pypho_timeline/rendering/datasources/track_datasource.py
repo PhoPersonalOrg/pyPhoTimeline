@@ -21,7 +21,7 @@ from qtpy import QtCore
 
 import mne
 from pypho_timeline.rendering.datasources.interval_datasource import IntervalsDatasource
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 from pypho_timeline.utils.logging_util import get_rendering_logger, _format_interval_for_log, _format_time_value_for_log, _format_duration_value_for_log
 from phopymnehelper.helpers.dataframe_accessor_helpers import MaskedValidDataFrameAccessor
 import phopymnehelper.type_aliases as types

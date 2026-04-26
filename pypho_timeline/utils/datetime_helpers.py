@@ -30,7 +30,7 @@ def create_am_pm_date_axis(orientation='bottom'):
         Custom DateAxisItem instance with AM/PM formatting, or None if DateAxisItem is not available
     """
     try:
-        import pyqtgraph as pg
+        import pypho_timeline.EXTERNAL.pyqtgraph as pg
         from pyqtgraph import DateAxisItem
 
         class AMPMDateAxisItem(DateAxisItem):
@@ -48,7 +48,7 @@ def create_am_pm_date_axis(orientation='bottom'):
     except (ImportError, AttributeError):
         # Fallback: try to get DateAxisItem directly from pg module
         try:
-            import pyqtgraph as pg
+            import pypho_timeline.EXTERNAL.pyqtgraph as pg
             if hasattr(pg, "DateAxisItem"):
                 class AMPMDateAxisItem(pg.DateAxisItem):
                     def tickStrings(self, values, scale, spacing):
