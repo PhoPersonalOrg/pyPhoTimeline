@@ -1184,6 +1184,7 @@ class TimelineBuilder(QObject):
         main_window, timeline, added_timeline_idx = self.create_new_timeline_window_from_widget(timeline=timeline, window_title=window_title, window_size=window_size, 
                                                     enable_calendar_widget_track=enable_calendar_widget_track, enable_log_table_widget=enable_log_table_widget, **kwargs)
         timeline.add_tracks_from_datasources(datasources=datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
+        self._sync_main_window_session_jump_controls(main_window=main_window)
 
         for ds in datasources:
             logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
@@ -1235,7 +1236,9 @@ class TimelineBuilder(QObject):
         main_window.contentWidget.layout().addWidget(timeline)
         # Add tracks to the timeline
         # timeline.add_tracks_from_datasources(datasources=datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
-        self._sync_main_window_session_jump_controls(main_window=main_window)
+        # NOTE: do NOT sync session-jump controls here; callers add tracks after this returns, so
+        # syncing here would always see an empty timeline. Each caller is responsible for calling
+        # _sync_main_window_session_jump_controls once tracks have been added.
 
         added_timeline_idx: int = len(self.current_main_windows)
         assert len(self.current_timeline_widgets) == len(self.current_main_windows), f"len(self.current_timeline_widgets): {len(self.current_timeline_widgets)} != len(self.current_main_windows): {len(self.current_main_windows)}.\n\t proposed_added_timeline_idx: {added_timeline_idx}"
