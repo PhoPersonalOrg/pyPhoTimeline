@@ -12,8 +12,10 @@ logger = get_rendering_logger(__name__)
 
 from dose_analysis_python.DoseCurveCalculation.pysb_pkpd_da_ne_monoamine import PySbPKPD_DA_NE_DoseCurveModel
 from dose_analysis_python.FileImportExport.DoseImporter import DoseNoteFragmentParser
+from dose_analysis_python.service.lsl_monitor import parse_lsl_dose_sample
 from phopylslhelper.datetime_helpers import to_display_timezone, unix_timestamp_to_datetime, float_to_datetime
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from dose_analysis_python.Helpers.quantization import Quanta, ComputationTimeBlock
 
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
@@ -28,14 +30,23 @@ class DoseTrackDatasource(ComputableDatasourceMixin, IntervalProvidingTrackDatas
 
     Extends IntervalProvidingTrackDatasource for dose-curve detail rendering and async detail loading.
 
-    Usage:
+    Parsing uses the same cascade as the live LSL dose monitor (``parse_lsl_dose_sample``), so
+    all known message formats are handled correctly regardless of which log stream they come from:
+    JSON markers, EventBoard ``DOSE_*|...|...`` lines, transcript ``"N plus"`` tokens, note
+    fragments, and bare numeric tokens.
+
+    Usage — single source track::
 
         from pypho_timeline.rendering.datasources.specific.dose import DoseTrackDatasource
 
-        dose_curve_ds: DoseTrackDatasource = DoseTrackDatasource.init_from_timeline_text_log_tracks(timeline=timeline)
-        dose_curve_ds
+        dose_curve_ds = DoseTrackDatasource.init_from_timeline_text_log_tracks(timeline=timeline)
+        # or from an EventBoard stream:
+        dose_curve_ds = DoseTrackDatasource.init_from_timeline_text_log_tracks(timeline=timeline, source_track_name='LOG_EventBoard')
 
+    Usage — merge multiple source tracks::
 
+        dose_curve_ds = DoseTrackDatasource.init_from_timeline_text_log_tracks(
+            timeline=timeline, source_track_name=['LOG_TextLogger', 'LOG_EventBoard'])
 
     """
     sigSourceComputeStarted = QtCore.Signal()
@@ -93,40 +104,109 @@ class DoseTrackDatasource(ComputableDatasourceMixin, IntervalProvidingTrackDatas
 
 
     @classmethod
-    def _perform_parse_message_logs_to_dose_events(cls, detailed_txt_log_df: pd.DataFrame) -> pd.DataFrame:
-        """Parse message logs for dose-like entries."""
+    def _text_log_rows_to_record_series_df(cls, detailed_txt_log_df: pd.DataFrame, default_medication: str = 'AMPH') -> pd.DataFrame:
+        """Parse all message rows using the shared LSL dose-sample parsing cascade.
+
+        Handles all known log formats in order of specificity:
+          - JSON dose markers  (``{"dose_mg": ..., ...}``)
+          - EventBoard markers (``DOSE_AMPH_...|Dose 10+|2024-...``)
+          - Transcript tokens  (``"10 plus"``)
+          - Note fragments     (lines containing ``-``, multi-event)
+          - Bare numeric tokens (``"10+"`` / ``"10"``)
+
+        One log row may expand to *multiple* ``recordSeries_df`` rows when the
+        message encodes several events (JSON array, note fragment).
+
+        Parameters
+        ----------
+        detailed_txt_log_df:
+            DataFrame with at minimum a ``msg`` column (str) and a ``dt`` column
+            (wall-clock datetimes, already set as the index or as a regular column).
+        default_medication:
+            Medication name used when the message does not specify one.
+
+        Returns
+        -------
+        pd.DataFrame
+            Index ``recordDoseDate`` (tz-aware US/Eastern ``DatetimeIndex``),
+            columns ``recordDoseValue`` (float), ``modifier`` (str),
+            ``medication`` (str).  Empty DataFrame with those columns when
+            nothing parses as a dose event.
+        """
         if 'msg' not in detailed_txt_log_df.columns:
             raise ValueError("detailed_txt_log_df must include a 'msg' column")
-        dose_event_pattern = r'(\d+\s*\.?\s*\d*)\s*plus'
-        matched_with_quantity = detailed_txt_log_df.loc[detailed_txt_log_df['msg'].astype(str).str.contains(dose_event_pattern, regex=True, na=False), ['msg']].assign(quantity=lambda df: df['msg'].astype(str).str.extract(dose_event_pattern, expand=False).str.replace(r'\s+', '', regex=True))
-        if len(matched_with_quantity) == 0:
+        if 'dt' not in detailed_txt_log_df.columns:
+            raise ValueError("detailed_txt_log_df must include a 'dt' column (wall-clock datetime)")
+        tz = ZoneInfo("US/Eastern")
+        records: List[Dict[str, Any]] = []
+        for _, row in detailed_txt_log_df.iterrows():
+            dt_val = row['dt']
+            sample_time: datetime = dt_val.to_pydatetime() if isinstance(dt_val, pd.Timestamp) else dt_val
+            if sample_time.tzinfo is None or sample_time.utcoffset() is None:
+                sample_time = sample_time.replace(tzinfo=tz)
+            else:
+                sample_time = sample_time.astimezone(tz)
+            events = parse_lsl_dose_sample(sample=row['msg'], sample_time=sample_time, default_medication=default_medication)
+            for evt in events:
+                records.append({'recordDoseDate': pd.Timestamp(evt.event_time.astimezone(tz)), 'recordDoseValue': float(evt.dose_mg), 'modifier': str(evt.modifier), 'medication': str(evt.medication)})
+        if not records:
             return pd.DataFrame(columns=['recordDoseValue', 'modifier', 'medication']).rename_axis('recordDoseDate')
-        parsed_dose_records_dict: Dict[pd.Timestamp, Dict] = dict(zip(matched_with_quantity.index.to_list(), DoseNoteFragmentParser.parse_numeric_dose(matched_with_quantity['quantity'].to_list())))
-        default_med_name: str='AMPH'
-        recordSeries_df: pd.DataFrame = pd.DataFrame({'recordDoseDate': list(parsed_dose_records_dict.keys()), 'recordDoseValue': [a_dose_record_dict['value'] for a_dose_record_dict in parsed_dose_records_dict.values()], 'modifier': [a_dose_record_dict.get('modifier', '') for a_dose_record_dict in parsed_dose_records_dict.values()]})
-        recordSeries_df = recordSeries_df.set_index('recordDoseDate', drop=True, inplace=False)
+        recordSeries_df: pd.DataFrame = pd.DataFrame(records).set_index('recordDoseDate', drop=True)
         recordSeries_idx = cast(Any, pd.DatetimeIndex(recordSeries_df.index))
         if recordSeries_idx.tz is None:
             recordSeries_df.index = recordSeries_idx.tz_localize("US/Eastern")
         else:
             recordSeries_df.index = recordSeries_idx.tz_convert("US/Eastern")
-        recordSeries_df['medication'] = default_med_name
         return recordSeries_df
 
 
     @classmethod
-    def init_from_timeline_text_log_tracks(cls, timeline, track_name: str='DOSE_CURVES_Computed', source_track_name: str='LOG_TextLogger', backend: str='scipy', max_events: int=120, follow_h_after_last: float=12.0) -> "DoseTrackDatasource":
-        """Build dose curves from the timeline text-log track."""
-        _, _, txt_log_ds = timeline.get_track_tuple(source_track_name)
-        detailed_txt_log_df: pd.DataFrame = txt_log_ds.detailed_df.copy().reset_index(drop=True)
-        if 't' not in detailed_txt_log_df.columns:
-            raise ValueError(f"Text log track {source_track_name!r} must include a 't' column")
-        if 'dt' not in detailed_txt_log_df.columns:
-            detailed_txt_log_df['dt'] = float_to_datetime(detailed_txt_log_df['t'].to_numpy(), reference_datetime=timeline.reference_datetime)
+    def init_from_timeline_text_log_tracks(cls, timeline, track_name: str='DOSE_CURVES_Computed', source_track_name: Union[str, Sequence[str]]=['LOG_TextLogger', 'LOG_EventBoard'], backend: str='scipy', max_events: int=120, follow_h_after_last: float=12.0, default_medication: str='AMPH') -> "DoseTrackDatasource":
+        """Build dose curves from one or more timeline text-log tracks.
+
+        Parsing matches the live LSL dose monitoring pipeline (``parse_lsl_dose_sample``),
+        so all known message formats are recognised:
+          - JSON dose markers
+          - EventBoard ``DOSE_*|...|...`` markers (e.g. from ``LOG_EventBoard``)
+          - Transcript ``"N plus"`` tokens (e.g. from ``LOG_TextLogger``)
+          - Note fragments (lines containing ``-``)
+          - Bare numeric tokens
+
+        Parameters
+        ----------
+        source_track_name:
+            A single track name (str) or a sequence of track names.  When multiple
+            names are given the rows from all present tracks are concatenated and
+            sorted by wall-clock time before parsing.  Tracks that do not exist in
+            the timeline are skipped with a warning; a ``ValueError`` is raised only
+            if *none* of the requested tracks exist.
+
+            Note: the same dose event logged to both ``LOG_TextLogger`` and
+            ``LOG_EventBoard`` will produce two ``recordSeries_df`` rows — downstream
+            PK/PD computation is tolerant of this but you can avoid it by passing
+            only one source.
+        """
+        track_names: List[str] = [source_track_name] if isinstance(source_track_name, str) else list(source_track_name)
+        available = set(timeline.track_datasources.keys())
+        frames: List[pd.DataFrame] = []
+        for name in track_names:
+            if name not in available:
+                logger.warning("init_from_timeline_text_log_tracks: track %r not found in timeline (available: %s); skipping.", name, sorted(available))
+                continue
+            _, _, txt_log_ds = timeline.get_track_tuple(name)
+            frame: pd.DataFrame = txt_log_ds.detailed_df.copy().reset_index(drop=True)
+            if 't' not in frame.columns:
+                raise ValueError(f"Text log track {name!r} must include a 't' column")
+            if 'dt' not in frame.columns:
+                frame['dt'] = float_to_datetime(frame['t'].to_numpy(), reference_datetime=timeline.reference_datetime)
+            frames.append(frame)
+        if not frames:
+            raise ValueError(f"None of the requested source tracks exist in the timeline. Requested: {track_names!r}. Available: {sorted(available)!r}")
+        detailed_txt_log_df: pd.DataFrame = pd.concat(frames, ignore_index=True).sort_values('dt').reset_index(drop=True)
         detailed_txt_log_df = detailed_txt_log_df.set_index('dt', drop=False, inplace=False)
-        recordSeries_df = cls._perform_parse_message_logs_to_dose_events(detailed_txt_log_df)
+        recordSeries_df = cls._text_log_rows_to_record_series_df(detailed_txt_log_df, default_medication=default_medication)
         if len(recordSeries_df) == 0:
-            raise ValueError(f"No dose events found in text log track {source_track_name!r}")
+            raise ValueError(f"No dose events found in text log track(s) {track_names!r}")
         start_date: datetime = timeline.total_data_start_time
         end_date: Optional[datetime] = timeline.total_data_end_time
         compute_result = cast(Any, ComputationTimeBlock.init_from_start_end_date(parsed_record_df=recordSeries_df, start_date=start_date, end_date=end_date, backend=backend, max_events=max_events, follow_h_after_last=follow_h_after_last))
@@ -141,22 +221,26 @@ class DoseTrackDatasource(ComputableDatasourceMixin, IntervalProvidingTrackDatas
         return cls(intervals_df=intervals_df, recordSeries_df=recordSeries_df, complete_curve_df=complete_curve_df, custom_datasource_name=track_name, channel_names=curve_channel_names, enable_downsampling=False, plot_pen_width=1.5)
 
 
-    
     @classmethod
-    def build_dose_curve_track(cls, timeline: "SimpleTimelineWidget", timeline_builder: "TimelineBuilder", track_name: str='DOSE_CURVES_Computed', source_track_name: str='LOG_TextLogger', backend: str='scipy', max_events: int=120, follow_h_after_last: float=12.0, *, update_time_range: bool=False, skip_existing_names: bool=True) -> Optional["DoseTrackDatasource"]:
-        """Build dose curves from a timeline text-log track and add as a new track.
+    def build_dose_curve_track(cls, timeline: "SimpleTimelineWidget", timeline_builder: "TimelineBuilder", track_name: str='DOSE_CURVES_Computed', source_track_name: Union[str, Sequence[str]]=['LOG_TextLogger', 'LOG_EventBoard'], backend: str='scipy', max_events: int=120, follow_h_after_last: float=12.0, default_medication: str='AMPH', *, update_time_range: bool=False, skip_existing_names: bool=True) -> Optional["DoseTrackDatasource"]:
+        """Build dose curves from one or more timeline text-log tracks and add as a new track.
 
-        Builds a DoseTrackDatasource via init_from_timeline_text_log_tracks, then adds it to the
-        timeline using timeline_builder.update_timeline. If the track already exists and
-        skip_existing_names is True, the existing datasource is returned without rebuilding.
+        Builds a ``DoseTrackDatasource`` via ``init_from_timeline_text_log_tracks``, then adds
+        it to the timeline using ``timeline_builder.update_timeline``.  If the track already
+        exists and ``skip_existing_names`` is True, the existing datasource is returned without
+        rebuilding.
+
+        ``source_track_name`` accepts either a single track name or a sequence of names — see
+        ``init_from_timeline_text_log_tracks`` for details on multi-track merging.
 
         Usage:
             dose_curve_ds = DoseTrackDatasource.build_dose_curve_track(timeline=timeline, timeline_builder=builder, source_track_name='LOG_EventBoard')
+            dose_curve_ds = DoseTrackDatasource.build_dose_curve_track(timeline=timeline, timeline_builder=builder, source_track_name=['LOG_TextLogger', 'LOG_EventBoard'])
         """
         if skip_existing_names and (track_name in timeline.track_datasources):
             logger.debug("build_dose_curve_track: skip existing track %r", track_name)
             return cast(Optional["DoseTrackDatasource"], timeline.track_datasources.get(track_name))
-        dose_curve_ds = cls.init_from_timeline_text_log_tracks(timeline=timeline, track_name=track_name, source_track_name=source_track_name, backend=backend, max_events=max_events, follow_h_after_last=follow_h_after_last)
+        dose_curve_ds = cls.init_from_timeline_text_log_tracks(timeline=timeline, track_name=track_name, source_track_name=source_track_name, backend=backend, max_events=max_events, follow_h_after_last=follow_h_after_last, default_medication=default_medication)
         timeline_builder.update_timeline(timeline, [dose_curve_ds], update_time_range=update_time_range)
         return dose_curve_ds
 
@@ -165,6 +249,7 @@ class DoseTrackDatasource(ComputableDatasourceMixin, IntervalProvidingTrackDatas
     def num_sessions(self) -> int:
         """The num_sessions property."""
         return len(self.intervals_df)
+
 
     def get_detail_renderer(self):
         """Get detail renderer for computed dose curve data."""
