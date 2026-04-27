@@ -210,7 +210,10 @@ def perform_process_all_streams_multi_xdf(streams_list: List[List], xdf_file_pat
     # Extract reference datetimes from file headers
     file_reference_datetimes = {}
 
-    xdf_recording_file_metadata_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=xdf_file_paths) ## this should be cheap because most will already be cached
+    xdf_recording_file_metadata_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=xdf_file_paths) ## this should be cheap because most will already be cached -- this doesn't work for some files (that I haven't figured out the pattern to, so it's not cached
+    # assert (xdf_recording_file_metadata_df is not None) and (len(xdf_recording_file_metadata_df) > 0), f"xdf_recording_file_metadata_df is None or empty!!"
+    assert (xdf_recording_file_metadata_df is not None) 
+    assert (len(xdf_recording_file_metadata_df) > 0), f"xdf_recording_file_metadata_df is empty!!"
 
     if file_headers is None:
         file_headers = [None for _ in xdf_file_paths]

@@ -10,7 +10,7 @@ class DockDisplayConfig(object):
     showCollapseButton: bool = field(default=True)
     showGroupButton: bool = field(default=False)
     showOrientationButton: bool = field(default=False)
-    showTimelineSyncModeButton: bool = field(default=True)
+    showTimelineSyncModeButton: bool = field(default=False)
     showOptionsButton: bool = field(default=False)
     hideTitleBar: bool = field(default=False)
     fontSize: str = field(default='10px')

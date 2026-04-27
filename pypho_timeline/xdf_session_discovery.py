@@ -26,8 +26,8 @@ def discover_xdf_files_for_timeline(xdf_discovery_dirs: Union[Path, str, Sequenc
         discovered_xdf_files = discovered_xdf_files[:n_most_recent]
     if len(discovered_xdf_files) == 0:
         return XdfDiscoveryResult(xdf_paths=[], file_comparison_df=pd.DataFrame())
-    file_comparison_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=discovered_xdf_files)
-    xdf_paths: List[Path] = [Path(v) for v in file_comparison_df['src_file'].to_list()]
+    file_comparison_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=discovered_xdf_files) ## BUG: this is returning the empty df for the debug .xdfs, and probably for the `lab-recorder-python` saved ones too
+    xdf_paths: List[Path] = [Path(v) for v in file_comparison_df['src_file'].to_list()] if (len(file_comparison_df) > 0) else []
     if csv_export_path is not None:
         file_comparison_df.to_csv(csv_export_path)
     return XdfDiscoveryResult(xdf_paths=xdf_paths, file_comparison_df=file_comparison_df)
