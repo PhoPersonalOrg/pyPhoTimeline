@@ -545,6 +545,9 @@ class TimelineBuilder(QObject):
         timeline = self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, reference_datetime=reference_datetime, **kwargs)
         if (timeline is not None) and add_overview_strip:
             timeline.add_timeline_overview_strip(position='bottom')
+        if (timeline is not None):
+            self.default_post_timeline_create_display_updates(timeline=timeline) ## hides the excess labels and such
+
         return timeline
 
 
@@ -1771,3 +1774,14 @@ class TimelineBuilder(QObject):
         #             ## show all
         #             for widget_name, plot_item in all_plot_items:
         #                 plot_item.showAxis('bottom')
+
+
+
+    def default_post_timeline_create_display_updates(self, timeline, dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget']):
+        """ hides excessive labels and improves general usability after creating the timeline """
+        timeline.hide_extra_xaxis_labels_and_axes(enable_hide_extra_track_x_axes=True)
+
+        # dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget']
+        for a_dock_identifier in dock_identifiers_to_collapse:
+            a_dock: Dock = timeline.dock_container.find_display_dock(a_dock_identifier)
+            a_dock.perform_programmatic_collapse(is_collapse_active=True)
