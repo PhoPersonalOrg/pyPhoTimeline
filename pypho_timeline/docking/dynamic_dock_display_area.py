@@ -693,7 +693,20 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
                 raise
             
         # END for a_group_id, a_flat_group_dockitems_list in grouped_dock_items_dict.items()
-    
+
+    def collapse_docks_programmatically(self, dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget'], should_collapse: bool=True):
+        """ programmatically collapses/expands docks
+
+        Usage:
+            timeline.collapse_docks_programmatically(dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget'])
+
+         """
+        # from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
+        for a_dock_identifier in dock_identifiers_to_collapse:
+            a_dock: Dock = self.dock_container.find_display_dock(a_dock_identifier)
+            a_dock.perform_programmatic_collapse(is_collapse_active=should_collapse)
+
+
 
 
     @pyqtExceptionPrintingSlot(object, str)

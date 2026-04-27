@@ -121,6 +121,8 @@ EMOTIV_EPOC_X_SPECTROGRAM_GROUPS: List[SpectrogramChannelGroupConfig] = [
     # SpectrogramChannelGroupConfig(name='Posterior-R', channels=['T8', 'P8', 'O2']),
     # SpectrogramChannelGroupConfig(name='Frontal', channels=['AF3', 'F7', 'FC5', 'F3', 'AF4', 'F8', 'FC6', 'F4']),
     # SpectrogramChannelGroupConfig(name='Posterior', channels=['T7', 'P7', 'O1', 'T8', 'P8', 'O2']),
+    # SpectrogramChannelGroupConfig(name='Left', channels=['AF3', 'F7', 'FC5', 'F3', 'T7', 'P7', 'O1']),
+    # SpectrogramChannelGroupConfig(name='Right', channels=['O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4']),
     SpectrogramChannelGroupConfig(name='All', channels=['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4']),
 ]
 
