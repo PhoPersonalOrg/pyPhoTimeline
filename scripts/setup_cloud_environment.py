@@ -42,6 +42,25 @@ def write_file(path: Path, text: str) -> None:
     path.write_text(text)
 
 
+def patch_numpy_aliases(path: Path) -> None:
+    text = path.read_text()
+    replacements = {
+        "np.float": "np.float64",
+        "np.int": "np.int64",
+        "np.bool": "np.bool_",
+        "np.float6432": "np.float32",
+        "np.float6464": "np.float64",
+        "np.int648": "np.int8",
+        "np.int6416": "np.int16",
+        "np.int6432": "np.int32",
+        "np.int6464": "np.int64",
+        "np.bool__": "np.bool_",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    path.write_text(text)
+
+
 def patch_dependencies() -> None:
     core_pyproject = DEPS / "pyPhoCoreHelpers" / "pyproject.toml"
     replace_once(core_pyproject, '"numpy>=1.23.2,<2"', '"numpy>=1.23.2,<3"')
@@ -57,6 +76,7 @@ def patch_dependencies() -> None:
     replace_once(neuropy_pyproject, 'numba = {version = "^0.56.4", optional = true}', 'numba = {version = ">=0.61.2,<0.63", optional = true}')
 
     write_file(DEPS / "pyPhoCoreHelpers" / "src" / "nptyping.py", "import numpy as np\n\nNDArray = np.ndarray\nShape = object\n")
+    patch_numpy_aliases(DEPS / "NeuroPy" / "neuropy" / "utils" / "ccg.py")
 
 
 def main() -> None:

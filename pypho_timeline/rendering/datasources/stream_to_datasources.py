@@ -27,8 +27,43 @@ except ImportError:
         return lambda f: f
 
 
-from phopymnehelper.xdf_files import _get_channel_names_for_stream, _is_motion_stream, _is_eeg_quality_stream, _is_eeg_stream, _is_log_stream, merge_streams_by_name
-from phopymnehelper.xdf_files import modality_channels_dict, modality_sfreq_dict
+try:
+    from phopymnehelper.xdf_files import _get_channel_names_for_stream, _is_motion_stream, _is_eeg_quality_stream, _is_eeg_stream, _is_log_stream, merge_streams_by_name
+    from phopymnehelper.xdf_files import modality_channels_dict, modality_sfreq_dict
+except ImportError:
+    modality_channels_dict = {
+        'EEG': ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4'],
+        'MOTION': ['AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ'],
+        'LOG': ['msg'],
+    }
+    modality_sfreq_dict = {'EEG': 128.0, 'MOTION': 32.0, 'LOG': 1.0}
+
+    def _get_channel_names_for_stream(stream_type: str, stream_name: str, n_columns: int) -> List[str]:
+        upper_type = str(stream_type).upper()
+        names = modality_channels_dict.get(upper_type)
+        if names is None or len(names) != n_columns:
+            return [f'ch_{idx}' for idx in range(n_columns)]
+        return list(names)
+
+    def _is_motion_stream(stream_type: str, stream_name: str) -> bool:
+        return 'MOTION' in str(stream_type).upper() or 'MOTION' in str(stream_name).upper()
+
+    def _is_eeg_quality_stream(stream_type: str, stream_name: str) -> bool:
+        return 'QUALITY' in str(stream_type).upper() or 'EQUALITY' in str(stream_name).upper()
+
+    def _is_eeg_stream(stream_type: str, stream_name: str) -> bool:
+        return 'EEG' in str(stream_type).upper() or 'EEG' in str(stream_name).upper()
+
+    def _is_log_stream(stream_type: str, stream_name: str) -> bool:
+        return 'LOG' in str(stream_type).upper() or 'LOG' in str(stream_name).upper()
+
+    def merge_streams_by_name(streams_by_file: List[Tuple[List, Path]]) -> Dict[str, List[Tuple[Dict, Path]]]:
+        merged: Dict[str, List[Tuple[Dict, Path]]] = {}
+        for streams, file_path in streams_by_file:
+            for stream in streams:
+                stream_name = stream.get('info', {}).get('name', ['UNKNOWN'])[0]
+                merged.setdefault(stream_name, []).append((stream, file_path))
+        return merged
 
 
 ## Default modality normalization modes:

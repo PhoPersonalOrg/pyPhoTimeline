@@ -46,6 +46,16 @@ def datetime_to_float(dt: datetime, reference_datetime: datetime) -> float:
     """Convert a datetime to elapsed seconds from a reference datetime."""
     return (_to_utc_datetime(dt) - _to_utc_datetime(reference_datetime)).total_seconds()
 
+
+def format_seconds_as_hhmmss(seconds: Union[int, float]) -> str:
+    """Format seconds as HH:MM:SS."""
+    total_seconds = int(round(float(seconds)))
+    sign = "-" if total_seconds < 0 else ""
+    total_seconds = abs(total_seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{sign}{hours:02d}:{minutes:02d}:{secs:02d}"
+
 logger = logging.getLogger(__name__)
 
 def create_am_pm_date_axis(orientation='bottom'):
@@ -107,9 +117,12 @@ def get_reference_datetime_from_xdf_header(file_header: dict) -> Optional[dateti
     return LabRecorderXDF.get_reference_datetime_from_xdf_header(file_header=file_header)
 
 
-def get_earliest_reference_datetime(reference_datetimes: List[Optional[datetime]]) -> Optional[datetime]:
+def get_earliest_reference_datetime(reference_datetimes: List[Optional[datetime]], datasources: Optional[List[Any]] = None) -> Optional[datetime]:
     """Return the earliest non-empty reference datetime."""
-    valid_datetimes = [_to_utc_datetime(dt) for dt in reference_datetimes if dt is not None]
+    values: List[Optional[datetime]] = list(reference_datetimes)
+    for datasource in datasources or []:
+        values.append(getattr(datasource, "reference_datetime", None))
+    valid_datetimes = [_to_utc_datetime(dt) for dt in values if dt is not None]
     if not valid_datetimes:
         return None
     return min(valid_datetimes)
