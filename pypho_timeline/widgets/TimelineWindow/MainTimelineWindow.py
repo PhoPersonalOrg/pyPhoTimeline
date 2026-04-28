@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any, TYPE_CHECKING
 from qtpy import QtWidgets, QtCore
 from qtpy.uic import loadUi
-from qtpy.QtWidgets import QApplication, QFileDialog, QMessageBox, QMainWindow, QVBoxLayout
+from qtpy.QtWidgets import QApplication, QFileDialog, QMessageBox, QMainWindow, QVBoxLayout, QMenu
 
 if TYPE_CHECKING:
     from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
@@ -41,6 +41,9 @@ class MainTimelineWindow(QMainWindow):
         self._refresh_callback = refresh_callback
         self._timeline_builder = builder
         self._collapsed_dock_overflow_controller = None
+        self._hidden_tracks_menu: Optional[QMenu] = None
+        self._hidden_tracks_signal_connections: List[Tuple[Any, Any]] = []
+        self._hidden_tracks_bound_timeline = None
         self.ui = loadUi(uiFile, self) # Load the .ui file
         self.initUI()
         if show_immediately:
@@ -93,6 +96,11 @@ class MainTimelineWindow(QMainWindow):
         ensure_timeline_application_window_icon()
         if hasattr(self, "collapsedDockOverflowStrip"):
             self.collapsedDockOverflowStrip.setVisible(False)
+        if hasattr(self, "hiddenTracksButton"):
+            self._hidden_tracks_menu = QMenu(self.hiddenTracksButton)
+            self._hidden_tracks_menu.aboutToShow.connect(self._refresh_hidden_tracks_menu)
+            self.hiddenTracksButton.setMenu(self._hidden_tracks_menu)
+            self.hiddenTracksButton.setVisible(False)
 
 
     @classmethod
@@ -143,6 +151,7 @@ class MainTimelineWindow(QMainWindow):
             builder._embed_log_widget_in_timeline(timeline)
 
         main_window.attach_collapsed_dock_overflow(timeline.ui.dynamic_docked_widget_container)
+        main_window.attach_hidden_tracks_controller(timeline)
 
         # ## add the table widget:
         # if enable_log_table_widget:
@@ -202,6 +211,7 @@ class MainTimelineWindow(QMainWindow):
 
         self._embed_log_widget_in_timeline(timeline)
         main_window.attach_collapsed_dock_overflow(timeline.ui.dynamic_docked_widget_container)
+        main_window.attach_hidden_tracks_controller(timeline)
 
         ## add the table widget:
         if enable_log_table_widget:
@@ -229,6 +239,107 @@ class MainTimelineWindow(QMainWindow):
         if self._collapsed_dock_overflow_controller is None:
             self._collapsed_dock_overflow_controller = CollapsedDockOverflowController(self.collapsedDockOverflowContents, strip_widget=self.collapsedDockOverflowStrip, parent=self)
         self._collapsed_dock_overflow_controller.bind_to_nested_dock_area(nested_dock_area)
+
+
+    def attach_hidden_tracks_controller(self, timeline_widget: Any) -> None:
+        """Bind the bottom-dock "Hidden Tracks" button to ``timeline_widget``'s hide/restore signals.
+
+        The button is auto-hidden when no tracks are hidden, and a popup menu lists each hidden track plus
+        a "Restore all" entry that calls :meth:`SimpleTimelineWidget.restore_all_hidden_tracks`.
+        """
+        if not hasattr(self, "hiddenTracksButton"):
+            return
+        if self._hidden_tracks_bound_timeline is timeline_widget:
+            self._sync_hidden_tracks_button_state()
+            return
+        self._disconnect_hidden_tracks_signals()
+        self._hidden_tracks_bound_timeline = timeline_widget
+        if timeline_widget is None:
+            self.hiddenTracksButton.setVisible(False)
+            return
+        if hasattr(timeline_widget, "sigTrackHidden"):
+            try:
+                conn = timeline_widget.sigTrackHidden.connect(lambda _name: self._sync_hidden_tracks_button_state())
+                self._hidden_tracks_signal_connections.append((timeline_widget.sigTrackHidden, conn))
+            except (AttributeError, TypeError):
+                pass
+        if hasattr(timeline_widget, "sigTrackRestored"):
+            try:
+                conn = timeline_widget.sigTrackRestored.connect(lambda _name: self._sync_hidden_tracks_button_state())
+                self._hidden_tracks_signal_connections.append((timeline_widget.sigTrackRestored, conn))
+            except (AttributeError, TypeError):
+                pass
+        self._sync_hidden_tracks_button_state()
+
+
+    def _disconnect_hidden_tracks_signals(self) -> None:
+        for sig, conn in self._hidden_tracks_signal_connections:
+            try:
+                sig.disconnect(conn)
+            except (TypeError, RuntimeError):
+                pass
+        self._hidden_tracks_signal_connections = []
+
+
+    def _hidden_track_names(self) -> List[str]:
+        tw = self._hidden_tracks_bound_timeline
+        if tw is None:
+            return []
+        try:
+            return list(tw.hidden_track_names)
+        except (AttributeError, TypeError):
+            return []
+
+
+    def _sync_hidden_tracks_button_state(self) -> None:
+        if not hasattr(self, "hiddenTracksButton"):
+            return
+        names = self._hidden_track_names()
+        n = len(names)
+        self.hiddenTracksButton.setVisible(n > 0)
+        if n == 0:
+            self.hiddenTracksButton.setText("Hidden Tracks")
+            self.hiddenTracksButton.setToolTip("Restore hidden tracks")
+        else:
+            self.hiddenTracksButton.setText(f"Hidden Tracks ({n})")
+            self.hiddenTracksButton.setToolTip(f"{n} hidden track(s); click to restore")
+
+
+    def _refresh_hidden_tracks_menu(self) -> None:
+        if self._hidden_tracks_menu is None:
+            return
+        self._hidden_tracks_menu.clear()
+        names = self._hidden_track_names()
+        if not names:
+            empty = self._hidden_tracks_menu.addAction("(no hidden tracks)")
+            empty.setEnabled(False)
+            return
+        for track_name in names:
+            action = self._hidden_tracks_menu.addAction(f"Restore: {track_name}")
+            action.triggered.connect(lambda _checked=False, _tn=track_name: self._on_restore_hidden_track(_tn))
+        self._hidden_tracks_menu.addSeparator()
+        restore_all_action = self._hidden_tracks_menu.addAction("Restore all")
+        restore_all_action.triggered.connect(self._on_restore_all_hidden_tracks)
+
+
+    def _on_restore_hidden_track(self, track_name: str) -> None:
+        tw = self._hidden_tracks_bound_timeline
+        if tw is None or not hasattr(tw, "restore_track"):
+            return
+        try:
+            tw.restore_track(track_name)
+        except Exception as e:
+            _logger.warning("restore_track('%s') failed: %s", track_name, e)
+
+
+    def _on_restore_all_hidden_tracks(self) -> None:
+        tw = self._hidden_tracks_bound_timeline
+        if tw is None or not hasattr(tw, "restore_all_hidden_tracks"):
+            return
+        try:
+            tw.restore_all_hidden_tracks()
+        except Exception as e:
+            _logger.warning("restore_all_hidden_tracks() failed: %s", e)
 
 
     def sync_session_jump_controls(self):

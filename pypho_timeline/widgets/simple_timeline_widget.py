@@ -88,6 +88,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
     # Signal emitted when the time window changes
     window_scrolled = QtCore.Signal(float, float)
     compare_window_scrolled = QtCore.Signal(float, float)
+    sigTrackHidden = QtCore.Signal(str)  # track_name hidden from the timeline
+    sigTrackRestored = QtCore.Signal(str)  # track_name restored to the timeline
     SPLIT_PRIMARY_DOCK_GROUP = 'timeline_primary_column'
     SPLIT_COMPARE_DOCK_GROUP = 'timeline_compare_column'
     EEG_SPECTROGRAM_DOCK_GROUP = 'timeline_eeg_spectrogram'
@@ -137,9 +139,10 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
 
 
     def get_track_names_for_overview_strip(self) -> List[str]:
-        """Overview strip track names: primary tracks excluding EEG-derived helper tracks."""
+        """Overview strip track names: primary tracks excluding EEG-derived helper tracks and hidden tracks."""
         names = self.get_track_names_for_window_sync_group(window_sync_group='primary')
-        return [name for name in names if self._is_overview_eligible_track_datasource(self.track_datasources.get(name, None))]
+        hidden = set(self.hidden_track_names)
+        return [name for name in names if (name not in hidden) and self._is_overview_eligible_track_datasource(self.track_datasources.get(name, None))]
 
 
 
@@ -450,6 +453,90 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
     def _on_split_all_tracks_clicked(self):
         """Split every primary track into the compare column."""
         self.add_compare_column_for_all_tracks()
+
+
+    # ==================================================================================================================================================================================================================================================================================== #
+    # Hide / Restore Tracks                                                                                                                                                                                                                                                                #
+    # ==================================================================================================================================================================================================================================================================================== #
+    @property
+    def hidden_track_names(self) -> List[str]:
+        """List of track names that are currently hidden from the timeline (preserves insertion order)."""
+        if not hasattr(self.ui, '_hidden_track_names') or self.ui._hidden_track_names is None:
+            self.ui._hidden_track_names = []
+        return list(self.ui._hidden_track_names)
+
+
+    def _ensure_hidden_track_names_storage(self) -> List[str]:
+        if not hasattr(self.ui, '_hidden_track_names') or self.ui._hidden_track_names is None:
+            self.ui._hidden_track_names = []
+        return self.ui._hidden_track_names
+
+
+    def is_track_hidden(self, track_name: str) -> bool:
+        """Return True if ``track_name`` is currently hidden from the timeline view."""
+        return track_name in self._ensure_hidden_track_names_storage()
+
+
+    def hide_track(self, track_name: str) -> bool:
+        """Hide a track from the timeline without destroying its data; restorable via :meth:`restore_track`.
+
+        The dock widget is hidden (Qt splitters reclaim its space) and the track name is added to
+        ``self.hidden_track_names``. Returns True when the track transitioned from visible to hidden.
+        """
+        dock = self.ui.dynamic_docked_widget_container.find_display_dock(track_name)
+        if dock is None:
+            logger.warning(f"hide_track('{track_name}'): no matching dock found; ignoring.")
+            return False
+        hidden_names = self._ensure_hidden_track_names_storage()
+        if track_name in hidden_names:
+            return False
+        dock.setVisible(False)
+        hidden_names.append(track_name)
+        self.sigTrackHidden.emit(track_name)
+        self._schedule_timeline_overview_strip_rebuild()
+        return True
+
+
+    def restore_track(self, track_name: str) -> bool:
+        """Restore a previously hidden track. Returns True when the track transitioned from hidden to visible."""
+        hidden_names = self._ensure_hidden_track_names_storage()
+        if track_name not in hidden_names:
+            return False
+        dock = self.ui.dynamic_docked_widget_container.find_display_dock(track_name)
+        if dock is not None:
+            dock.setVisible(True)
+            container = dock.container() if hasattr(dock, 'container') else None
+            if hasattr(dock, 'raiseDock') and container is not None and container.type() == 'tab':
+                dock.raiseDock()
+        hidden_names.remove(track_name)
+        self.sigTrackRestored.emit(track_name)
+        self._schedule_timeline_overview_strip_rebuild()
+        return True
+
+
+    def restore_all_hidden_tracks(self) -> List[str]:
+        """Restore all currently-hidden tracks. Returns the list of track names that were restored."""
+        restored: List[str] = []
+        for track_name in list(self._ensure_hidden_track_names_storage()):
+            if self.restore_track(track_name):
+                restored.append(track_name)
+        return restored
+
+
+    def _install_track_close_intercepts_hide(self, track_name: str, dock: Any) -> None:
+        """Repurpose ``dock``'s X (close) button to call :meth:`hide_track` instead of permanently destroying it.
+
+        The default pyqtgraph wiring connects ``DockLabel.sigCloseClicked`` directly to ``Dock.close``. We disconnect
+        that and reroute the click through our hide handler so the user can later restore the track from the
+        "Hidden Tracks" menu in the bottom dock.
+        """
+        if dock is None or getattr(dock, 'label', None) is None:
+            return
+        try:
+            dock.label.sigCloseClicked.disconnect(dock.close)
+        except (TypeError, RuntimeError):
+            pass
+        dock.label.sigCloseClicked.connect(lambda _tn=track_name: self.hide_track(_tn))
 
 
     def get_track_options_config(self) -> Dict[str, Any]:
@@ -1200,6 +1287,8 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
             # Or if available:
             if hasattr(a_dock, 'updateTitleBar') or hasattr(a_dock, 'refresh'):
                 a_dock.updateTitleBar()
+
+            self._install_track_close_intercepts_hide(track_name=a_track_name, dock=a_dock)
         ## END for datasource in datasources...
 
         if spec_names:
