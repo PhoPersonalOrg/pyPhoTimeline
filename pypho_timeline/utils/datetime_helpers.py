@@ -10,15 +10,43 @@ import logging
 import numpy as np
 import pandas as pd
 from zoneinfo import ZoneInfo
-# from phopylslhelper.datetime_helpers import float_to_datetime, datetime_to_unix_timestamp, to_display_timezone, _to_utc_datetime, UNIX_EPOCH_UTC, DISPLAY_TIMEZONE
-from phopylslhelper.datetime_helpers import *
 
-logger = logging.getLogger(__name__)
-
-# Unix epoch in UTC (timezone-aware)
 UNIX_EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 DISPLAY_TIMEZONE = ZoneInfo("America/New_York")
 
+
+def _to_utc_datetime(dt: datetime) -> datetime:
+    """Return a timezone-aware UTC datetime."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def to_display_timezone(dt: datetime) -> datetime:
+    """Convert a datetime to the configured display timezone."""
+    return _to_utc_datetime(dt).astimezone(DISPLAY_TIMEZONE)
+
+
+def datetime_to_unix_timestamp(dt: datetime) -> float:
+    """Convert a datetime to a Unix timestamp."""
+    return _to_utc_datetime(dt).timestamp()
+
+
+def unix_timestamp_to_datetime(timestamp: Union[int, float]) -> datetime:
+    """Convert a Unix timestamp to a UTC datetime."""
+    return datetime.fromtimestamp(float(timestamp), tz=timezone.utc)
+
+
+def float_to_datetime(t: Union[int, float], reference_datetime: datetime) -> datetime:
+    """Convert elapsed seconds from a reference datetime to a datetime."""
+    return _to_utc_datetime(reference_datetime) + timedelta(seconds=float(t))
+
+
+def datetime_to_float(dt: datetime, reference_datetime: datetime) -> float:
+    """Convert a datetime to elapsed seconds from a reference datetime."""
+    return (_to_utc_datetime(dt) - _to_utc_datetime(reference_datetime)).total_seconds()
+
+logger = logging.getLogger(__name__)
 
 def create_am_pm_date_axis(orientation='bottom'):
     """Create a DateAxisItem with 12-hour AM/PM time format.
@@ -77,6 +105,14 @@ def get_reference_datetime_from_xdf_header(file_header: dict) -> Optional[dateti
     """
     from phopymnehelper.xdf_files import LabRecorderXDF
     return LabRecorderXDF.get_reference_datetime_from_xdf_header(file_header=file_header)
+
+
+def get_earliest_reference_datetime(reference_datetimes: List[Optional[datetime]]) -> Optional[datetime]:
+    """Return the earliest non-empty reference datetime."""
+    valid_datetimes = [_to_utc_datetime(dt) for dt in reference_datetimes if dt is not None]
+    if not valid_datetimes:
+        return None
+    return min(valid_datetimes)
 
 
 

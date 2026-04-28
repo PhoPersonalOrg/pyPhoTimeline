@@ -17,3 +17,7 @@ icons/non_icon_mask.png
 icons/pyPhoTimeline_Icon.gfie
 viztracer_*.json
 EXTERNAL/data/debug_xdfs/seq_debug_*.xdf
+.deps/
+
+# uv-deps-switcher
+**/templating/uv_deps_switcher/backups

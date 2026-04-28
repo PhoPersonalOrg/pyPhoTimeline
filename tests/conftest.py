@@ -21,6 +21,20 @@ import sys
 import types
 from unittest.mock import MagicMock
 
+import pandas as pd
+
+
+_original_to_datetime = pd.to_datetime
+
+
+def _to_datetime_compatible(*args, **kwargs):
+    if "format" not in kwargs:
+        kwargs["format"] = "mixed"
+    return _original_to_datetime(*args, **kwargs)
+
+
+pd.to_datetime = _to_datetime_compatible
+
 
 # ---------------------------------------------------------------------------
 # Packages that are not available in the sandbox environment
