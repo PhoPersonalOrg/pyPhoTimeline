@@ -703,7 +703,8 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
          """
         # from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
         for a_dock_identifier in dock_identifiers_to_collapse:
-            a_dock: Dock = self.dock_container.find_display_dock(a_dock_identifier)
+            # a_dock: Dock = self.dock_container.find_display_dock(a_dock_identifier)
+            a_dock: Dock = self.find_display_dock(a_dock_identifier)
             a_dock.perform_programmatic_collapse(is_collapse_active=should_collapse)
 
 
@@ -880,4 +881,18 @@ class DynamicDockDisplayAreaOwningMixin(BaseDynamicInstanceConformingMixin):
     def layout_dockGroups(self):
         """ fetches the dockGroup items and perform layout """
         return self.dock_manager_widget.layout_dockGroups()
+
+
+
+    # ==================================================================================================================================================================================================================================================================================== #
+    # `dock_manager_widget` passthrough methods                                                                                                                                                                                                                                            #
+    # ==================================================================================================================================================================================================================================================================================== #
+    def collapse_docks_programmatically(self, dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget'], should_collapse: bool=True, **kwargs):
+        """ programmatically collapses/expands docks
+
+        Usage:
+            timeline.collapse_docks_programmatically(dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget'])
+
+         """
+        self.dock_manager_widget.collapse_docks_programmatically(dock_identifiers_to_collapse=dock_identifiers_to_collapse, should_collapse=should_collapse, **kwargs)
 

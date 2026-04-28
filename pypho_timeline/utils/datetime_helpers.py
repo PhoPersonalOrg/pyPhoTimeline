@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Unix epoch in UTC (timezone-aware)
 UNIX_EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
-DISPLAY_TIMEZONE = ZoneInfo("America/New_York")
+DISPLAY_TIMEZONE = ZoneInfo("America/Detroit")
 
 
 def create_am_pm_date_axis(orientation='bottom'):
