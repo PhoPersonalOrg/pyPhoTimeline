@@ -260,7 +260,7 @@ class TimelineBuilder(QObject):
             active_xdf_out_dict = {"file_index": file_index, "xdf_file_path": xdf_file_path, "streams": streams, "file_header": file_header, "error": None, **extra_out_dict_kwargs}
 
 
-        except (OSError, FileExistsError, FileNotFoundError, ValueError) as err:
+        except (OSError, FileExistsError, FileNotFoundError, ValueError, Exception) as err:
             # For a currently open/writing XDF file, I'm getting "ValueError: read length must be non-negative or -1"
             logger.error(f'\tencountered error {err} when trying to use `pyxdf.load_xdf(...)` or `self._filter_streams_by_name(...)`. Entire XDF file will be excluded')
             return {"file_index": file_index, "xdf_file_path": xdf_file_path, "streams": None, "file_header": None, "error": err, **extra_out_dict_kwargs}

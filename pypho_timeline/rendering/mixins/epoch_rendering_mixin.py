@@ -106,8 +106,7 @@ class NowCurrentDatetimeLineRenderingMixin:
 
 
     def add_new_now_line_for_plot_item(self, plot_item):
-        """ creates a new now line for the specified plot_item if needed. 
-        """
+        """Create or reuse the now-line ``InfiniteLine`` for ``plot_item``; always returns that line instance."""
         vline = self.plots.now_lines.now_line_items.get(plot_item, None)
         if vline is None:
             ## build a new item:
@@ -116,8 +115,7 @@ class NowCurrentDatetimeLineRenderingMixin:
             vline.setPen(pg.mkPen(self.plots.now_lines.red_pen))
             plot_item.addItem(vline, ignoreBounds=True)
             self.plots.now_lines.now_line_items[plot_item] = vline
-        else:
-            return vline ## return existing vline
+        return vline
 
 
     @pyqtExceptionPrintingSlot()
@@ -129,7 +127,7 @@ class NowCurrentDatetimeLineRenderingMixin:
         self.plots_data['now_lines'].now_timestamp = datetime_to_unix_timestamp(self.plots_data['now_lines'].now_dt)
         for plot_item, vline in self.plots.now_lines.now_line_items.items():
             if (plot_item is not None) and (vline is not None):
-                vline.setPosition(self.plots_data['now_lines'].now_timestamp) ## moves the item
+                vline.setPos(self.plots_data['now_lines'].now_timestamp) ## moves the item
 
 
 
