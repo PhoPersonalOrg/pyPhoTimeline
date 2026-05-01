@@ -1,24 +1,31 @@
 {
 	"folders": [
         {
+            "name": "pyPhoTimeline",
             "path": "."
         },
         {
+            "name": "PhoPyMNEHelper",
             "path": "../PhoPyMNEHelper"
         },
         {
+            "name": "PhoPyLSLhelper",
             "path": "../PhoPyLSLhelper"
         },
         {
+            "name": "PhoOfflineEEGAnalysis",
             "path": "../PhoOfflineEEGAnalysis"
         },
         {
+            "name": "pyPhoCoreHelpers",
             "path": "../pyPhoCoreHelpers"
         },
         {
+            "name": "stream_viewer",
             "path": "../stream_viewer"
         },
         {
+            "name": "Dose-Analysis-Python",
             "path": "../Dose-Analysis-Python"
         }
     ],
