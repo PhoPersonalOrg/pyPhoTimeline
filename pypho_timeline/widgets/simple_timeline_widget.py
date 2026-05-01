@@ -1480,6 +1480,165 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
                         plot_item.showAxis('bottom')
 
 
+# import datetime
+import pandas as pd
+from qtpy import QtCore
+from phopylslhelper.datetime_helpers import unix_timestamp_to_datetime, datetime_to_unix_timestamp
+from datetime import datetime, timedelta
+
+
+class FixupMisalignedData:
+    """
+
+        from pypho_timeline.widgets.simple_timeline_widget import FixupMisalignedData
+
+        eeg_track_correction_delta = FixupMisalignedData.extract_eeg_track_correction_delta(eeg_ds=eeg_ds)
+        eeg_track_correction_delta
+
+        ## INPUTS: eeg_track_correction_delta
+        FixupMisalignedData.fix_all_timeline_tracks(timeline=timeline, eeg_track_correction_delta=eeg_track_correction_delta)
+
+
+
+    """
+    @classmethod
+    def get_measured_date_from_raws(cls, eeg_ds):
+        meas_date = None
+        for k, v in eeg_ds.raw_datasets_dict.items():
+            if v is not None:
+                ## v is a list of raws
+                eeg_raw = v[0]
+                meas_date = eeg_raw.info.get("meas_date")
+                if meas_date is not None:
+                    t0_unix = float(meas_date.timestamp()) if hasattr(meas_date, "timestamp") else float(meas_date)
+                    return t0_unix
+
+        return None
+
+
+    @classmethod
+    def extract_eeg_track_correction_delta(cls, eeg_ds):
+        """ hopeffully extracts the two datetimes out off the EEG Datasource to determine the proper offset.
+
+        """
+        # meas_date = eeg_raw.info.get("meas_date")
+        # t0_unix: Optional[float] = None
+        # if meas_date is not None:
+        #     try:
+        #         t0_unix = float(meas_date.timestamp()) if hasattr(meas_date, "timestamp") else float(meas_date)
+        t0_unix = cls.get_measured_date_from_raws(eeg_ds=eeg_ds)
+        t0_earliest_unix_ts = float(eeg_ds.earliest_unix_timestamp)
+        t0_earliest_unix_ts
+        t0_unix - t0_earliest_unix_ts ## earliest unix_timestamp is actually later!
+        dt0_unix = unix_timestamp_to_datetime(t0_unix)
+        dt0_earliest_unix_ts = unix_timestamp_to_datetime(t0_earliest_unix_ts)
+        ## OUTPUTS: dt0_unix, dt0_unix
+        dt0_unix, dt0_earliest_unix_ts
+
+        # (datetime.datetime(2026, 4, 27, 23, 42, 28, tzinfo=datetime.timezone.utc),
+        #  datetime.datetime(2026, 4, 29, 10, 38, 46, 298468, tzinfo=datetime.timezone.utc))
+        eeg_track_correction_delta: timedelta = (dt0_unix - dt0_earliest_unix_ts) # datetime.timedelta(days=-2, seconds=47021, microseconds=701532)
+
+        ## find mice, call mice, mice are nice
+        return eeg_track_correction_delta
+
+
+    @classmethod
+    def fix_all_timeline_tracks(cls, timeline, eeg_track_correction_delta: timedelta):
+        """ tries to apply the correction to the data to fix the naturally bad offset :[
+
+        """
+        delta_seconds: float = eeg_track_correction_delta.total_seconds()  # ≈ -94080.36
+
+        INTERVAL_DF_TIME_COLS = ('t_start', 't_end')
+        DETAILED_DF_TIME_COLS = ('t',)
+        EXTRA_INTERVAL_TIME_COLS = ('t_start_dt', 't_end_dt', 't_start_timeline_rel', 't_end_timeline_rel')
+
+        def _shift_df_columns(df, cols, delta_seconds):
+            """Shift any present time columns in `df` by `delta_seconds` (handles datetime + numeric)."""
+            if df is None:
+                return
+            for col in cols:
+                if col not in df.columns:
+                    continue
+                s = df[col]
+                if pd.api.types.is_datetime64_any_dtype(s):
+                    df[col] = s + pd.Timedelta(seconds=delta_seconds)
+                elif pd.api.types.is_timedelta64_dtype(s):
+                    continue  # durations don't shift
+                else:
+                    df[col] = s + delta_seconds
+
+        def shift_track_datasource_in_place(ds, delta_seconds):
+            """Shift every time-bearing dataframe known to this datasource. Safe across EEG/Motion/Video/Dose/Interval."""
+            _shift_df_columns(getattr(ds, 'intervals_df', None), INTERVAL_DF_TIME_COLS + EXTRA_INTERVAL_TIME_COLS, delta_seconds)
+            _shift_df_columns(getattr(ds, 'detailed_df', None), DETAILED_DF_TIME_COLS, delta_seconds)
+            nref = getattr(ds, 'normalization_reference_df', None)
+            detailed = getattr(ds, 'detailed_df', None)
+            if nref is not None and nref is not detailed:
+                _shift_df_columns(nref, DETAILED_DF_TIME_COLS, delta_seconds)
+            bad_eps = getattr(ds, 'merged_bad_epoch_intervals_df', None)
+            if bad_eps is not None:
+                _shift_df_columns(bad_eps, INTERVAL_DF_TIME_COLS, delta_seconds)
+            df_attr = getattr(ds, '_df', None)
+            if df_attr is not None and df_attr is not getattr(ds, 'intervals_df', None):
+                _shift_df_columns(df_attr, INTERVAL_DF_TIME_COLS, delta_seconds)
+
+        if getattr(timeline, '_corrected_for_eeg_drift', False):
+            raise RuntimeError("Timeline already shifted once this session. Re-run only if you reset state.")
+
+        track_names = list(timeline.track_datasources.dynamically_added_attributes)
+        interval_names = list(getattr(timeline, 'interval_datasource_names', []) or [])
+
+        print(f'Shifting {len(track_names)} track datasources and {len(interval_names)} interval datasources by {delta_seconds:+.3f} s')
+
+        for name in track_names:
+            ds = timeline.track_datasources.get(name, None)
+            if ds is None:
+                continue
+            was_blocked = ds.blockSignals(True)
+            try:
+                shift_track_datasource_in_place(ds, delta_seconds)
+            finally:
+                ds.blockSignals(was_blocked)
+
+        for name in interval_names:
+            ds = timeline.interval_datasources.get(name, None)
+            if ds is None:
+                continue
+            was_blocked = ds.blockSignals(True)
+            try:
+                df_obj = getattr(ds, 'df', None)
+                _shift_df_columns(df_obj, INTERVAL_DF_TIME_COLS + EXTRA_INTERVAL_TIME_COLS, delta_seconds)
+            finally:
+                ds.blockSignals(was_blocked)
+
+        def _refresh_all_renderers():
+            for tname, tr in list(timeline.track_renderers.items()):
+                on_changed = getattr(tr, '_on_datasource_changed', None)
+                if on_changed is not None:
+                    try:
+                        on_changed()
+                    except Exception as e:
+                        print(f"  [warn] renderer refresh failed for {tname!r}: {e}")
+            for tname, tr in list(timeline.track_renderers.items()):
+                plot_item = getattr(tr, 'plot_item', None)
+                if plot_item is None:
+                    continue
+                vb = plot_item.getViewBox()
+                if vb is None:
+                    continue
+                (x0, x1), _ = vb.viewRange()
+                vb.setXRange(x0 + delta_seconds, x1 + delta_seconds, padding=0)
+
+        QtCore.QTimer.singleShot(0, _refresh_all_renderers)
+
+        timeline._corrected_for_eeg_drift = True
+        print('Correction queued; renderers will refresh on the next event-loop tick.')
+
+
+
+
 
 # Re-export stream-to-datasources processing for backward compatibility
 from pypho_timeline.rendering.datasources.stream_to_datasources import (
