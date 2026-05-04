@@ -12,7 +12,7 @@ _LAZY_DETAIL_RENDERER_MODULES = {
     'MotionPlotDetailRenderer': 'pypho_timeline.rendering.datasources.specific.motion',
     'VideoThumbnailDetailRenderer': 'pypho_timeline.rendering.datasources.specific.video',
     'EEGPlotDetailRenderer': 'pypho_timeline.rendering.datasources.specific.eeg',
-    'LinePowerGFPDetailRenderer': 'pypho_timeline.rendering.detail_renderers.line_power_gfp_detail_renderer',
+    'LinePowerGFPDetailRenderer': 'pypho_timeline.rendering.datasources.specific.eeg',
 }
 
 __all__ = [

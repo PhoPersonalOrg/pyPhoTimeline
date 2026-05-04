@@ -43,19 +43,8 @@ def _load_eeg_module_with_gfp_stub():
 
     helpers_module.ChannelNormalizationMode = _ChannelNormalizationMode
     helpers_module.ChannelNormalizationModeNormalizingMixin = _ChannelNormalizationModeNormalizingMixin
-    line_power_module = types.ModuleType("pypho_timeline.rendering.detail_renderers.line_power_gfp_detail_renderer")
-
-    class _LinePowerGFPDetailRenderer:
-        def __init__(self, live_mode=True, filter_order=4, n_bootstrap=100, baseline_start=None, baseline_end=0.0, show_confidence=False, line_width=0.5, channel_names=None, **kwargs):
-            _ = kwargs
-            self._live_mode = bool(live_mode)
-            self._filter_order = filter_order
-            self.channel_names = channel_names
-
-    line_power_module.LinePowerGFPDetailRenderer = _LinePowerGFPDetailRenderer
     sys.modules[generic_plot_renderer_module.__name__] = generic_plot_renderer_module
     sys.modules[helpers_module.__name__] = helpers_module
-    sys.modules[line_power_module.__name__] = line_power_module
     module_path = Path(__file__).resolve().parents[1] / "pypho_timeline" / "rendering" / "datasources" / "specific" / "eeg.py"
     spec = importlib.util.spec_from_file_location("test_eegfp_isolated_eeg_module", module_path)
     module = importlib.util.module_from_spec(spec)
@@ -71,7 +60,7 @@ class TestEEGFPTrackDatasource(unittest.TestCase):
     def test_get_detail_renderer_is_line_power_gfp_live_mode_off(self) -> None:
         mod = _load_eeg_module_with_gfp_stub()
         EEGFPTrackDatasource = mod.EEGFPTrackDatasource
-        LinePowerGFPDetailRenderer = sys.modules["pypho_timeline.rendering.detail_renderers.line_power_gfp_detail_renderer"].LinePowerGFPDetailRenderer
+        LinePowerGFPDetailRenderer = mod.LinePowerGFPDetailRenderer
 
         intervals_df = pd.DataFrame({"t_start": [0.0], "t_duration": [1.0]})
         t = np.linspace(0.0, 1.0, 64, endpoint=False)

@@ -370,11 +370,13 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         Returns:
             List of GraphicsObject items added (ImageItem objects)
         """
-        debug(f"VideoThumbnailDetailRenderer.render_detail(plot_item: {plot_item}, interval: {interval}, detail_data: {detail_data})")
-        if detail_data is None:
-            
+        logger.info(f"VideoThumbnailDetailRenderer.render_detail(plot_item: {plot_item}, interval: {interval}, detail_data: {detail_data})")
+        if (detail_data is None) or (len(detail_data) == 0):
             return []
         
+        # if not isinstance(detail_data, pd.DataFrame):
+        #     raise TypeError(f"LogTextDataFramePlotDetailRenderer expects DataFrame, got {type(detail_data)}")
+
         graphics_objects = []
         t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
         t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
@@ -446,7 +448,10 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             # Add to plot
             plot_item.addItem(img_item)
             graphics_objects.append(img_item)
-        
+        ## END for i, frame in enumerate(frames)...
+        if len(graphics_objects) == 0:
+            logger.warning(f'len(graphics_objects) == 0 even after trying to add detail_data: {detail_data}')
+
         return graphics_objects
     
 
@@ -680,10 +685,16 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
         self.intervals_df['series_height'] = 50.0
         
         # Create pens and brushes with blue color (matching PhoOfflineEEGAnalysis)
-        color = pg.mkColor(100, 150, 200, 255)
+        color = pg.mkColor(100, 150, 200, 255) # a light blue color
         color.setAlphaF(0.78)  # 150/255 ≈ 0.588
-        pen = pg.mkPen(color, width=1)
         brush = pg.mkBrush(color)
+
+        ## use a slightly darker and more opaque color for the borders
+        darker_color = pg.mkColor(42, 99, 146, 255) ## 20% darker than color
+        darker_color.setAlphaF(0.92)
+        # pen = pg.mkPen(color, width=1)
+        pen = pg.mkPen(darker_color, width=1)
+        
         self.intervals_df['pen'] = [pen] * len(self.intervals_df)
         self.intervals_df['brush'] = [brush] * len(self.intervals_df)
         
@@ -699,6 +710,7 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
         
         # Store vispy renderer flag
         self.use_vispy_renderer = use_vispy_renderer
+
 
     @classmethod
     def init_from_saved_metadata_csv(cls, parsed_video_out_file_path: Path, custom_datasource_name: Optional[str] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False) -> "VideoTrackDatasource":
@@ -743,7 +755,10 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
             Dictionary with 'frames' (list of numpy arrays) and 'timestamps' (array)
         """
         use_VideoDeffcode: bool = True
+        logger.debug(f'VideoTrackDatasource.fetch_detailed_data(interval: {interval}):')
+
         if not CV2_AVAILABLE:
+            logger.error(f'VideoTrackDatasource.fetch_detailed_data(interval: {interval}):\n\tCV2_AVAILABLE is False.')
             # Fallback to synthetic frames if cv2 not available
             n_frames = max(1, int(interval['t_duration'] * self.frames_per_second))
             frames = []
@@ -755,10 +770,12 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
         # Get video file path
         video_file_path = interval.get('video_file_path', '')
         if not video_file_path:
+            logger.error(f'VideoTrackDatasource.fetch_detailed_data(interval: {interval}):\t(no video_file_path)')
             return {'frames': [], 'timestamps': np.array([])}
         
         video_path = Path(video_file_path)
         if not video_path.exists():
+            logger.error(f'VideoTrackDatasource.fetch_detailed_data(interval: {interval}):\tvideo_path: {video_path.as_posix()} does not exist!')
             return {'frames': [], 'timestamps': np.array([])}
         
 
@@ -773,15 +790,15 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
 
         try:
             if use_VideoDeffcode:
-                info(f'USING VideoDeffcode:')
+                logger.info(f'USING VideoDeffcode:')
                 primary_vid_metadata, vid_metadata = VideoDeffcodeHelpers.fetch_video_metadata_for_cache(a_video_file=video_path, debug_log_metadata=False)
                 source_duration_sec: float = primary_vid_metadata['source_duration_sec']
-                info(f'\tsource_duration_sec: {source_duration_sec}')
+                logger.info(f'\tsource_duration_sec: {source_duration_sec}')
                 source_step_sec: float = (float(target_n_frames) / source_duration_sec)
-                info(f'\tsource_step_sec: {source_step_sec}')
+                logger.info(f'\tsource_step_sec: {source_step_sec}')
                 # frame = VideoDeffcodeHelpers.fetch_video_metadata_and_thumbnail_for_cache(a_video_file=video_path, needs_metadata=False, save_output_thumbnail=False)
                 frame_offsets_sec = np.arange(start=0.0, stop=source_duration_sec, step=source_step_sec)
-                info(f'frame_offsets: {frame_offsets_sec}')
+                logger.info(f'frame_offsets: {frame_offsets_sec}')
                 frames = VideoDeffcodeHelpers.fetch_video_thumbnails_for_cache(a_video_file=video_path, frame_offsets=frame_offsets_sec, save_output_thumbnail=False)
                 # Calculate timestamp relative to interval start
                 # frame_time_in_video = frame_idx / video_fps
@@ -792,7 +809,7 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
 
             else:
                 ## USING CV2:
-                info(f'USING CV2:')
+                logger.info(f'USING CV2:')
                 # Open video
                 cap = cv2.VideoCapture(str(video_path))
                 if not cap.isOpened():
