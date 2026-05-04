@@ -284,6 +284,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
             if debug_print:
                 print(f'\tbuilding labels...')
             ## Build labels
+            empty_label_count: int = 0
             for rect_index in np.arange(len(self.data)):
                 rect_data_tuple = self.data[rect_index]
                 # Handle both tuples and IntervalRectsItemData objects
@@ -298,16 +299,25 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
                     # Tuple unpacking (backward compatibility)
                     (start_t, series_vertical_offset, duration_t, series_height, pen, brush) = rect_data_tuple
                 label_text: str = self.item_label_format_fn(rect_index=rect_index, rect_data_tuple=rect_data_tuple)
+                if label_text is None or str(label_text).strip() == '':
+                    empty_label_count += 1
                 a_rect = QtCore.QRectF(start_t, series_vertical_offset, duration_t, series_height)  # QRectF: (left, top, width, height)
                 if debug_print:
                     print(f'rect_index: {rect_index}, a_rect: {a_rect}, label_text: "{label_text}"')
                 a_text_item: CustomRectBoundedTextItem = CustomRectBoundedTextItem(rect=a_rect, text=label_text, parent=self, layout_mode=self._label_layout)
-                           
+
                 self._labels.append(a_text_item)
                 if debug_print:
                     print(f'\tadded label: {a_text_item}')
                 a_text_item.updatePosition()
-                
+            n_total: int = int(len(self.data))
+            if (n_total > 0) and (empty_label_count == n_total):
+                logger.warning(f'IntervalRectsItem.rebuild_label_items: built {n_total} labels but ALL were empty (formatter returned no text); labels will not be visible.')
+            elif empty_label_count > 0:
+                logger.debug(f'IntervalRectsItem.rebuild_label_items: built {n_total} labels, {empty_label_count} empty.')
+            else:
+                logger.debug(f'IntervalRectsItem.rebuild_label_items: built {n_total} labels (all populated).')
+
         else:
             if debug_print:
                 print(f'\tno self.item_label_format_fn, so not building labels.')

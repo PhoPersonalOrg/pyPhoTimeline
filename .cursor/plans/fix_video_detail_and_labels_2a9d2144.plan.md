@@ -7,13 +7,13 @@ todos:
     status: completed
   - id: add-safety-guards
     content: Add bounded sampling and concise diagnostics for background detail fetches
-    status: in_progress
+    status: completed
   - id: harden-label-render
     content: Harden video label formatter and label propagation for interval data
-    status: pending
+    status: completed
   - id: verify
     content: Run focused tests/manual checks for detail completion time and label visibility
-    status: pending
+    status: in_progress
 isProject: false
 ---
 

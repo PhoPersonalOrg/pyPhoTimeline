@@ -50,7 +50,19 @@ class Render2DEventRectanglesHelper:
                 lambda x: datetime_to_unix_timestamp(x) if isinstance(x, (datetime, pd.Timestamp)) else x
             )
         if 'label' in df.columns:
-            return [IntervalRectsItemData(*row) for row in zip(df.t_start, df.series_vertical_offset, df.t_duration, df.series_height, df.pen, df.brush, df.label)]
+            # Normalize label values so attrs receives a plain (possibly empty) str rather than NaN/None.
+            def _normalize_label(v):
+                if v is None:
+                    return ''
+                try:
+                    if isinstance(v, float) and np.isnan(v):
+                        return ''
+                except Exception:
+                    pass
+                s = str(v)
+                return '' if s.lower() == 'nan' else s
+            label_series = df.label.apply(_normalize_label)
+            return [IntervalRectsItemData(*row) for row in zip(df.t_start, df.series_vertical_offset, df.t_duration, df.series_height, df.pen, df.brush, label_series)]
         else:
             ## most basic
             return [IntervalRectsItemData(*row) for row in zip(df.t_start, df.series_vertical_offset, df.t_duration, df.series_height, df.pen, df.brush)]

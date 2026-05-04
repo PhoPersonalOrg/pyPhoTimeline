@@ -286,11 +286,30 @@ class TrackRenderer(QtCore.QObject):
             format_label_fn = None
             label_layout = "top_center"
             if isinstance(self.datasource, VideoTrackDatasource):
+                # Capture the latest overview dataframe for safe fallback lookup by row index when the
+                # rect_data_tuple is missing a populated label field (e.g. legacy 6-tuple data).
+                _captured_overview_df = self._overview_df
                 def video_label_formatter(rect_index: int, rect_data_tuple) -> str:
-                    """Format label for video track intervals - extracts filename from label field."""
+                    """Format label for video track intervals - extracts filename from label field with fallbacks."""
+                    label_value = None
                     if isinstance(rect_data_tuple, IntervalRectsItemData):
-                        return rect_data_tuple.label if rect_data_tuple.label else ''
-                    return ''
+                        label_value = rect_data_tuple.label
+                    if (label_value is None) or (str(label_value).strip() == ''):
+                        try:
+                            if (_captured_overview_df is not None) and (0 <= rect_index < len(_captured_overview_df)):
+                                row = _captured_overview_df.iloc[rect_index]
+                                if 'label' in _captured_overview_df.columns:
+                                    candidate = row.get('label')
+                                    if candidate is not None and str(candidate).strip() != '':
+                                        label_value = str(candidate)
+                                if (label_value is None) or (str(label_value).strip() == ''):
+                                    if 'video_file_path' in _captured_overview_df.columns:
+                                        vp = row.get('video_file_path')
+                                        if vp is not None and str(vp).strip() != '':
+                                            label_value = Path(str(vp)).name
+                        except Exception as fmt_err:
+                            logger.debug(f"TrackRenderer[{self.track_id}] video_label_formatter fallback failed for rect_index={rect_index}: {fmt_err}")
+                    return str(label_value) if label_value is not None else ''
                 format_label_fn = video_label_formatter
                 label_layout = "vertical_left"
             

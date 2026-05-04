@@ -770,11 +770,26 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
         self.intervals_df['pen'] = [pen] * len(self.intervals_df)
         self.intervals_df['brush'] = [brush] * len(self.intervals_df)
         
-        # Add label column with filename extracted from video_file_path
+        # Add label column with filename extracted from video_file_path. Be defensive about NaN/non-str inputs
+        # so the downstream label formatter always receives a valid string.
+        def _safe_basename_from_path(path) -> str:
+            try:
+                if path is None:
+                    return ''
+                if isinstance(path, float) and np.isnan(path):
+                    return ''
+                s = str(path).strip()
+                if not s or s.lower() == 'nan':
+                    return ''
+                return Path(s).name
+            except Exception:
+                return ''
         if 'video_file_path' in self.intervals_df.columns:
-            self.intervals_df['label'] = self.intervals_df['video_file_path'].apply(lambda path: Path(path).name if path else '')
+            self.intervals_df['label'] = self.intervals_df['video_file_path'].apply(_safe_basename_from_path)
         else:
             self.intervals_df['label'] = ''
+        n_labeled = int((self.intervals_df['label'].astype(str).str.len() > 0).sum())
+        logger.debug(f'VideoTrackDatasource.__init__: populated {n_labeled}/{len(self.intervals_df)} labels from video_file_path')
         
         # Store configuration for frame loading
         self.frames_per_second = frames_per_second
