@@ -1369,7 +1369,7 @@ class SimpleTimelineWidget(DayNightBandRenderingMixin, TrackRenderingMixin, Dyna
         strip.set_viewport(self._window_value_to_signal_float(self.active_window_start_time), self._window_value_to_signal_float(self.active_window_end_time))
 
 
-
+    # Calendar Navigator Track ___________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________ #
     def add_calendar_navigator(self):
         """Adds the calendar navigator to the bottom of the timeline."""
         from pypho_timeline.widgets import TimelineCalendarWidget

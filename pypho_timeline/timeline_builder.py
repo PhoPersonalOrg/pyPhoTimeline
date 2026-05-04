@@ -1605,9 +1605,12 @@ class TimelineBuilder(QObject):
 
 
 
-
     def default_post_timeline_create_display_updates(self, timeline, dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget']):
-        """ hides excessive labels and improves general usability after creating the timeline """
+        """ performs all hosuekeeping post creation of the timeline window:
+                - hides excessive labels and improves general usability after creating the timeline 
+        """
+        _out_cal_widget = timeline.add_calendar_navigator()
+
         timeline.hide_extra_xaxis_labels_and_axes(enable_hide_extra_track_x_axes=True)
 
         # dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget']

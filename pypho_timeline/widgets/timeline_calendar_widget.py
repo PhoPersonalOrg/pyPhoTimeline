@@ -67,6 +67,10 @@ class TimelineCalendarWidget(pg.PlotWidget):
         self.setYRange(0, 1, padding=0)
         self.getViewBox().setMouseEnabled(x=True, y=False) # Only x panning/zooming
         self.getViewBox().setLimits(yMin=0, yMax=1)
+
+        ## set mouse mode
+        self.getViewBox().setMouseMode(self.getViewBox().RectMode)
+
         self.getPlotItem().setMenuEnabled(False) # Disable right-click menu
         self.getPlotItem().hideButtons() # Hide auto-scale buttons
         
