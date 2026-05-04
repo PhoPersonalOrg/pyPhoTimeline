@@ -333,7 +333,7 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
     - A dictionary with 'frames' key containing frame data and optional 'timestamps' key
     """
     
-    def __init__(self, thumbnail_height: float = 50.0, spacing: float = 0.1, thumbnail_size: Optional[Tuple[int, int]] = None, 
+    def __init__(self, thumbnail_height: float = 50.0, spacing: float = 0.1, thumbnail_size: Optional[Tuple[int, int]] = None, vertical_inset_fraction: float = 0.08, 
                        text_color='white', text_size=10, text_rotation=90, y_position=0.0, anchor=(0.5, 0.5),
         ):
         """Initialize the video thumbnail renderer.
@@ -346,6 +346,7 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         self.thumbnail_height = thumbnail_height
         self.spacing = spacing
         self.thumbnail_size = thumbnail_size
+        self.vertical_inset_fraction = float(np.clip(vertical_inset_fraction, 0.0, 0.45))
         self.text_color = text_color
         self.text_size = text_size
         self.text_rotation = text_rotation
@@ -373,6 +374,14 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         if isinstance(t_duration, pd.Timedelta):
             return float(t_duration.total_seconds())
         return float(t_duration)
+
+
+    def _compute_vertical_thumbnail_geometry(self, y_offset: float, y_height: float) -> Tuple[float, float, float]:
+        inset = max(0.0, float(y_height) * self.vertical_inset_fraction)
+        render_height = max(1.0, min(float(self.thumbnail_height), float(y_height) - (2.0 * inset)))
+        y_center = float(y_offset) + (float(y_height) / 2.0)
+        y_bottom = y_center - (render_height / 2.0)
+        return y_center, y_bottom, render_height
 
 
     def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
@@ -445,8 +454,7 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         # Get y position (center of interval vertically)
         y_offset = interval['series_vertical_offset'].iloc[0] if len(interval) > 0 and 'series_vertical_offset' in interval.columns else 0.0
         y_height = interval['series_height'].iloc[0] if len(interval) > 0 and 'series_height' in interval.columns else self.thumbnail_height
-        y_center = y_offset + y_height / 2.0
-        y_bottom = y_center - self.thumbnail_height / 2.0
+        y_center, y_bottom, render_thumbnail_height = self._compute_vertical_thumbnail_geometry(y_offset=float(y_offset), y_height=float(y_height))
         video_path_raw = interval['video_file_path'].iloc[0] if len(interval) > 0 and 'video_file_path' in interval.columns else None
         use_vlc_item = bool(video_path_raw is not None and str(video_path_raw).strip() != '' and not (isinstance(video_path_raw, float) and np.isnan(video_path_raw)))
         t_start_sec = self.scalar_interval_t_start_to_unix_seconds(t_start)
@@ -473,7 +481,7 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             # Set position and size
             img_item.setRect(QtCore.QRectF(
                 x_start, y_bottom, 
-                thumbnail_width, self.thumbnail_height
+                thumbnail_width, render_thumbnail_height
             ))
             
             # Add to plot
@@ -612,9 +620,9 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         
         y_offset = interval['series_vertical_offset'].iloc[0] if len(interval) > 0 and 'series_vertical_offset' in interval.columns else 0.0
         y_height = interval['series_height'].iloc[0] if len(interval) > 0 and 'series_height' in interval.columns else self.thumbnail_height
-        y_center = y_offset + y_height / 2.0
-        y_min = y_center - self.thumbnail_height / 2.0
-        y_max = y_center + self.thumbnail_height / 2.0
+        y_center, _, render_thumbnail_height = self._compute_vertical_thumbnail_geometry(y_offset=float(y_offset), y_height=float(y_height))
+        y_min = y_center - render_thumbnail_height / 2.0
+        y_max = y_center + render_thumbnail_height / 2.0
         
         # Convert t_start and t_end to Unix timestamps if they're datetime objects
         if isinstance(t_start, (datetime, pd.Timestamp)):
