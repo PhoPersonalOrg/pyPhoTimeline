@@ -656,7 +656,7 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
     #     self._video_metadata_df = value
     
     def __init__(self, video_intervals_df: Optional[pd.DataFrame] = None, video_folder_path: Optional[Path] = None, video_df: Optional[pd.DataFrame] = None, video_paths: Optional[List[Union[Path, str]]] = None,
-            custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = 10.0, thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False,
+            custom_datasource_name: Optional[str] = None, reference_timestamp: Optional[float] = None, frames_per_second: float = (1.0/60.0), thumbnail_size: Optional[Tuple[int, int]] = (128, 128), use_vispy_renderer: bool = False,
             lab_obj_dict: Optional[Dict[str, Optional[LabRecorderXDF]]] = None, raw_datasets_dict: Optional[Dict[str, Optional[List[mne.io.Raw]]]] = None, parent: Optional[QtCore.QObject] = None):
         """Initialize with video intervals.
 
@@ -848,6 +848,8 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
         interval_start = interval['t_start']
         interval_duration = interval['t_duration']
         target_n_frames: int = max(1, int(interval_duration * self.frames_per_second))
+        target_n_frames = min(5, target_n_frames) ## allow at most 5 frames total per video
+
 
         # Extract frames
         frames = []
