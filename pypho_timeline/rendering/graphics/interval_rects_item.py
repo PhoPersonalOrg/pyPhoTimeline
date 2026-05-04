@@ -123,7 +123,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
     clicked = QtCore.Signal()
     ## data must have fields: start_t, series_vertical_offset, duration_t, series_height, pen, brush
 
-    def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False, detail_render_callback=None, extra_menu_callbacks_dict: Optional[Dict[str, Callable[[int, float], Any]]] = None):
+    def __init__(self, data, format_tooltip_fn=None, format_label_fn=None, debug_print=False, detail_render_callback=None, extra_menu_callbacks_dict: Optional[Dict[str, Callable[[int, float], Any]]] = None, label_layout: str = "top_center"):
         # menu creation is deferred because it is expensive and often
         # the user will never see the menu anyway.
         self.menu = None
@@ -145,6 +145,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
 
         self._current_hovered_item_tooltip_format_fn = format_tooltip_fn
         self._item_label_format_fn = format_label_fn
+        self._label_layout = label_layout
         self._detail_render_callback = detail_render_callback  # Callback for detailed rendering: (rect_index: int, rect_data: IntervalRectsItemData) -> None
         if extra_menu_callbacks_dict is None:
             extra_menu_callbacks_dict = {}
@@ -300,7 +301,7 @@ class IntervalRectsItem(ReprPrintableItemMixin, pg.GraphicsObject):
                 a_rect = QtCore.QRectF(start_t, series_vertical_offset, duration_t, series_height)  # QRectF: (left, top, width, height)
                 if debug_print:
                     print(f'rect_index: {rect_index}, a_rect: {a_rect}, label_text: "{label_text}"')
-                a_text_item: CustomRectBoundedTextItem = CustomRectBoundedTextItem(rect=a_rect, text=label_text, parent=self)
+                a_text_item: CustomRectBoundedTextItem = CustomRectBoundedTextItem(rect=a_rect, text=label_text, parent=self, layout_mode=self._label_layout)
                            
                 self._labels.append(a_text_item)
                 if debug_print:

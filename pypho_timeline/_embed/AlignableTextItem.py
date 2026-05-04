@@ -155,9 +155,10 @@ class CustomRectBoundedTextItem(pg.TextItem):
     
         from pypho_timeline._embed.AlignableTextItem import CustomRectBoundedTextItem
     """
-    def __init__(self, rect: QtCore.QRectF, text: str="", parent=None, **kwds): # , movable=False, position=0.5, anchors=None, 
+    def __init__(self, rect: QtCore.QRectF, text: str="", parent=None, layout_mode: str="top_center", **kwds): # , movable=False, position=0.5, anchors=None, 
         self._original_text = text ## full text
         self._parent_rect = rect
+        self._layout_mode = layout_mode  # "top_center" (default) or "vertical_left"
         # self.movable = movable
         # self.moving = False
         # self.orthoPos = position  # text will always be placed on the line at a position relative to view bounds
@@ -377,10 +378,15 @@ class CustomRectBoundedTextItem(pg.TextItem):
         #     self.setAnchor(self.anchors[0 if vr.center().y() < 0 else 1])
         
         a_rect = self._parent_rect
-        pos_x = a_rect.center().x()
-        pos_y = a_rect.top()
-        self.setAnchor(pg.Point(0.5, 0))
-        self.setPos(pos_x, pos_y)
+        if self._layout_mode == "vertical_left":
+            self.setRotation(90)
+            self.setAnchor(pg.Point(0, 0.5))
+            self.setPos(a_rect.left(), a_rect.center().y())
+        else:
+            pos_x = a_rect.center().x()
+            pos_y = a_rect.top()
+            self.setAnchor(pg.Point(0.5, 0))
+            self.setPos(pos_x, pos_y)
         
 
 

@@ -441,48 +441,17 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         y_bottom = y_center - self.thumbnail_height / 2.0
         video_path_raw = interval['video_file_path'].iloc[0] if len(interval) > 0 and 'video_file_path' in interval.columns else None
         use_vlc_item = bool(video_path_raw is not None and str(video_path_raw).strip() != '' and not (isinstance(video_path_raw, float) and np.isnan(video_path_raw)))
-        t_start_sec = self.scalar_interval_t_start_to_unix_seconds(t_start) if use_vlc_item else 0.0
-        t_duration_sec = self.scalar_interval_t_duration_seconds(t_duration) if use_vlc_item else 1.0
+        t_start_sec = self.scalar_interval_t_start_to_unix_seconds(t_start)
+        t_duration_sec = self.scalar_interval_t_duration_seconds(t_duration)
         vlc_path = Path(str(video_path_raw)) if use_vlc_item else None
 
-        
-        # Create text item
-        if (video_label is not None) and (len(video_label) > 0):
-            text_item = pg.TextItem(
-                text=video_label,
-                color=self.text_color,
-                anchor=self.anchor
-            )
-            
-            # Set font size
-            font = text_item.textItem.font()
-            font.setPointSize(self.text_size)
-            text_item.textItem.setFont(font)
-            
-            # Set position
-            # text_item.setPos(t_start_sec, self.y_position)
-            text_item.setPos(t_start_sec, y_center)
-            
-            # Set rotation if needed
-            if self.text_rotation != 0:
-                text_item.setRotation(self.text_rotation)
-            
-            # Add to plot
-            logger.info(f'\tadding text_item: {text_item} for video_label: {video_label}...')
-            plot_item.addItem(text_item)
-            graphics_objects.append(text_item)
-        else:
-            logger.warning(f'\tSKIPPING adding text_item because video_label: {text_item}.')
-
-
-
-        # Render each frame
+        # Render each frame first so the label can be drawn on top
         for i, frame in enumerate(frames):
             if frame is None:
                 continue
             
-            # Calculate x position
-            x_start = t_start + i * (thumbnail_width + total_spacing / max(1, n_frames - 1))
+            # Calculate x position (use unix seconds so it shares the timeline x-axis with overview rects)
+            x_start = t_start_sec + i * (thumbnail_width + total_spacing / max(1, n_frames - 1))
             
             # Convert frame to image format if needed
             img_data = self._prepare_frame_image(frame)
@@ -503,6 +472,36 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             plot_item.addItem(img_item)
             graphics_objects.append(img_item)
         ## END for i, frame in enumerate(frames)...
+
+        # Create filename text item (drawn after thumbnails, with elevated z-value, vertical at left edge)
+        if (video_label is not None) and (len(video_label) > 0):
+            text_item = pg.TextItem(
+                text=video_label,
+                color=self.text_color,
+                anchor=(0, 0.5),
+            )
+            
+            # Set font size
+            font = text_item.textItem.font()
+            font.setPointSize(self.text_size)
+            text_item.textItem.setFont(font)
+            
+            # Position at left edge of interval, vertically centered in the row
+            text_item.setPos(t_start_sec, y_center)
+            
+            # Set rotation if needed
+            if self.text_rotation != 0:
+                text_item.setRotation(self.text_rotation)
+            
+            # Ensure label paints above thumbnail images
+            text_item.setZValue(10)
+            
+            # Add to plot
+            logger.info(f'\tadding text_item for video_label: "{video_label}"...')
+            plot_item.addItem(text_item)
+            graphics_objects.append(text_item)
+        else:
+            logger.warning(f'\tSKIPPING adding text_item because video_label is empty: "{video_label}".')
 
         if len(graphics_objects) == 0:
             logger.warning(f'len(graphics_objects) == 0 even after trying to add detail_data: {detail_data}')

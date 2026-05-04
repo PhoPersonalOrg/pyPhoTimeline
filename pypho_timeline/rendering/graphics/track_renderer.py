@@ -284,6 +284,7 @@ class TrackRenderer(QtCore.QObject):
             
             # Create format_label_fn for video tracks to display filename
             format_label_fn = None
+            label_layout = "top_center"
             if isinstance(self.datasource, VideoTrackDatasource):
                 def video_label_formatter(rect_index: int, rect_data_tuple) -> str:
                     """Format label for video track intervals - extracts filename from label field."""
@@ -291,6 +292,7 @@ class TrackRenderer(QtCore.QObject):
                         return rect_data_tuple.label if rect_data_tuple.label else ''
                     return ''
                 format_label_fn = video_label_formatter
+                label_layout = "vertical_left"
             
             # Create detail render callback if detail renderer is available
             detail_render_callback = None
@@ -367,6 +369,13 @@ class TrackRenderer(QtCore.QObject):
                 self.datasource, format_label_fn=format_label_fn, detail_render_callback=detail_render_callback,
                 extra_menu_callbacks_dict=extra_menu_callbacks_dict,
             )
+            
+            # Apply label layout post-construction so we are resilient to partial autoreload of IntervalRectsItem
+            if (self.overview_rects_item is not None) and (label_layout != "top_center"):
+                if hasattr(self.overview_rects_item, '_label_layout'):
+                    self.overview_rects_item._label_layout = label_layout
+                    if hasattr(self.overview_rects_item, 'rebuild_label_items'):
+                        self.overview_rects_item.rebuild_label_items()
             
             # Remove old overview if exists
             if old_overview_rects_item is not None:
