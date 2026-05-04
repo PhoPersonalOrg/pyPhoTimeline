@@ -157,121 +157,122 @@ class TrackRenderer(QtCore.QObject):
             # Store overview_df for mapping rectangle indices to intervals
             self._overview_df = overview_df.copy()
             
-            # Use vispy renderer if enabled
-            if self.use_vispy and VispyVideoEpochRenderer is not None:
-                # Get reference datetime from plot_item's parent widget if available
-                reference_datetime = None
-                try:
-                    # Try to get reference_datetime from timeline widget
-                    parent_widget = self.plot_item.parentItem()
-                    if parent_widget is not None:
-                        # Traverse up to find timeline widget
-                        while parent_widget is not None:
-                            if hasattr(parent_widget, 'reference_datetime'):
-                                reference_datetime = parent_widget.reference_datetime
-                                break
-                            parent_widget = parent_widget.parentItem()
-                except Exception:
-                    pass
+            # # Use vispy renderer if enabled
+            # if self.use_vispy and VispyVideoEpochRenderer is not None:
+            #     # Get reference datetime from plot_item's parent widget if available
+            #     reference_datetime = None
+            #     try:
+            #         # Try to get reference_datetime from timeline widget
+            #         parent_widget = self.plot_item.parentItem()
+            #         if parent_widget is not None:
+            #             # Traverse up to find timeline widget
+            #             while parent_widget is not None:
+            #                 if hasattr(parent_widget, 'reference_datetime'):
+            #                     reference_datetime = parent_widget.reference_datetime
+            #                     break
+            #                 parent_widget = parent_widget.parentItem()
+            #     except Exception:
+            #         pass
                 
-                # Create or update vispy renderer
-                if self.vispy_renderer is None:
-                    # Get reference datetime from timeline widget if available
-                    # Try to get from plot_item's parent hierarchy
-                    timeline_widget = None
-                    try:
-                        # Try to find timeline widget by traversing parent chain
-                        current = self.plot_item
-                        while current is not None:
-                            if hasattr(current, 'reference_datetime'):
-                                reference_datetime = current.reference_datetime
-                                timeline_widget = current
-                                break
-                            # Try to get parent
-                            if hasattr(current, 'parentItem'):
-                                current = current.parentItem()
-                            elif hasattr(current, 'parent'):
-                                current = current.parent()
-                            else:
-                                break
-                    except Exception as e:
-                        logger.debug(f"TrackRenderer[{self.track_id}] Could not find reference_datetime: {e}")
+            #     # Create or update vispy renderer
+            #     if self.vispy_renderer is None:
+            #         # Get reference datetime from timeline widget if available
+            #         # Try to get from plot_item's parent hierarchy
+            #         timeline_widget = None
+            #         try:
+            #             # Try to find timeline widget by traversing parent chain
+            #             current = self.plot_item
+            #             while current is not None:
+            #                 if hasattr(current, 'reference_datetime'):
+            #                     reference_datetime = current.reference_datetime
+            #                     timeline_widget = current
+            #                     break
+            #                 # Try to get parent
+            #                 if hasattr(current, 'parentItem'):
+            #                     current = current.parentItem()
+            #                 elif hasattr(current, 'parent'):
+            #                     current = current.parent()
+            #                 else:
+            #                     break
+            #         except Exception as e:
+            #             logger.debug(f"TrackRenderer[{self.track_id}] Could not find reference_datetime: {e}")
                     
-                    # Get parent widget for embedding (vispy canvas needs Qt widget parent)
-                    parent_widget = None
-                    try:
-                        # Try to get the actual Qt widget from plot_item
-                        viewbox = self.plot_item.getViewBox()
-                        if viewbox is not None:
-                            # Get the GraphicsView widget
-                            if hasattr(viewbox, 'parent'):
-                                parent_widget = viewbox.parent()
-                            # Try alternative: get widget from plot_item
-                            if parent_widget is None and hasattr(self.plot_item, 'parent'):
-                                parent_widget = self.plot_item.parent()
-                    except Exception as e:
-                        logger.debug(f"TrackRenderer[{self.track_id}] Could not get parent widget: {e}")
+            #         # Get parent widget for embedding (vispy canvas needs Qt widget parent)
+            #         parent_widget = None
+            #         try:
+            #             # Try to get the actual Qt widget from plot_item
+            #             viewbox = self.plot_item.getViewBox()
+            #             if viewbox is not None:
+            #                 # Get the GraphicsView widget
+            #                 if hasattr(viewbox, 'parent'):
+            #                     parent_widget = viewbox.parent()
+            #                 # Try alternative: get widget from plot_item
+            #                 if parent_widget is None and hasattr(self.plot_item, 'parent'):
+            #                     parent_widget = self.plot_item.parent()
+            #         except Exception as e:
+            #             logger.debug(f"TrackRenderer[{self.track_id}] Could not get parent widget: {e}")
                     
-                    self.vispy_renderer = VispyVideoEpochRenderer(
-                        parent_widget=parent_widget,
-                        reference_datetime=reference_datetime,
-                        max_epochs=10000
-                    )
-                    logger.info(f"TrackRenderer[{self.track_id}] Created vispy renderer")
+            #         self.vispy_renderer = VispyVideoEpochRenderer(
+            #             parent_widget=parent_widget,
+            #             reference_datetime=reference_datetime,
+            #             max_epochs=10000
+            #         )
+            #         logger.info(f"TrackRenderer[{self.track_id}] Created vispy renderer")
                     
-                    # Embed the vispy canvas widget into the plot_item's viewbox
-                    # Note: vispy and pyqtgraph use different rendering backends (OpenGL vs QPainter)
-                    # so we need to overlay or replace the plot_item content with the vispy canvas
-                    try:
-                        vispy_canvas_widget = self.vispy_renderer.get_canvas_widget()
-                        if vispy_canvas_widget is not None:
-                            # Get the GraphicsView widget that contains the plot_item
-                            viewbox = self.plot_item.getViewBox()
-                            graphics_view = None
-                            if viewbox is not None:
-                                # Try to get the GraphicsView widget
-                                if hasattr(viewbox, 'parent'):
-                                    parent = viewbox.parent()
-                                    # GraphicsView is typically the parent of ViewBox
-                                    if parent is not None:
-                                        graphics_view = parent
+            #         # Embed the vispy canvas widget into the plot_item's viewbox
+            #         # Note: vispy and pyqtgraph use different rendering backends (OpenGL vs QPainter)
+            #         # so we need to overlay or replace the plot_item content with the vispy canvas
+            #         try:
+            #             vispy_canvas_widget = self.vispy_renderer.get_canvas_widget()
+            #             if vispy_canvas_widget is not None:
+            #                 # Get the GraphicsView widget that contains the plot_item
+            #                 viewbox = self.plot_item.getViewBox()
+            #                 graphics_view = None
+            #                 if viewbox is not None:
+            #                     # Try to get the GraphicsView widget
+            #                     if hasattr(viewbox, 'parent'):
+            #                         parent = viewbox.parent()
+            #                         # GraphicsView is typically the parent of ViewBox
+            #                         if parent is not None:
+            #                             graphics_view = parent
                             
-                            # If we found a GraphicsView, try to overlay the vispy canvas
-                            if graphics_view is not None:
-                                try:
-                                    # Set the vispy canvas as a child of the graphics view
-                                    vispy_canvas_widget.setParent(graphics_view)
-                                    # Make it fill the entire graphics view area
-                                    # Convert QRectF to QRect for setGeometry
-                                    from qtpy import QtCore
-                                    rect = graphics_view.rect()
-                                    if isinstance(rect, QtCore.QRectF):
-                                        # Convert QRectF to QRect
-                                        vispy_canvas_widget.setGeometry(
-                                            int(rect.x()), int(rect.y()), 
-                                            int(rect.width()), int(rect.height())
-                                        )
-                                    else:
-                                        vispy_canvas_widget.setGeometry(rect)
-                                    vispy_canvas_widget.raise_()  # Bring to front
-                                    vispy_canvas_widget.show()
-                                    logger.info(f"TrackRenderer[{self.track_id}] Embedded vispy canvas widget into graphics view")
-                                except Exception as embed_error:
-                                    logger.warning(f"TrackRenderer[{self.track_id}] Could not embed vispy canvas: {embed_error}")
-                                    # Fallback: just show the canvas
-                                    vispy_canvas_widget.show()
-                            else:
-                                # Fallback: just show the canvas (might appear as separate window)
-                                vispy_canvas_widget.show()
-                                logger.warning(f"TrackRenderer[{self.track_id}] Could not find graphics view, showing vispy canvas as standalone")
-                    except Exception as e:
-                        logger.warning(f"TrackRenderer[{self.track_id}] Could not embed vispy canvas widget: {e}", exc_info=True)
+            #                 # If we found a GraphicsView, try to overlay the vispy canvas
+            #                 if graphics_view is not None:
+            #                     try:
+            #                         # Set the vispy canvas as a child of the graphics view
+            #                         vispy_canvas_widget.setParent(graphics_view)
+            #                         # Make it fill the entire graphics view area
+            #                         # Convert QRectF to QRect for setGeometry
+            #                         from qtpy import QtCore
+            #                         rect = graphics_view.rect()
+            #                         if isinstance(rect, QtCore.QRectF):
+            #                             # Convert QRectF to QRect
+            #                             vispy_canvas_widget.setGeometry(
+            #                                 int(rect.x()), int(rect.y()), 
+            #                                 int(rect.width()), int(rect.height())
+            #                             )
+            #                         else:
+            #                             vispy_canvas_widget.setGeometry(rect)
+            #                         vispy_canvas_widget.raise_()  # Bring to front
+            #                         vispy_canvas_widget.show()
+            #                         logger.info(f"TrackRenderer[{self.track_id}] Embedded vispy canvas widget into graphics view")
+            #                     except Exception as embed_error:
+            #                         logger.warning(f"TrackRenderer[{self.track_id}] Could not embed vispy canvas: {embed_error}")
+            #                         # Fallback: just show the canvas
+            #                         vispy_canvas_widget.show()
+            #                 else:
+            #                     # Fallback: just show the canvas (might appear as separate window)
+            #                     vispy_canvas_widget.show()
+            #                     logger.warning(f"TrackRenderer[{self.track_id}] Could not find graphics view, showing vispy canvas as standalone")
+            #         except Exception as e:
+            #             logger.warning(f"TrackRenderer[{self.track_id}] Could not embed vispy canvas widget: {e}", exc_info=True)
                 
-                # Update vispy renderer with intervals
-                self.vispy_renderer.update_epochs(overview_df)
-                logger.debug(f"TrackRenderer[{self.track_id}] Updated vispy renderer with {num_intervals} intervals")
-                return
+            #     # Update vispy renderer with intervals
+            #     self.vispy_renderer.update_epochs(overview_df)
+            #     logger.debug(f"TrackRenderer[{self.track_id}] Updated vispy renderer with {num_intervals} intervals")
+            #     return
             
+
             # Build IntervalRectsItem from overview data (pyqtgraph fallback)
             # The datasource should provide visualization columns, but if not, we need to add them
             if 'series_vertical_offset' not in overview_df.columns:

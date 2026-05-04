@@ -231,55 +231,6 @@ def video_metadata_to_intervals_df(video_df: pd.DataFrame, reference_timestamp: 
 
 
 class VlcLaunchableVideoThumbnailImageItem(pg.ImageItem):
-    @staticmethod
-    def find_vlc_executable() -> Optional[Path]:
-        vlc_path = shutil.which('vlc')
-        if vlc_path:
-            return Path(vlc_path)
-        system = platform.system()
-        if system == "Windows":
-            common_paths = [Path("C:/Program Files/VideoLAN/VLC/vlc.exe"), Path("C:/Program Files (x86)/VideoLAN/VLC/vlc.exe"), Path(os.path.expanduser("~/AppData/Local/Programs/VLC/vlc.exe"))]
-        elif system == "Darwin":
-            common_paths = [Path("/Applications/VLC.app/Contents/MacOS/VLC"), Path("/usr/local/bin/vlc")]
-        else:
-            common_paths = [Path("/usr/bin/vlc"), Path("/usr/local/bin/vlc")]
-        for path in common_paths:
-            if path.exists():
-                return path
-        return None
-
-
-    @staticmethod
-    def message_box_parent_for_plot_item(plot_item: pg.PlotItem) -> Optional[QWidget]:
-        scene = plot_item.scene()
-        if scene is None or len(scene.views()) == 0:
-            return None
-        return scene.views()[0].window()
-
-
-    @staticmethod
-    def launch_video_player_vlc(video_path: Path, start_offset_seconds: float, parent_widget: Optional[QWidget] = None) -> None:
-        if not video_path or not str(video_path).strip():
-            QMessageBox.warning(parent_widget, "Video Launch Error", "No video file path found for this interval.")
-            return
-        video_path = Path(video_path)
-        if not video_path.exists():
-            QMessageBox.warning(parent_widget, "Video Launch Error", f"Video file not found:\n{video_path}")
-            return
-        vlc_exe = VlcLaunchableVideoThumbnailImageItem.find_vlc_executable()
-        if vlc_exe is None:
-            QMessageBox.warning(parent_widget, "VLC Not Found", "VLC media player was not found on your system.\n\nPlease install VLC from https://www.videolan.org/\nor ensure it is in your system PATH.")
-            return
-        try:
-            cmd = [str(vlc_exe), "--start-time", str(int(start_offset_seconds)), str(video_path)]
-            if platform.system() == "Windows":
-                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                subprocess.Popen(cmd, creationflags=creationflags, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            else:
-                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        except Exception as e:
-            QMessageBox.critical(parent_widget, "Video Launch Error", f"Failed to launch VLC:\n{str(e)}")
-
 
     def __init__(self, image: np.ndarray, plot_item: pg.PlotItem, video_path: Path, t_start_sec: float, t_duration_sec: float):
         super().__init__(image)
@@ -307,6 +258,56 @@ class VlcLaunchableVideoThumbnailImageItem(pg.ImageItem):
         parent_w = VlcLaunchableVideoThumbnailImageItem.message_box_parent_for_plot_item(self._plot_item)
         VlcLaunchableVideoThumbnailImageItem.launch_video_player_vlc(self._video_path, offset_seconds, parent_w)
         event.accept()
+
+    @classmethod
+    def find_vlc_executable(cls) -> Optional[Path]:
+        vlc_path = shutil.which('vlc')
+        if vlc_path:
+            return Path(vlc_path)
+        system = platform.system()
+        if system == "Windows":
+            common_paths = [Path("C:/Program Files/VideoLAN/VLC/vlc.exe"), Path("C:/Program Files (x86)/VideoLAN/VLC/vlc.exe"), Path(os.path.expanduser("~/AppData/Local/Programs/VLC/vlc.exe"))]
+        elif system == "Darwin":
+            common_paths = [Path("/Applications/VLC.app/Contents/MacOS/VLC"), Path("/usr/local/bin/vlc")]
+        else:
+            common_paths = [Path("/usr/bin/vlc"), Path("/usr/local/bin/vlc")]
+        for path in common_paths:
+            if path.exists():
+                return path
+        return None
+
+
+    @classmethod
+    def message_box_parent_for_plot_item(cls, plot_item: pg.PlotItem) -> Optional[QWidget]:
+        scene = plot_item.scene()
+        if scene is None or len(scene.views()) == 0:
+            return None
+        return scene.views()[0].window()
+
+
+    @classmethod
+    def launch_video_player_vlc(cls, video_path: Path, start_offset_seconds: float, parent_widget: Optional[QWidget] = None) -> None:
+        if not video_path or not str(video_path).strip():
+            QMessageBox.warning(parent_widget, "Video Launch Error", "No video file path found for this interval.")
+            return
+        video_path = Path(video_path)
+        if not video_path.exists():
+            QMessageBox.warning(parent_widget, "Video Launch Error", f"Video file not found:\n{video_path}")
+            return
+        vlc_exe = VlcLaunchableVideoThumbnailImageItem.find_vlc_executable()
+        if vlc_exe is None:
+            QMessageBox.warning(parent_widget, "VLC Not Found", "VLC media player was not found on your system.\n\nPlease install VLC from https://www.videolan.org/\nor ensure it is in your system PATH.")
+            return
+        try:
+            cmd = [str(vlc_exe), "--start-time", str(int(start_offset_seconds)), str(video_path)]
+            if platform.system() == "Windows":
+                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                subprocess.Popen(cmd, creationflags=creationflags, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        except Exception as e:
+            QMessageBox.critical(parent_widget, "Video Launch Error", f"Failed to launch VLC:\n{str(e)}")
+
 
 
 # ==================================================================================================================================================================================================================================================================================== #
@@ -377,18 +378,19 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         Returns:
             List of GraphicsObject items added (ImageItem objects)
         """
+        enable_early_return: bool = False
         logger.info(f"VideoThumbnailDetailRenderer.render_detail(plot_item: {plot_item}, interval: {interval}, detail_data: {detail_data})")
-        if (detail_data is None) or (len(detail_data) == 0):
-            return []
+        # if (detail_data is None) or (len(detail_data) == 0):
+        #     return []
         
         # if not isinstance(detail_data, pd.DataFrame):
         #     raise TypeError(f"LogTextDataFramePlotDetailRenderer expects DataFrame, got {type(detail_data)}")
 
         graphics_objects = []
-        t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
-        t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
-        
-        video_label: str = interval['label']
+        t_start = interval['t_start'].iloc[0] if (len(interval) > 0) and ('t_start' in interval.columns) else 0.0
+        t_duration = interval['t_duration'].iloc[0] if (len(interval) > 0) and ('t_duration' in interval.columns) else 1.0        
+        video_label: str = interval['label'].iloc[0] if (len(interval) > 0) and ('label' in interval.columns) else "<ERR>"
+
         # 'cache_file_mtime'
         # 't_end'
         logger.info(f'\tvideo_label: "{video_label}"')
@@ -407,17 +409,25 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             if detail_data.ndim >= 3:
                 frames = [detail_data[i] for i in range(len(detail_data))]
             else:
-                return []  # Invalid shape
+                logger.error(f'\tInvalid shape/type of detail_data: {detail_data}')
+                if enable_early_return:
+                    return graphics_objects  # Invalid shape
         else:
-            return []  # Unknown format
+            logger.error(f'\tUnknown format')
+            if enable_early_return:
+                return graphics_objects  # Unknown format
         
         if frames is None or len(frames) == 0:
-            return []
+            logger.error(f'\tframes is None or len(frames) == 0')
+            if enable_early_return:
+                return graphics_objects
         
         # Calculate thumbnail positions
         n_frames = len(frames)
         if n_frames == 0:
-            return []
+            logger.error(f'\tn_frames == 0')
+            if enable_early_return:
+                return graphics_objects
         
         # Distribute thumbnails across the interval
         total_spacing = t_duration * self.spacing
@@ -450,15 +460,19 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             text_item.textItem.setFont(font)
             
             # Set position
-            text_item.setPos(t_start_sec, self.y_position)
+            # text_item.setPos(t_start_sec, self.y_position)
+            text_item.setPos(t_start_sec, y_center)
             
             # Set rotation if needed
             if self.text_rotation != 0:
                 text_item.setRotation(self.text_rotation)
             
             # Add to plot
+            logger.info(f'\tadding text_item: {text_item} for video_label: {video_label}...')
             plot_item.addItem(text_item)
             graphics_objects.append(text_item)
+        else:
+            logger.warning(f'\tSKIPPING adding text_item because video_label: {text_item}.')
 
 
 
