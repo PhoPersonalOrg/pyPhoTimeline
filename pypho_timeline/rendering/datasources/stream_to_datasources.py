@@ -119,9 +119,8 @@ def _build_detailed_df(stream_info: Dict, stream_type: str, stream_name: str, ti
 
 
 def _build_eeg_quality_detail_renderer():
-    from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
-    eeg_norm_dict = modality_channels_normalization_mode_dict.get('EEG')
-    return cast(Any, DataframePlotDetailRenderer(channel_names=modality_channels_dict['EEG'], fallback_normalization_mode=ChannelNormalizationMode.INDIVIDUAL, normalization_mode_dict=eeg_norm_dict))
+    from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import EEGQualityCircleDetailRenderer
+    return cast(Any, EEGQualityCircleDetailRenderer(channel_names=modality_channels_dict['EEG']))
 
 
 def _build_log_detail_renderer():

@@ -547,6 +547,104 @@ class DataframePlotDetailRenderer(ChannelNormalizationModeNormalizingMixin, Deta
             return (t_start, t_end, 0.0, 1.0)
 
 
+class EEGQualityCircleDetailRenderer(DataframePlotDetailRenderer):
+    """Render EEG quality values as color-coded circles in stacked channel lanes."""
+
+    def __init__(self, channel_names: Optional[List[str]]=None, marker_size: float=8.0):
+        super().__init__(pen_width=0, channel_names=channel_names, normalize=False)
+        self.marker_size = marker_size
+        self._unknown_brush = pg.mkBrush('#808080')
+        self._quality_brushes = {
+            'red': pg.mkBrush('#d32f2f'),
+            'orange': pg.mkBrush('#f57c00'),
+            'yellow': pg.mkBrush('#fdd835'),
+            'green': pg.mkBrush('#43a047'),
+        }
+        self._symbol_pen = pg.mkPen('#202020', width=0.5)
 
 
-__all__ = ['GenericPlotDetailRenderer', 'IntervalPlotDetailRenderer', 'DataframePlotDetailRenderer']
+    def _quality_value_to_brush(self, value: Any):
+        if value is None or pd.isna(value):
+            return self._unknown_brush
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            return self._unknown_brush
+        if numeric_value <= 1.0:
+            return self._quality_brushes['red']
+        if numeric_value <= 2.0:
+            return self._quality_brushes['orange']
+        if numeric_value <= 3.0:
+            return self._quality_brushes['yellow']
+        return self._quality_brushes['green']
+
+
+    def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
+        if detail_data is None or len(detail_data) == 0:
+            return []
+        if not isinstance(detail_data, pd.DataFrame):
+            raise TypeError(f"EEGQualityCircleDetailRenderer expects DataFrame, got {type(detail_data)}")
+        if 't' not in detail_data.columns:
+            return []
+
+        df_sorted = detail_data.sort_values('t')
+        t_values = df_sorted['t'].to_numpy(dtype=float, copy=False)
+        if interval is not None and len(interval) > 0 and 't_start' in interval.columns and 't_duration' in interval.columns and len(t_values) > 0:
+            _t_start_raw = interval['t_start'].iloc[0]
+            _t_dur_raw = interval['t_duration'].iloc[0]
+            _t_dur = pd.to_numeric(pd.Series([_t_dur_raw]), errors='coerce').iloc[0]
+            if pd.isna(_t_dur):
+                return []
+            _t_start_unix = float(pd.Timestamp(_t_start_raw).timestamp()) if isinstance(_t_start_raw, (datetime, pd.Timestamp)) else float(pd.to_numeric(pd.Series([_t_start_raw]), errors='coerce').iloc[0])
+            if not np.isfinite(_t_start_unix):
+                return []
+            _t_dur = float(_t_dur)
+            _t_end_unix = _t_start_unix + _t_dur
+            in_interval_mask = np.logical_and(t_values >= _t_start_unix, t_values <= _t_end_unix)
+            if np.any(in_interval_mask):
+                t_values = t_values[in_interval_mask]
+                df_sorted = df_sorted.iloc[in_interval_mask]
+            elif len(t_values) > 1:
+                t_values = np.linspace(_t_start_unix, _t_end_unix, num=len(t_values), endpoint=True)
+        if len(t_values) == 0:
+            return []
+
+        if self.channel_names is None:
+            numeric_cols = df_sorted.select_dtypes(include=['number']).columns.tolist()
+            channel_names_to_use = [col for col in numeric_cols if col != 't']
+        else:
+            channel_names_to_use = [k for k in self.channel_names if k in df_sorted.columns]
+            if len(channel_names_to_use) != len(self.channel_names):
+                missing_channels = set(self.channel_names) - set(channel_names_to_use)
+                raise ValueError(f"Missing channels: {missing_channels}")
+
+        if hasattr(self, 'channel_visibility') and self.channel_visibility:
+            channel_names_to_use = [ch for ch in channel_names_to_use if self.channel_visibility.get(ch, True)]
+        if len(channel_names_to_use) == 0:
+            return []
+
+        graphics_objects: List[pg.GraphicsObject] = []
+        n_channels = len(channel_names_to_use)
+        lane_height = 1.0 / float(n_channels)
+        lane_midpoint = lane_height * 0.5
+
+        for idx, channel_name in enumerate(channel_names_to_use):
+            y_value = (float(idx) * lane_height) + lane_midpoint
+            y_values = np.full(shape=t_values.shape, fill_value=y_value, dtype=float)
+            channel_values = df_sorted[channel_name].to_numpy(copy=False)
+            brushes = [self._quality_value_to_brush(v) for v in channel_values]
+            scatter_item = pg.ScatterPlotItem(x=t_values, y=y_values, size=self.marker_size, symbol='o', pen=self._symbol_pen, brush=brushes, pxMode=True, name=channel_name)
+            plot_item.addItem(scatter_item)
+            graphics_objects.append(scatter_item)
+
+        return graphics_objects
+
+
+    def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
+        x_min, x_max, _, _ = super().get_detail_bounds(interval=interval, detail_data=detail_data)
+        return (x_min, x_max, 0.0, 1.0)
+
+
+
+
+__all__ = ['GenericPlotDetailRenderer', 'IntervalPlotDetailRenderer', 'DataframePlotDetailRenderer', 'EEGQualityCircleDetailRenderer']
