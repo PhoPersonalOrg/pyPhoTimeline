@@ -4,7 +4,10 @@ Refactored from pyphoplacecellanalysis for use in pypho_timeline.
 """
 from __future__ import annotations
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
+from zoneinfo import ZoneInfo
+
 import numpy as np
 import pandas as pd
 
@@ -13,6 +16,7 @@ from pyphocorehelpers.print_helpers import SimplePrintable, PrettyPrintable, iPy
 from pyphocorehelpers.DataStructure.dynamic_parameters import DynamicParameters
 from pypho_timeline.utils.indexing_helpers import PandasHelpers
 
+from phopylslhelper.datetime_helpers import to_display_timezone, DISPLAY_TIMEZONE
 from pyphocorehelpers.DataStructure.general_parameter_containers import DebugHelper, VisualizationParameters, RenderPlots, RenderPlotsData
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.gui.Qt.connections_container import ConnectionsContainer
@@ -23,7 +27,6 @@ from pypho_timeline.rendering.graphics.rectangle_helpers import RectangleRenderT
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.rendering.mixins.live_window_monitoring_mixin import LiveWindowEventIntervalMonitoringMixin
 import pyqtgraph as pg
-from datetime import datetime, timezone
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 from pypho_timeline._embed import IntervalsDatasource, General2DRenderTimeEpochs
@@ -122,7 +125,8 @@ class NowCurrentDatetimeLineRenderingMixin:
     def update_now_lines(self):
         """ called to refresh the now (current) datetime for all now line items and updates the lines themselves if they exist. """
         # Get current datetime
-        self.plots_data['now_lines'].now_dt = datetime.now(timezone.utc)
+        self.plots_data['now_lines'].now_dt = to_display_timezone(datetime.now(timezone.utc))
+        
         # Convert to unix timestamp
         self.plots_data['now_lines'].now_timestamp = datetime_to_unix_timestamp(self.plots_data['now_lines'].now_dt)
         for plot_item, vline in self.plots.now_lines.now_line_items.items():
@@ -744,3 +748,164 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
 
         return required_vertical_offsets, required_interval_heights
 
+
+_DAY_NIGHT_BAND_DF_COLUMNS: List[str] = ['t_start', 't_duration', 't_end', 'series_vertical_offset', 'series_height', 'pen', 'brush', 'label']
+
+
+def _empty_day_night_intervals_df() -> pd.DataFrame:
+    """Empty DataFrame with the schema produced by `build_day_night_intervals_df`."""
+    return pd.DataFrame({col: pd.Series(dtype='object') for col in _DAY_NIGHT_BAND_DF_COLUMNS})
+
+
+def build_day_night_intervals_df(win_start_unix: float, win_end_unix: float, *, tz: ZoneInfo = DISPLAY_TIMEZONE, night_start_hour: int = 21, night_end_hour: int = 5, series_vertical_offset: float = 0.0, series_height: float = 1.0, day_pen=None, day_brush=None, night_pen=None, night_brush=None) -> pd.DataFrame:
+    """Build a clipped day/night band DataFrame for the unix-second window [win_start_unix, win_end_unix].
+
+    Days are defined as wall-clock [night_end_hour, night_start_hour) and nights as [night_start_hour, next-day night_end_hour),
+    both interpreted in `tz` so DST transitions are handled correctly. Returns rows with all visualization columns
+    required by `IntervalRectsItem` so the default formatter is bypassed.
+    """
+    if win_start_unix is None or win_end_unix is None:
+        return _empty_day_night_intervals_df()
+    if (not np.isfinite(win_start_unix)) or (not np.isfinite(win_end_unix)) or (win_end_unix <= win_start_unix):
+        return _empty_day_night_intervals_df()
+
+    if day_pen is None:
+        day_pen = pg.mkPen(color=(0, 0, 0, 0))
+    if day_brush is None:
+        day_brush = pg.mkBrush(color=(245, 230, 180, 70))
+    if night_pen is None:
+        night_pen = pg.mkPen(color=(0, 0, 0, 0))
+    if night_brush is None:
+        night_brush = pg.mkBrush(color=(40, 50, 90, 110))
+
+    win_start_local = pd.Timestamp(win_start_unix, unit='s', tz='UTC').tz_convert(tz)
+    win_end_local = pd.Timestamp(win_end_unix, unit='s', tz='UTC').tz_convert(tz)
+
+    iter_start_date = (win_start_local - pd.Timedelta(days=1)).date()
+    iter_end_date = (win_end_local + pd.Timedelta(days=1)).date()
+
+    rows: List[Dict[str, Any]] = []
+    cur_date = iter_start_date
+    while cur_date <= iter_end_date:
+        next_date = cur_date + timedelta(days=1)
+        day_start_local = pd.Timestamp(year=cur_date.year, month=cur_date.month, day=cur_date.day, hour=night_end_hour, tz=tz)
+        day_end_local = pd.Timestamp(year=cur_date.year, month=cur_date.month, day=cur_date.day, hour=night_start_hour, tz=tz)
+        night_end_local = pd.Timestamp(year=next_date.year, month=next_date.month, day=next_date.day, hour=night_end_hour, tz=tz)
+
+        segments = (
+            ('Day', day_start_local.timestamp(), day_end_local.timestamp(), day_pen, day_brush),
+            ('Night', day_end_local.timestamp(), night_end_local.timestamp(), night_pen, night_brush),
+        )
+        for label, seg_start_unix, seg_end_unix, pen, brush in segments:
+            clipped_start = max(seg_start_unix, win_start_unix)
+            clipped_end = min(seg_end_unix, win_end_unix)
+            duration = clipped_end - clipped_start
+            if duration <= 0:
+                continue
+            rows.append({
+                't_start': float(clipped_start),
+                't_duration': float(duration),
+                't_end': float(clipped_start + duration),
+                'series_vertical_offset': float(series_vertical_offset),
+                'series_height': float(series_height),
+                'pen': pen,
+                'brush': brush,
+                'label': label,
+            })
+        cur_date = next_date
+
+    if not rows:
+        return _empty_day_night_intervals_df()
+
+    df = pd.DataFrame(rows, columns=_DAY_NIGHT_BAND_DF_COLUMNS)
+    df = df.sort_values('t_start').reset_index(drop=True)
+    return df
+
+
+
+
+class DayNightBandRenderingMixin(EpochRenderingMixin):
+    """Renders alternating wall-clock day (05:00-21:00) / night (21:00-05:00) bands across a datetime timeline.
+
+    The bands are regenerated on every viewport change (see `EpochRenderingMixin_on_window_update`) and are clipped
+    to the visible X window. Each refresh samples the current Y view range from the first available
+    `interval_rendering_plots` entry so the bands fill the plot vertically without forcing range adjustments.
+    The rendered `IntervalRectsItem`s are pushed to a low Z-value so they sit behind tracks and other epochs.
+
+    Notes:
+        - Bands respond to X-window updates only; Y-zoom changes will refresh on the next X-window change.
+        - Concrete subclasses still need to override `interval_rendering_plots` (required by `EpochRenderingMixin`).
+
+
+    Usage:
+        from pypho_timeline.rendering.mixins.epoch_rendering_mixin import DayNightBandRenderingMixin
+
+    """
+
+    DAY_NIGHT_BANDS_NAME: str = 'DayNightBands'
+    DAY_NIGHT_BANDS_Z_VALUE: float = -100.0
+
+    night_start_hour: int = 21
+    night_end_hour: int = 5
+    day_night_bands_enabled: bool = True
+
+
+    @property
+    def day_night_bands_timezone(self) -> ZoneInfo:
+        """Wall-clock timezone used to define day/night boundaries. Override to use a non-default tz."""
+        return DISPLAY_TIMEZONE
+
+
+    @pyqtExceptionPrintingSlot(float, float)
+    def EpochRenderingMixin_on_window_update(self, new_start=None, new_end=None):
+        """Refresh day/night bands after the base mixin processes the viewport change."""
+        super().EpochRenderingMixin_on_window_update(new_start, new_end)
+        if not self.day_night_bands_enabled:
+            return
+        if new_start is None or new_end is None:
+            return
+        try:
+            start_f = self._window_value_to_signal_float(new_start)
+            end_f = self._window_value_to_signal_float(new_end)
+        except (TypeError, ValueError):
+            return
+        if (not np.isfinite(start_f)) or (not np.isfinite(end_f)) or (end_f <= start_f):
+            return
+        self._refresh_day_night_bands(start_f, end_f)
+
+
+    def _refresh_day_night_bands(self, win_start_unix: float, win_end_unix: float) -> None:
+        """Rebuild the day/night band rectangles for the given unix window and push them behind other items."""
+        plots = [a_plot for a_plot in (self.interval_rendering_plots or []) if a_plot is not None]
+        if len(plots) == 0:
+            return
+        y_offset, y_height = self._compute_day_night_y_geometry(plots)
+        df = build_day_night_intervals_df(win_start_unix=win_start_unix, win_end_unix=win_end_unix, tz=self.day_night_bands_timezone, night_start_hour=self.night_start_hour, night_end_hour=self.night_end_hour, series_vertical_offset=y_offset, series_height=y_height)
+        if df.empty:
+            return
+        self.add_rendered_intervals(df, name=self.DAY_NIGHT_BANDS_NAME, child_plots=plots, debug_print=False)
+
+        container = self.rendered_epochs.get(self.DAY_NIGHT_BANDS_NAME, None)
+        if container is None:
+            return
+        for a_plot, rect_item in container.items():
+            if isinstance(a_plot, str):
+                continue
+            if isinstance(rect_item, IntervalRectsItem):
+                rect_item.setZValue(self.DAY_NIGHT_BANDS_Z_VALUE)
+
+
+    @staticmethod
+    def _compute_day_night_y_geometry(plots: List[Any]) -> Tuple[float, float]:
+        """Return `(series_vertical_offset, series_height)` covering the first plot's current Y view range."""
+        for a_plot in plots:
+            try:
+                _, _, y_min, y_max = EpochRenderingMixin.get_plot_view_range(a_plot, debug_print=False)
+            except Exception:
+                continue
+            lo, hi = (y_min, y_max) if y_max >= y_min else (y_max, y_min)
+            height = hi - lo
+            if height <= 0:
+                continue
+            return float(lo), float(height)
+        return 0.0, 1.0

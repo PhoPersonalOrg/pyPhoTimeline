@@ -27,6 +27,7 @@ from pypho_timeline.rendering.datasources.track_datasource import IntervalProvid
 from pypho_timeline.rendering.datasources.specific import MotionTrackDatasource, VideoTrackDatasource
 from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGFPTrackDatasource, EEGSpectrogramTrackDatasource
 from pypho_timeline.rendering.mixins.track_rendering_mixin import TrackRenderingMixin
+from pypho_timeline.rendering.mixins.epoch_rendering_mixin import DayNightBandRenderingMixin
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 
 from pyphocorehelpers.gui.Qt.ExceptionPrintingSlot import pyqtExceptionPrintingSlot
@@ -72,7 +73,7 @@ class SimpleTimeWindow:
 
 
 
-class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixin, SpecificDockWidgetManipulatingMixin, QtWidgets.QWidget):
+class SimpleTimelineWidget(DayNightBandRenderingMixin, TrackRenderingMixin, DynamicDockDisplayAreaOwningMixin, SpecificDockWidgetManipulatingMixin, QtWidgets.QWidget):
     """A simple example timeline widget that demonstrates pyPhoTimeline usage.
 
     from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget, SimpleTimeWindow
