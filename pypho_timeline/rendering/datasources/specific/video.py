@@ -84,6 +84,8 @@ class VideoDeffcodeHelpers:
         return primary_vid_metadata, vid_metadata
 
 
+    MAX_THUMBNAILS_PER_CALL: int = 32  # hard safety cap to prevent runaway decode loops
+
     @classmethod
     def fetch_video_thumbnails_for_cache(cls, a_video_file: Union[str, Path], frame_offsets: List[float], save_output_thumbnail: bool=False):
         """
@@ -98,6 +100,12 @@ class VideoDeffcodeHelpers:
 
         video_file_str_path: str = a_video_file.as_posix()
         frames_list = []
+
+        # Safety: hard-cap the number of decode iterations even if upstream produced too many offsets.
+        n_requested: int = len(frame_offsets) if hasattr(frame_offsets, '__len__') else -1
+        if (n_requested > cls.MAX_THUMBNAILS_PER_CALL):
+            logger.warning(f'fetch_video_thumbnails_for_cache: requested {n_requested} thumbnails > cap {cls.MAX_THUMBNAILS_PER_CALL}; truncating.')
+            frame_offsets = list(frame_offsets)[:cls.MAX_THUMBNAILS_PER_CALL]
 
         for i, a_frame_offset in enumerate(frame_offsets):
             a_frame_offset_string: str = str(float(a_frame_offset))
@@ -858,19 +866,19 @@ class VideoTrackDatasource(RawProvidingTrackDatasource):
             if use_VideoDeffcode:
                 logger.info(f'USING VideoDeffcode:')
                 primary_vid_metadata, vid_metadata = VideoDeffcodeHelpers.fetch_video_metadata_for_cache(a_video_file=video_path, debug_log_metadata=False)
-                source_duration_sec: float = primary_vid_metadata['source_duration_sec']
-                logger.info(f'\tsource_duration_sec: {source_duration_sec}')
-                source_step_sec: float = (float(target_n_frames) / source_duration_sec)
-                logger.info(f'\tsource_step_sec: {source_step_sec}')
-                # frame = VideoDeffcodeHelpers.fetch_video_metadata_and_thumbnail_for_cache(a_video_file=video_path, needs_metadata=False, save_output_thumbnail=False)
-                frame_offsets_sec = np.arange(start=0.0, stop=source_duration_sec, step=source_step_sec)
-                logger.info(f'frame_offsets: {frame_offsets_sec}')
+                source_duration_sec: float = float(primary_vid_metadata.get('source_duration_sec', 0.0) or 0.0)
+                logger.info(f'\tsource_duration_sec: {source_duration_sec}, target_n_frames: {target_n_frames}')
+                if source_duration_sec <= 0.0:
+                    logger.warning(f'\tinvalid source_duration_sec={source_duration_sec}, returning empty frames')
+                    return {'frames': [], 'timestamps': np.array([])}
+                # Generate exactly target_n_frames offsets evenly distributed across the source video duration.
+                # Previously this used np.arange with step = target_n_frames / source_duration_sec, which produced
+                # an enormous number of offsets (~ duration^2 / target_n_frames) and effectively hung the worker.
+                frame_offsets_sec = np.linspace(0.0, source_duration_sec, num=int(target_n_frames), endpoint=False, dtype=float)
+                logger.info(f'\tnum_frame_offsets: {len(frame_offsets_sec)}, frame_offsets: {frame_offsets_sec}')
                 frames = VideoDeffcodeHelpers.fetch_video_thumbnails_for_cache(a_video_file=video_path, frame_offsets=frame_offsets_sec, save_output_thumbnail=False)
-                # Calculate timestamp relative to interval start
-                # frame_time_in_video = frame_idx / video_fps
-                timestamps.append(interval_start + frame_offsets_sec)
-
-                return {'frames': frames, 'timestamps': np.array(timestamps)}
+                timestamps_arr = np.asarray(interval_start + frame_offsets_sec, dtype=float)
+                return {'frames': frames, 'timestamps': timestamps_arr}
 
 
             else:
