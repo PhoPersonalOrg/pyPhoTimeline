@@ -158,6 +158,39 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
 
 
 
+    ## Compute the stretch heights
+    def compute_normalized_stretch_heights(self):
+        """ 
+        bump!
+        """
+        height_px: int = dock_area.height()
+        # dock_area.heightMM() # 283
+
+        # height_px
+        flat_dockitems = timeline.get_flat_dockitems_list()
+        # flat_dockitems
+
+        n_tracks: int = len(stretches_height)
+
+        stretches: List[Tuple] = [d.stretch() for d in flat_dockitems]
+        height_px: np.array = np.array([d.height() for d in flat_dockitems])
+        stretches_height: np.array = np.array([s[1] for s in stretches])
+        # height_px
+        # stretches_height
+        total_height_px: float = np.nansum(height_px)
+        total_height_stretches: float = np.nansum(stretches_height)
+
+        # total_height_px, total_height_stretches
+
+        normalized_height_stretches = (stretches_height / total_height_stretches)
+        track_unit_normalized_height_stretches = (normalized_height_stretches * n_tracks)
+
+        return normalized_height_stretches, track_unit_normalized_height_stretches
+
+
+
+
+
 
     # ==================================================================================================================== #
     # dockGroup                                                                                                            #
@@ -494,7 +527,7 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
 
         """
         num_child_docks: int = len(flat_group_dockitems_list)
-        total_height: float = float(np.sum([a_dock.height() for a_dock in flat_group_dockitems_list]))
+        total_height: int = int(round(float(np.sum([a_dock.height() for a_dock in flat_group_dockitems_list]))))
         logger.info(f"[dock_group] build_wrapping_nested_dock_area: group={dock_group_name!r} num_child_docks={num_child_docks} total_height={total_height}")
         for _ch in flat_group_dockitems_list:
             logger.debug(f"[dock_group] build_wrapping_nested_dock_area child name={_ch.name()!r} h={_ch.height()} w={_ch.width()}")
@@ -522,7 +555,7 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
         from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
         nested_dynamic_docked_widget_container = NestedDockAreaWidget()
         nested_dynamic_docked_widget_container.setObjectName("nested_dynamic_docked_widget_container")
-        nested_dynamic_docked_widget_container.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Preferred)
+        nested_dynamic_docked_widget_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         nested_dynamic_docked_widget_container.setMinimumHeight(total_height)
         nested_dynamic_docked_widget_container.setContentsMargins(0, 0, 0, 0)
         _, dDisplayItem = self.add_display_dock(name, dockSize=dockSize, display_config=display_config, widget=nested_dynamic_docked_widget_container, dockAddLocationOpts=dockAddLocationOpts, autoOrientation=False)
@@ -660,7 +693,21 @@ class DynamicDockDisplayAreaContentMixin(BaseDynamicInstanceConformingMixin):
                 raise
             
         # END for a_group_id, a_flat_group_dockitems_list in grouped_dock_items_dict.items()
-    
+
+    def collapse_docks_programmatically(self, dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget'], should_collapse: bool=True):
+        """ programmatically collapses/expands docks
+
+        Usage:
+            timeline.collapse_docks_programmatically(dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget'])
+
+         """
+        # from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import Dock
+        for a_dock_identifier in dock_identifiers_to_collapse:
+            # a_dock: Dock = self.dock_container.find_display_dock(a_dock_identifier)
+            a_dock: Dock = self.find_display_dock(a_dock_identifier)
+            a_dock.perform_programmatic_collapse(is_collapse_active=should_collapse)
+
+
 
 
     @pyqtExceptionPrintingSlot(object, str)
@@ -834,4 +881,18 @@ class DynamicDockDisplayAreaOwningMixin(BaseDynamicInstanceConformingMixin):
     def layout_dockGroups(self):
         """ fetches the dockGroup items and perform layout """
         return self.dock_manager_widget.layout_dockGroups()
+
+
+
+    # ==================================================================================================================================================================================================================================================================================== #
+    # `dock_manager_widget` passthrough methods                                                                                                                                                                                                                                            #
+    # ==================================================================================================================================================================================================================================================================================== #
+    def collapse_docks_programmatically(self, dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget'], should_collapse: bool=True, **kwargs):
+        """ programmatically collapses/expands docks
+
+        Usage:
+            timeline.collapse_docks_programmatically(dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget'])
+
+         """
+        self.dock_manager_widget.collapse_docks_programmatically(dock_identifiers_to_collapse=dock_identifiers_to_collapse, should_collapse=should_collapse, **kwargs)
 

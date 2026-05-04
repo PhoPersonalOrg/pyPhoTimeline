@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple, Any
 from datetime import datetime
 import numpy as np
 import pandas as pd
-import pyqtgraph as pg
+import pypho_timeline.EXTERNAL.pyqtgraph as pg
 
 from pypho_timeline.rendering.detail_renderers.generic_plot_renderer import DataframePlotDetailRenderer
 
@@ -52,6 +52,7 @@ class LogTextDataFramePlotDetailRenderer(DataframePlotDetailRenderer):
         self.line_width = line_width
         self.enable_lines = enable_lines
     
+
     def render_detail(self, plot_item: pg.PlotItem, interval: pd.DataFrame, detail_data: Any) -> List[pg.GraphicsObject]:
         """Render text log events as text labels with optional vertical lines.
         

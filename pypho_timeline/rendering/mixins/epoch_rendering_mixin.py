@@ -4,7 +4,10 @@ Refactored from pyphoplacecellanalysis for use in pypho_timeline.
 """
 from __future__ import annotations
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
+from zoneinfo import ZoneInfo
+
 import numpy as np
 import pandas as pd
 
@@ -13,6 +16,7 @@ from pyphocorehelpers.print_helpers import SimplePrintable, PrettyPrintable, iPy
 from pyphocorehelpers.DataStructure.dynamic_parameters import DynamicParameters
 from pypho_timeline.utils.indexing_helpers import PandasHelpers
 
+from phopylslhelper.datetime_helpers import to_display_timezone, DISPLAY_TIMEZONE
 from pyphocorehelpers.DataStructure.general_parameter_containers import DebugHelper, VisualizationParameters, RenderPlots, RenderPlotsData
 from pyphocorehelpers.gui.PhoUIContainer import PhoUIContainer
 from pyphocorehelpers.gui.Qt.connections_container import ConnectionsContainer
@@ -23,7 +27,6 @@ from pypho_timeline.rendering.graphics.rectangle_helpers import RectangleRenderT
 from pypho_timeline.rendering.helpers.render_rectangles_helper import Render2DEventRectanglesHelper
 from pypho_timeline.rendering.mixins.live_window_monitoring_mixin import LiveWindowEventIntervalMonitoringMixin
 import pyqtgraph as pg
-from datetime import datetime, timezone
 from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp
 
 from pypho_timeline._embed import IntervalsDatasource, General2DRenderTimeEpochs
@@ -106,8 +109,7 @@ class NowCurrentDatetimeLineRenderingMixin:
 
 
     def add_new_now_line_for_plot_item(self, plot_item):
-        """ creates a new now line for the specified plot_item if needed. 
-        """
+        """Create or reuse the now-line ``InfiniteLine`` for ``plot_item``; always returns that line instance."""
         vline = self.plots.now_lines.now_line_items.get(plot_item, None)
         if vline is None:
             ## build a new item:
@@ -116,20 +118,20 @@ class NowCurrentDatetimeLineRenderingMixin:
             vline.setPen(pg.mkPen(self.plots.now_lines.red_pen))
             plot_item.addItem(vline, ignoreBounds=True)
             self.plots.now_lines.now_line_items[plot_item] = vline
-        else:
-            return vline ## return existing vline
+        return vline
 
 
     @pyqtExceptionPrintingSlot()
     def update_now_lines(self):
         """ called to refresh the now (current) datetime for all now line items and updates the lines themselves if they exist. """
         # Get current datetime
-        self.plots_data['now_lines'].now_dt = datetime.now(timezone.utc)
+        self.plots_data['now_lines'].now_dt = to_display_timezone(datetime.now(timezone.utc))
+        
         # Convert to unix timestamp
         self.plots_data['now_lines'].now_timestamp = datetime_to_unix_timestamp(self.plots_data['now_lines'].now_dt)
         for plot_item, vline in self.plots.now_lines.now_line_items.items():
             if (plot_item is not None) and (vline is not None):
-                vline.setPosition(self.plots_data['now_lines'].now_timestamp) ## moves the item
+                vline.setPos(self.plots_data['now_lines'].now_timestamp) ## moves the item
 
 
 
@@ -302,13 +304,28 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
         
         return _SignalBlocker(self)
     
+
     @pyqtExceptionPrintingSlot(object)
     def EpochRenderingMixin_on_interval_datasource_changed(self, datasource):
         """Emit our own custom signal when the general datasource update method returns."""
         if self._is_updating_from_widget:
             return  # Skip if update is from widget to prevent circular updates
         self.add_rendered_intervals(datasource, name=datasource.custom_datasource_name, debug_print=False)  # updates the rendered intervals on the change
-    
+
+
+    def _window_value_to_signal_float(self, value: Union[float, datetime, pd.Timestamp]) -> float:
+        """Convert a stored window boundary value to the float expected by Qt signals.
+            IMPORTANT: used in all inheriting subclasses 
+
+
+            curr_window_start_time: float = self._window_value_to_signal_float(self.active_window_start_time)
+
+        """
+        if isinstance(value, (datetime, pd.Timestamp)):
+            return value.timestamp() if hasattr(value, 'timestamp') else pd.Timestamp(value).timestamp()
+        return float(value)
+
+
     
     def add_rendered_intervals(self, interval_datasource: Union[pd.DataFrame, Any], name=None, child_plots=None, debug_print=False, **vis_kwargs):
         """Adds or updates the intervals specified by the interval_datasource to the plots.
@@ -459,6 +476,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
 
         return returned_rect_items 
 
+
     def remove_rendered_intervals(self, name, child_plots_removal_list=None, debug_print=False):
         """Removes the intervals specified by the interval_datasource to the plots.
 
@@ -507,6 +525,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
     
         return items_to_remove_from_rendered_epochs
 
+
     def clear_all_rendered_intervals(self, child_plots_removal_list=None, debug_print=False):
         """Removes all rendered rects - a batch version of removed_rendered_intervals(...)."""
         curr_rendered_epoch_names = self.rendered_epoch_series_names
@@ -516,6 +535,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
                 if debug_print:
                     print(f'removing {a_name}...')
                 self.remove_rendered_intervals(a_name, child_plots_removal_list=child_plots_removal_list, debug_print=debug_print)
+
 
     def get_all_rendered_intervals_dict(self, debug_print=False) -> Dict[str, Dict[str, IntervalRectsItem]]:
         """Returns a dictionary containing the hierarchy of all the members. Can optionally also print.
@@ -556,6 +576,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
             print(f'out_dict: {out_dict}')
 
         return out_dict
+
 
     def update_rendered_intervals_visualization_properties(self, update_dict):
         """Updates the interval datasources (and thus the actual rendered rectangles) from the provided `update_dict`.
@@ -612,6 +633,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
             else:
                 print(f"WARNING: interval_key '{interval_key}' was not found in self.interval_datasources. Skipping update for unknown item.")
 
+
     @classmethod
     def compute_bounds_adjustment_for_rect_item(cls, a_plot, a_rect_item, should_apply_adjustment:bool=True, debug_print=False):
         """Adjusts plot bounds to fit the rectangle item.
@@ -657,6 +679,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
     
         return adjustment_needed
     
+
     @staticmethod
     def get_added_rect_item_required_y_value(a_rect_item, debug_print=False):
         """Gets the required y-value range for a rectangle item.
@@ -674,6 +697,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
             print(f'new_max_y_range: {new_max_y_range}')
         return new_min_y_range, new_max_y_range
     
+
     @staticmethod
     def get_plot_view_range(a_plot, debug_print=True):
         """Gets the current viewRange for the passed in plot.
@@ -693,6 +717,7 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
         if debug_print:
             print(f'curr_x_min: {curr_x_min}, curr_x_max: {curr_x_max}, curr_y_min: {curr_y_min}, curr_y_max: {curr_y_max}')
         return (curr_x_min, curr_x_max, curr_y_min, curr_y_max)
+
 
     @classmethod
     def build_stacked_epoch_layout(cls, rendered_interval_heights, epoch_render_stack_height=40.0, interval_stack_location='below', debug_print=True):
@@ -723,3 +748,164 @@ class EpochRenderingMixin(NowCurrentDatetimeLineRenderingMixin, LiveWindowEventI
 
         return required_vertical_offsets, required_interval_heights
 
+
+_DAY_NIGHT_BAND_DF_COLUMNS: List[str] = ['t_start', 't_duration', 't_end', 'series_vertical_offset', 'series_height', 'pen', 'brush', 'label']
+
+
+def _empty_day_night_intervals_df() -> pd.DataFrame:
+    """Empty DataFrame with the schema produced by `build_day_night_intervals_df`."""
+    return pd.DataFrame({col: pd.Series(dtype='object') for col in _DAY_NIGHT_BAND_DF_COLUMNS})
+
+
+def build_day_night_intervals_df(win_start_unix: float, win_end_unix: float, *, tz: ZoneInfo = DISPLAY_TIMEZONE, night_start_hour: int = 21, night_end_hour: int = 5, series_vertical_offset: float = 0.0, series_height: float = 1.0, day_pen=None, day_brush=None, night_pen=None, night_brush=None) -> pd.DataFrame:
+    """Build a clipped day/night band DataFrame for the unix-second window [win_start_unix, win_end_unix].
+
+    Days are defined as wall-clock [night_end_hour, night_start_hour) and nights as [night_start_hour, next-day night_end_hour),
+    both interpreted in `tz` so DST transitions are handled correctly. Returns rows with all visualization columns
+    required by `IntervalRectsItem` so the default formatter is bypassed.
+    """
+    if win_start_unix is None or win_end_unix is None:
+        return _empty_day_night_intervals_df()
+    if (not np.isfinite(win_start_unix)) or (not np.isfinite(win_end_unix)) or (win_end_unix <= win_start_unix):
+        return _empty_day_night_intervals_df()
+
+    if day_pen is None:
+        day_pen = pg.mkPen(color=(0, 0, 0, 0))
+    if day_brush is None:
+        day_brush = pg.mkBrush(color=(245, 230, 180, 70))
+    if night_pen is None:
+        night_pen = pg.mkPen(color=(0, 0, 0, 0))
+    if night_brush is None:
+        night_brush = pg.mkBrush(color=(40, 50, 90, 110))
+
+    win_start_local = pd.Timestamp(win_start_unix, unit='s', tz='UTC').tz_convert(tz)
+    win_end_local = pd.Timestamp(win_end_unix, unit='s', tz='UTC').tz_convert(tz)
+
+    iter_start_date = (win_start_local - pd.Timedelta(days=1)).date()
+    iter_end_date = (win_end_local + pd.Timedelta(days=1)).date()
+
+    rows: List[Dict[str, Any]] = []
+    cur_date = iter_start_date
+    while cur_date <= iter_end_date:
+        next_date = cur_date + timedelta(days=1)
+        day_start_local = pd.Timestamp(year=cur_date.year, month=cur_date.month, day=cur_date.day, hour=night_end_hour, tz=tz)
+        day_end_local = pd.Timestamp(year=cur_date.year, month=cur_date.month, day=cur_date.day, hour=night_start_hour, tz=tz)
+        night_end_local = pd.Timestamp(year=next_date.year, month=next_date.month, day=next_date.day, hour=night_end_hour, tz=tz)
+
+        segments = (
+            ('Day', day_start_local.timestamp(), day_end_local.timestamp(), day_pen, day_brush),
+            ('Night', day_end_local.timestamp(), night_end_local.timestamp(), night_pen, night_brush),
+        )
+        for label, seg_start_unix, seg_end_unix, pen, brush in segments:
+            clipped_start = max(seg_start_unix, win_start_unix)
+            clipped_end = min(seg_end_unix, win_end_unix)
+            duration = clipped_end - clipped_start
+            if duration <= 0:
+                continue
+            rows.append({
+                't_start': float(clipped_start),
+                't_duration': float(duration),
+                't_end': float(clipped_start + duration),
+                'series_vertical_offset': float(series_vertical_offset),
+                'series_height': float(series_height),
+                'pen': pen,
+                'brush': brush,
+                'label': label,
+            })
+        cur_date = next_date
+
+    if not rows:
+        return _empty_day_night_intervals_df()
+
+    df = pd.DataFrame(rows, columns=_DAY_NIGHT_BAND_DF_COLUMNS)
+    df = df.sort_values('t_start').reset_index(drop=True)
+    return df
+
+
+
+
+class DayNightBandRenderingMixin(EpochRenderingMixin):
+    """Renders alternating wall-clock day (05:00-21:00) / night (21:00-05:00) bands across a datetime timeline.
+
+    The bands are regenerated on every viewport change (see `EpochRenderingMixin_on_window_update`) and are clipped
+    to the visible X window. Each refresh samples the current Y view range from the first available
+    `interval_rendering_plots` entry so the bands fill the plot vertically without forcing range adjustments.
+    The rendered `IntervalRectsItem`s are pushed to a low Z-value so they sit behind tracks and other epochs.
+
+    Notes:
+        - Bands respond to X-window updates only; Y-zoom changes will refresh on the next X-window change.
+        - Concrete subclasses still need to override `interval_rendering_plots` (required by `EpochRenderingMixin`).
+
+
+    Usage:
+        from pypho_timeline.rendering.mixins.epoch_rendering_mixin import DayNightBandRenderingMixin
+
+    """
+
+    DAY_NIGHT_BANDS_NAME: str = 'DayNightBands'
+    DAY_NIGHT_BANDS_Z_VALUE: float = -100.0
+
+    night_start_hour: int = 21
+    night_end_hour: int = 5
+    day_night_bands_enabled: bool = True
+
+
+    @property
+    def day_night_bands_timezone(self) -> ZoneInfo:
+        """Wall-clock timezone used to define day/night boundaries. Override to use a non-default tz."""
+        return DISPLAY_TIMEZONE
+
+
+    @pyqtExceptionPrintingSlot(float, float)
+    def EpochRenderingMixin_on_window_update(self, new_start=None, new_end=None):
+        """Refresh day/night bands after the base mixin processes the viewport change."""
+        super().EpochRenderingMixin_on_window_update(new_start, new_end)
+        if not self.day_night_bands_enabled:
+            return
+        if new_start is None or new_end is None:
+            return
+        try:
+            start_f = self._window_value_to_signal_float(new_start)
+            end_f = self._window_value_to_signal_float(new_end)
+        except (TypeError, ValueError):
+            return
+        if (not np.isfinite(start_f)) or (not np.isfinite(end_f)) or (end_f <= start_f):
+            return
+        self._refresh_day_night_bands(start_f, end_f)
+
+
+    def _refresh_day_night_bands(self, win_start_unix: float, win_end_unix: float) -> None:
+        """Rebuild the day/night band rectangles for the given unix window and push them behind other items."""
+        plots = [a_plot for a_plot in (self.interval_rendering_plots or []) if a_plot is not None]
+        if len(plots) == 0:
+            return
+        y_offset, y_height = self._compute_day_night_y_geometry(plots)
+        df = build_day_night_intervals_df(win_start_unix=win_start_unix, win_end_unix=win_end_unix, tz=self.day_night_bands_timezone, night_start_hour=self.night_start_hour, night_end_hour=self.night_end_hour, series_vertical_offset=y_offset, series_height=y_height)
+        if df.empty:
+            return
+        self.add_rendered_intervals(df, name=self.DAY_NIGHT_BANDS_NAME, child_plots=plots, debug_print=False)
+
+        container = self.rendered_epochs.get(self.DAY_NIGHT_BANDS_NAME, None)
+        if container is None:
+            return
+        for a_plot, rect_item in container.items():
+            if isinstance(a_plot, str):
+                continue
+            if isinstance(rect_item, IntervalRectsItem):
+                rect_item.setZValue(self.DAY_NIGHT_BANDS_Z_VALUE)
+
+
+    @staticmethod
+    def _compute_day_night_y_geometry(plots: List[Any]) -> Tuple[float, float]:
+        """Return `(series_vertical_offset, series_height)` covering the first plot's current Y view range."""
+        for a_plot in plots:
+            try:
+                _, _, y_min, y_max = EpochRenderingMixin.get_plot_view_range(a_plot, debug_print=False)
+            except Exception:
+                continue
+            lo, hi = (y_min, y_max) if y_max >= y_min else (y_max, y_min)
+            height = hi - lo
+            if height <= 0:
+                continue
+            return float(lo), float(height)
+        return 0.0, 1.0

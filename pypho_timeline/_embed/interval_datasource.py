@@ -58,14 +58,15 @@ class IntervalsDatasource(QtCore.QObject):
         latest = df_timestamps[:, -1].max()
         return (earliest, latest)
 
+
     @property
     def df(self) -> pd.DataFrame:
         return self._df
-
     @df.setter
     def df(self, value: pd.DataFrame) -> None:
         self._df = value
         self.source_data_changed_signal.emit(self)
+
 
     def __init__(self, df: pd.DataFrame, datasource_name: str = "default_intervals_datasource"):
         super().__init__()
@@ -75,6 +76,7 @@ class IntervalsDatasource(QtCore.QObject):
         assert np.isin(self._required_interval_time_columns, df.columns).all(), f"dataframe is missing required columns: {self._required_interval_time_columns}, current: {list(df.columns)}"
         self._df = df.copy()
 
+
     def update_visualization_properties(self, dataframe_vis_columns_function: Union[callable, Dict]) -> None:
         if isinstance(dataframe_vis_columns_function, dict):
             from pypho_timeline._embed.general_2d_render_time_epochs import General2DRenderTimeEpochs
@@ -82,6 +84,7 @@ class IntervalsDatasource(QtCore.QObject):
             dataframe_vis_columns_function = lambda active_df, **kwargs: General2DRenderTimeEpochs._update_df_visualization_columns(active_df, **(an_epoch_formatting_dict | kwargs))
         self._df = dataframe_vis_columns_function(self._df)
         self.source_data_changed_signal.emit(self)
+
 
     def get_updated_data_window(self, new_start: Union[float, int], new_end: Union[float, int]) -> pd.DataFrame:
         if self._df.empty:

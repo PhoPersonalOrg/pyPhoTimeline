@@ -7,16 +7,20 @@ from different data sources such as XDF files, pre-loaded streams, or existing d
 
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union, Any, Set
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+import time
 from datetime import datetime, timezone, timedelta
 import logging
 import re
 import numpy as np
 import pandas as pd
 import pyxdf
-from qtpy import QtWidgets
+from qtpy import QtWidgets, QtCore
+from qtpy.QtCore import QObject
 from pypho_timeline.widgets import SimpleTimelineWidget
 from pypho_timeline.widgets.TimelineWindow.MainTimelineWindow import MainTimelineWindow
-from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_single_xdf_file_all_streams, perform_process_all_streams_multi_xdf, default_dock_named_color_scheme_key
+from pypho_timeline.rendering.datasources.stream_to_datasources import perform_process_all_streams_multi_xdf, perform_process_xdf_file, default_dock_named_color_scheme_key
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
 from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
 from pypho_timeline.EXTERNAL.pyqtgraph.dockarea.Dock import DockButtonConfig
@@ -28,7 +32,6 @@ from pypho_timeline.utils.datetime_helpers import datetime_to_unix_timestamp, ge
 from pypho_timeline.rendering.helpers import ChannelNormalizationMode
 from pypho_timeline.xdf_session_discovery import discover_xdf_files_for_timeline
 
-
 logger = None # get_rendering_logger(__name__)
 logger = configure_logging( ## updates the global logger variable
     log_level=logging.DEBUG,
@@ -36,6 +39,9 @@ logger = configure_logging( ## updates the global logger variable
     log_to_console=True,
     log_to_file=False,
 )
+
+def get_now_time_str(time_separator='-') -> str:
+    return str(time.strftime(f"%Y-%m-%d_%H{time_separator}%m", time.localtime(time.time())))
 
 
 # Import MNE (optional - may not be available)
@@ -47,31 +53,14 @@ except ImportError:
     mne = None
 
 # Import datasources
-try:
-    from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource
-    from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource
-    from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
-except ImportError:
-    EEGTrackDatasource = None
-    EEGSpectrogramTrackDatasource = None
-    MotionTrackDatasource = None
-    LogTextDataFramePlotDetailRenderer = None
-
-try:
-    from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
-    EEG_SPECTROGRAM_AVAILABLE = True
-except ImportError:
-    compute_raw_eeg_spectrogram = None
-    EEG_SPECTROGRAM_AVAILABLE = False
-
-# Import VideoTrackDatasource for video-only timeline building
-try:
-    from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
-except ImportError:
-    VideoTrackDatasource = None
+from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource
+from pypho_timeline.rendering.datasources.specific.motion import MotionTrackDatasource
+from pypho_timeline.rendering.detail_renderers.log_text_plot_renderer import LogTextDataFramePlotDetailRenderer
+from phopymnehelper.analysis.computations.specific.EEG_Spectograms import compute_raw_eeg_spectrogram
+from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
 
 
-class TimelineBuilder:
+class TimelineBuilder(QObject):
     """Builder class for creating and updating SimpleTimelineWidget instances from various input sources.
     
     This class provides methods to build timeline widgets from:
@@ -98,28 +87,44 @@ class TimelineBuilder:
 
             self.build_from_datasources
     """
-    
-    def __init__(self, log_level: int = logging.DEBUG, log_file: Optional[Path] = None, log_to_console: bool = False, log_to_file: bool = True):
+    sigRefreshXDFStarted = QtCore.Signal()
+    sigSourcesRefreshStarted = QtCore.Signal()
+    sigSourcesRefreshFinished = QtCore.Signal(object)
+    sigSourceAdded = QtCore.Signal(object, object)
+    sigSourceUpdated = QtCore.Signal(object, object)
+    sigSourceRemoved = QtCore.Signal(object, object)
+
+    def __init__(self, log_level: int = logging.DEBUG, log_file: Optional[Path] = None, log_to_console: bool = False, log_to_file: bool = True,
+        xdf_file_cache_filename: Optional[str] = None, xdf_file_cache_parent_path: Optional[Path]=None,
+        parent=None):
         """Initialize the TimelineBuilder with logging configuration.
         
         Args:
             log_level: Logging level (default: logging.DEBUG)
             log_file: Path to log file (default: None, uses "timeline_rendering.log")
-            log_to_console: Whether to log to console (default: True)
+            log_to_console: Whether to log to console (default: False)
             log_to_file: Whether to log to file (default: True)
+            parent: Parent QObject
         """
+        super().__init__(parent)
         self.log_level = log_level
         self.log_file = log_file if log_file is not None else Path('EXTERNAL/LOGGING').resolve().joinpath("timeline_rendering.log")
         self.log_to_console = log_to_console
         self.log_to_file = log_to_file
         self.log_widget = None
+        self._current_main_windows = [] ## empty
+        self._current_timeline_widgets = [] ## empty
+
+
         self._current_main_window = None
         self._current_timeline = None
         self._refresh_config: Optional[Dict[str, Any]] = None
         self._loaded_xdf_paths: Set[Path] = set()
         self._loaded_video_paths: Set[Path] = set()
         self._refresh_generation: int = 0
-        
+        self._xdf_file_cache_filename = (xdf_file_cache_filename or f"{get_now_time_str()}_found_xdf_files.csv")
+        self._final_xdf_paths = []
+        self._xdf_file_cache_parent_path = (xdf_file_cache_parent_path or Path('./'))
 
         # Create log widget
         self.log_widget = LogWidget()
@@ -138,8 +143,50 @@ class TimelineBuilder:
         if self.log_to_console or self.log_to_file:
             logger.info(f"Logging configured for TimelineBuilder - console: {self.log_to_console}, file: {self.log_to_file} ({self.log_file})")
 
+    @property
+    def current_main_windows(self) -> List[MainTimelineWindow]:
+        """The current_main_windows property."""
+        return self._current_main_windows
+    @current_main_windows.setter
+    def current_main_windows(self, value: List[MainTimelineWindow]):
+        self._current_main_windows = value
+
+
+    @property
+    def current_timeline_widgets(self) -> List[SimpleTimelineWidget]:
+        """The current_timeline_widgets property."""
+        return self._current_timeline_widgets
+    @current_timeline_widgets.setter
+    def current_timeline_widgets(self, value: List[SimpleTimelineWidget]):
+        self._current_timeline_widgets = value
+
+
+
+    @property
+    def final_xdf_paths(self) -> List[Path]:
+        """The final_xdf_paths property."""
+        return self._final_xdf_paths
+    @final_xdf_paths.setter
+    def final_xdf_paths(self, value: List[Path]):
+        self._final_xdf_paths = value
+
+
+    @property
+    def xdf_file_cache_filepath(self) -> Path:
+        """The xdf_file_cache_filepath property."""
+        assert self._xdf_file_cache_parent_path is not None
+        assert self._xdf_file_cache_filename is not None
+        return self._xdf_file_cache_parent_path.joinpath(self._xdf_file_cache_filename).resolve()
+    @xdf_file_cache_filepath.setter
+    def xdf_file_cache_filepath(self, value: Path):
+        if value is None:
+            raise ValueError(f'none!')
+        self._xdf_file_cache_parent_path = value.parent
+        self._xdf_file_cache_filename = value.name
+
 
     def set_refresh_config(self, xdf_discovery_dirs: Optional[List[Path]] = None, n_most_recent: Optional[int] = None, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, video_discovery_dirs: Optional[List[Path]] = None, video_extensions: Optional[List[str]] = None):
+        """ called to update data sources """
         xdf_discovery_dirs = [Path(p) for p in (xdf_discovery_dirs or [])]
         video_discovery_dirs = [Path(p) for p in (video_discovery_dirs or [])]
         self._refresh_config = {
@@ -159,6 +206,8 @@ class TimelineBuilder:
 
 
     def _embed_log_widget_in_timeline(self, timeline: SimpleTimelineWidget) -> None:
+        """ this is pretty good, because it holds a single log widget for multiple timelines """
+
         if self.log_widget is None:
             return
         dock_area = timeline.ui.dynamic_docked_widget_container
@@ -181,6 +230,60 @@ class TimelineBuilder:
         return discover_xdf_files_for_timeline(xdf_discovery_dirs=xdf_discovery_dirs, n_most_recent=n_most_recent).xdf_paths
 
 
+    def _load_and_filter_xdf_file(self, file_index: int, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, enable_raw_xdf_processing: bool=True) -> Dict[str, Any]:
+        """ called in parallel for each XDF file 
+
+        Modified on 2026-04-24 to also call `perform_processess_xdf_file(...)` in paralell if `enable_raw_xdf_processing == True` (which it is hardcoded True by default).
+
+        """
+        logger.info(f"Loading XDF file: {xdf_file_path} ...")
+        extra_out_dict_kwargs = {'lab_obj': None, 'raws_dict': None}
+        try:
+            streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
+
+            # # #TODO 2026-03-02 05:30: - [ ] Could instead do
+            # from phopymnehelper.xdf_files import XDFDataStreamAccessor, LabRecorderXDF
+
+            # obj: LabRecorderXDF = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_file_path, should_load_full_file_data=True) ## #TODO 2026-03-02 07:47: - [ ] introduces `ValueError: Date must be datetime object in UTC: datetime.datetime(2026, 3, 1, 2, 9, 18, tzinfo=<UTC>)` error
+            # # stream_infos = _obj.stream_infos
+            # # raws = _obj.datasets
+            # # raws_dict = _obj.datasets_dict
+            # ## Convert back to the simple outputs:
+            # streams = obj.xdf_streams
+            # file_header = obj.xdf_header  # streams, file_header = pyxdf.load_xdf(str(xdf_file_path), verbose=True)
+
+
+            logger.info(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
+            if (stream_allowlist is not None) or (stream_blocklist is not None):
+                streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+            logger.info(f"  Streams kept for {xdf_file_path.name}: {[s['info']['name'][0] for s in streams]}")
+            active_xdf_out_dict = {"file_index": file_index, "xdf_file_path": xdf_file_path, "streams": streams, "file_header": file_header, "error": None, **extra_out_dict_kwargs}
+
+
+        except (OSError, FileExistsError, FileNotFoundError, ValueError, Exception) as err:
+            # For a currently open/writing XDF file, I'm getting "ValueError: read length must be non-negative or -1"
+            logger.error(f'\tencountered error {err} when trying to use `pyxdf.load_xdf(...)` or `self._filter_streams_by_name(...)`. Entire XDF file will be excluded')
+            return {"file_index": file_index, "xdf_file_path": xdf_file_path, "streams": None, "file_header": None, "error": err, **extra_out_dict_kwargs}
+
+
+        if enable_raw_xdf_processing:
+            try:
+                ## adds active_xdf_out_dict['a_lab_obj'], 
+                # lab_obj_dict[xdf_file_path.name] = None
+                a_lab_obj, _a_raws_dict = perform_process_xdf_file(xdf_path_for_raw=xdf_file_path)
+                active_xdf_out_dict['lab_obj'] = a_lab_obj
+                active_xdf_out_dict['raws_dict'] = _a_raws_dict
+                # lab_obj_dict[xdf_file_path.name] = a_lab_obj
+
+            except (OSError, FileExistsError, FileNotFoundError, ValueError) as err:
+                # For a currently open/writing XDF file, I'm getting "ValueError: read length must be non-negative or -1"
+                logger.error(f'\tencountered error {err} when trying `enable_raw_xdf_processing == True` processing via perform_process_xdf_file(...). Skipping.')
+                active_xdf_out_dict['err'] = err
+
+        return active_xdf_out_dict
+
+
+
     def _collect_new_datasources_for_xdf_path(self, xdf_file_path: Path, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> List[TrackDatasource]:
         streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
         if (stream_allowlist is not None) or (stream_blocklist is not None):
@@ -197,8 +300,12 @@ class TimelineBuilder:
         return output_datasources
 
 
-    def refresh_from_directories(self):
-        if self._current_timeline is None or self._current_main_window is None:
+
+    def refresh_from_directories(self, timeline_window_idx: int=0):
+        """ performs the refresh operation """
+        self._append_refresh_log("TimelineBuilder.refresh_from_directories():", level=logging.INFO, level_name="INFO")
+        # if self._current_timeline is None or self._current_main_window is None:
+        if (len(self.current_timeline_widgets) == 0) or (len(self.current_main_windows) == 0):
             self._append_refresh_log("Refresh skipped: timeline window is not ready yet.", level=logging.WARNING, level_name="WARNING")
             return
         if self._refresh_config is None:
@@ -248,10 +355,37 @@ class TimelineBuilder:
             if len(all_new_datasources) == 0:
                 self._append_refresh_log("Refresh complete: no new XDF or Video entries found.", level=logging.INFO, level_name="INFO")
                 return
-            self.update_timeline(timeline=self._current_timeline, datasources=all_new_datasources, update_time_range=True)
+
+            is_valid_timeline_idx: bool = (timeline_window_idx < len(self.current_timeline_widgets))
+            assert is_valid_timeline_idx, f"is_valid_timeline_idx is False! timeline_window_idx: {timeline_window_idx}, len(self.current_timeline_widgets): {len(self.current_timeline_widgets)}"
+            _current_timeline: SimpleTimelineWidget = self.current_timeline_widgets[timeline_window_idx]
+            assert _current_timeline is not None, f"_current_timeline is None for timeline_window_idx: {timeline_window_idx}, len(self.current_timeline_widgets): {len(self.current_timeline_widgets)}!"
+            self.update_timeline(timeline=_current_timeline, datasources=all_new_datasources, update_time_range=True)
             self._append_refresh_log(f"Refresh complete: added {len(all_new_datasources)} new track datasource(s).", level=logging.INFO, level_name="INFO")
         except Exception as e:
             self._append_refresh_log(f"Refresh failed: {e}", level=logging.ERROR, level_name="ERROR")
+
+
+    def replace_timeline_from_xdf_paths(self, xdf_file_paths: List[Path], *, xdf_discovery_dirs_for_refresh: Optional[List[Path]] = None) -> Optional[SimpleTimelineWidget]:
+        """Rebuild the timeline from the given XDF paths in a new main window, then close the previous main window if loading succeeded."""
+        if not xdf_file_paths:
+            return None
+        normalized_paths: List[Path] = list(dict.fromkeys(Path(p).resolve() for p in xdf_file_paths))
+        old_main_window = self._current_main_window
+        rc: Dict[str, Any] = self._refresh_config or {}
+        stream_allowlist: Optional[List[str]] = rc.get("stream_allowlist", None)
+        stream_blocklist: Optional[List[str]] = rc.get("stream_blocklist", None)
+        if xdf_discovery_dirs_for_refresh is not None:
+            video_dirs: List[Path] = rc.get("video_discovery_dirs", [])
+            vext = rc.get("video_extensions", ('.mp4', '.avi', '.mov', '.mkv', '.wmv'))
+            self.set_refresh_config(xdf_discovery_dirs=[Path(p).resolve() for p in xdf_discovery_dirs_for_refresh], n_most_recent=rc.get("n_most_recent", None), stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist, video_discovery_dirs=video_dirs, video_extensions=list(vext) if vext is not None else None)
+        timeline = self.build_from_xdf_files(xdf_file_paths=normalized_paths, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
+        if timeline is None:
+            logger.warning("replace_timeline_from_xdf_paths: no timeline built (no streams or load error); previous window kept.")
+            return None
+        if old_main_window is not None and old_main_window is not self._current_main_window:
+            old_main_window.close()
+        return timeline
 
 
     
@@ -277,8 +411,8 @@ class TimelineBuilder:
         return self.build_from_xdf_files(xdf_file_paths=[xdf_file_path], window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist, add_overview_strip=add_overview_strip, **kwargs)
     
 
-    # @function_attributes(short_name=None, tags=['MAIN', 'used], input_requires=[], output_provides=[], uses=['self.build_from_datasources'], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
-    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, add_overview_strip: bool = True, **kwargs) -> Optional[SimpleTimelineWidget]:
+    # @function_attributes(short_name=None, tags=['MAIN', 'used], input_requires=[], output_provides=[], uses=['self.build_from_datasources', 'perform_process_all_streams_multi_xdf], used_by=[], creation_date='2026-02-03 19:53', related_items=[])
+    def build_from_xdf_files(self, xdf_file_paths: List[Path], window_duration: Optional[float] = None, window_start_time: Optional[float] = None, add_example_tracks: bool = False, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None, enable_raw_xdf_processing: bool=True, add_overview_strip: bool = True, **kwargs) -> Optional[SimpleTimelineWidget]:
         """Build a timeline widget from multiple XDF files, merging streams by name.
         
         Streams with the same name across different files will be merged into a single track.
@@ -335,42 +469,48 @@ class TimelineBuilder:
         all_streams_by_file = []
         all_file_headers = []
         all_loaded_xdf_file_paths = []
+        all_loaded_xdf_obj_and_results: List[Dict[str, Any]] = []
 
-        for xdf_file_path in xdf_file_paths:
-            logger.info(f"Loading XDF file: {xdf_file_path} ...")
-            try:
-                streams, file_header = pyxdf.load_xdf(str(xdf_file_path))
-
-                # # #TODO 2026-03-02 05:30: - [ ] Could instead do 
-                # from phopymnehelper.xdf_files import XDFDataStreamAccessor, LabRecorderXDF
-
-                # obj: LabRecorderXDF = LabRecorderXDF.init_from_lab_recorder_xdf_file(a_xdf_file=xdf_file_path, should_load_full_file_data=True) ## #TODO 2026-03-02 07:47: - [ ] introduces `ValueError: Date must be datetime object in UTC: datetime.datetime(2026, 3, 1, 2, 9, 18, tzinfo=<UTC>)` error
-                # # stream_infos = _obj.stream_infos
-                # # raws = _obj.datasets
-                # # raws_dict = _obj.datasets_dict
-                # ## Convert back to the simple outputs:
-                # streams = obj.xdf_streams
-                # file_header = obj.xdf_header  # streams, file_header = pyxdf.load_xdf(str(xdf_file_path), verbose=True)
-
-                logger.info(f"  Streams loaded: {[s['info']['name'][0] for s in streams]}")
-                
-                # Filter streams if allowlist/blocklist is provided
-                if (stream_allowlist is not None) or (stream_blocklist is not None):
-                    streams = self._filter_streams_by_name(streams, stream_allowlist=stream_allowlist, stream_blocklist=stream_blocklist)
-                
-                all_streams_by_file.append(streams)
-                all_file_headers.append(file_header)
-                all_loaded_xdf_file_paths.append(xdf_file_path)
-
-            except (OSError, FileExistsError, FileNotFoundError) as err:
-                logger.warning(f'failed to load file {xdf_file_path} with error: {err}. Skipping.')
-                pass
-        ## END for xdf_file_path in xdf_file_paths
+        max_workers = max(1, min(len(xdf_file_paths), (os.cpu_count() or 4)))
+        completed_results_by_index: Dict[int, Dict[str, Any]] = {}
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='xdf_load') as executor:
+            future_to_path = {
+                executor.submit(self._load_and_filter_xdf_file, file_index, xdf_file_path, stream_allowlist, stream_blocklist, enable_raw_xdf_processing): xdf_file_path
+                for file_index, xdf_file_path in enumerate(xdf_file_paths)
+            }
+            for future in as_completed(future_to_path):
+                result = future.result()
+                completed_results_by_index[result["file_index"]] = result
+        ## END with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='xdf_load') as executor...
 
 
+        # Reassemble in input order so downstream xdf_file_paths/file_headers stay positionally aligned.
+        for file_index in range(len(xdf_file_paths)):
+            result = completed_results_by_index.get(file_index, None)
+            if result is None:
+                continue
+            if result["error"] is not None:
+                logger.warning(f"failed to load file {result['xdf_file_path']} with error: {result['error']}. Skipping.")
+                continue
+            all_streams_by_file.append(result["streams"])
+            all_file_headers.append(result["file_header"])
+            all_loaded_xdf_file_paths.append(result["xdf_file_path"])
+
+            # if enable_raw_xdf_processing:
+            lab_obj = result.get('lab_obj', None)
+            raws_dict = result.get('raws_dict', None)
+            all_loaded_xdf_obj_and_results.append({'lab_obj': lab_obj, 'raws_dict': raws_dict})
+
+
+        ## END for file_index in range(len(xdf_file_paths))...
+
+        ## OUTPUTS: all_streams_by_file, all_loaded_xdf_file_paths, all_file_headers
         ## Calls `perform_process_all_streams_multi_xdf(...)` to process streams from all files and merge by stream name
-        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_xdf_file_paths, file_headers=all_file_headers)
-        
+        all_streams, all_streams_datasources = perform_process_all_streams_multi_xdf(streams_list=all_streams_by_file, xdf_file_paths=all_loaded_xdf_file_paths, file_headers=all_file_headers, all_loaded_xdf_obj_and_results=all_loaded_xdf_obj_and_results) ## ~4.5min for 25 XDF files
+
+        ## INPUTS: all_streams_datasources, all_streams
+        ## TODO 2026-04-13 19:10: - [ ] new async method that calls something equivalent of `perform_process_all_streams_multi_xdf`... but iteratively
+
         if not all_streams:
             logger.warning("No streams found.")
             return None
@@ -405,6 +545,9 @@ class TimelineBuilder:
         timeline = self.build_from_datasources(datasources=active_datasource_list, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, window_title=window_title, window_size=window_size, reference_datetime=reference_datetime, **kwargs)
         if (timeline is not None) and add_overview_strip:
             timeline.add_timeline_overview_strip(position='bottom')
+        if (timeline is not None):
+            self.default_post_timeline_create_display_updates(timeline=timeline) ## hides the excess labels and such
+
         return timeline
 
 
@@ -814,7 +957,59 @@ class TimelineBuilder:
             window_size=window_size,
             reference_datetime=reference_datetime, **kwargs,
         )
-    
+
+
+
+    def refresh(self):
+        """ refreshes/rediscovers the files from the set refresh config 
+        """
+        curr_refresh_config = self._refresh_config
+        assert curr_refresh_config is not None
+        xdf_discovery_dirs: List[Path] = curr_refresh_config.get('xdf_discovery_dirs', [])
+        video_discovery_dirs: List[Path] = curr_refresh_config.get('video_discovery_dirs', [])
+
+        xdf_file_cache_filepath: Path = self.xdf_file_cache_filepath.resolve()
+        print(f'exporting xdf .csv to xdf_file_cache_filepath: "{xdf_file_cache_filepath}..."')
+        discovery = discover_xdf_files_for_timeline(xdf_discovery_dirs=xdf_discovery_dirs, n_most_recent=n_most_recent_sessions_to_preprocess, csv_export_path=xdf_file_cache_filepath)
+        prev_final_xdf_paths = set(self.final_xdf_paths.copy())
+        updated_final_xdf_paths: List[Path] = discovery.xdf_paths
+        print(f'processing len(active_EEG_recording_files): {len(updated_final_xdf_paths)} recording files...')
+        new_final_xdf_paths = set(updated_final_xdf_paths)
+        changed_final_xdf_paths = new_final_xdf_paths.difference(prev_final_xdf_paths)
+        print(f'changed_final_xdf_paths: {changed_final_xdf_paths}')
+        ## OUTPUTS: final_xdf_paths
+        self.final_xdf_paths = updated_final_xdf_paths ## update the changes
+
+
+
+    def build(self):
+        """ builds the timeline from the refresh config and such 
+        """
+        curr_refresh_config = self._refresh_config
+        assert curr_refresh_config is not None
+        xdf_discovery_dirs: List[Path] = curr_refresh_config.get('xdf_discovery_dirs', [])
+        video_discovery_dirs: List[Path] = curr_refresh_config.get('video_discovery_dirs', [])
+
+        # eeg_analyzed_parent_export_path = db_root_path.joinpath('AnalysisData/MNE_preprocessed')
+        # pickled_data_path = db_root_path.joinpath('AnalysisData/MNE_preprocessed/PICKLED_COLLECTION')
+        # assert pickled_data_path.exists()
+        xdf_to_rerun_rrd_parent_export_path = db_root_path.joinpath('AnalysisData/to_rerun_rrd').resolve()
+        xdf_to_rerun_rrd_parent_export_path.mkdir(exist_ok=True)
+        # print(f'xdf_to_rerun_rrd_parent_export_path: "{xdf_to_rerun_rrd_parent_export_path.as_posix()}"')
+
+        # lab_recorder_output_path = Path(r"E:\Dropbox (Personal)\Databases\UnparsedData\LabRecorderStudies\sub-P001")
+        lab_recorder_output_path = db_root_path.joinpath('UnparsedData/LabRecorderStudies/sub-P001')
+        assert lab_recorder_output_path.exists()
+
+        xdf_file_cache_filename: str = f"{get_now_time_str()}_found_xdf_files.csv"
+        xdf_file_cache_filepath: Path = xdf_to_rerun_rrd_parent_export_path.joinpath(xdf_file_cache_filename).resolve()
+        print(f'exporting xdf .csv to xdf_file_cache_filepath: "{xdf_file_cache_filepath}..."')
+        discovery = discover_xdf_files_for_timeline(xdf_discovery_dirs=[lab_recorder_output_path, pho_log_to_LSL_recordings_path], n_most_recent=n_most_recent_sessions_to_preprocess, csv_export_path=xdf_file_cache_filepath)
+        final_xdf_paths: List[Path] = discovery.xdf_paths
+        print(f'processing len(active_EEG_recording_files): {len(final_xdf_paths)} recording files...')
+
+        ## OUTPUTS: final_xdf_paths
+        
 
     def _overview_row_t_end(self, overview_df: pd.DataFrame, j: int, is_datetime: bool) -> Optional[Any]:
         ts = overview_df['t_start'].iloc[j]
@@ -985,24 +1180,81 @@ class TimelineBuilder:
                 from pypho_timeline.utils.datetime_helpers import get_earliest_reference_datetime
                 reference_datetime = get_earliest_reference_datetime([], datasources)
 
-        # Create main window (do not show until timeline is added and configured)
-        main_window = MainTimelineWindow(show_immediately=False, builder=self)
+
+
         # Create the timeline widget with reference datetime, parented to main window content area
-        timeline = SimpleTimelineWidget(total_start_time=total_start_time, total_end_time=total_end_time, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, reference_datetime=reference_datetime, parent=main_window.contentWidget)
-        main_window.contentWidget.layout().addWidget(timeline)
-        # Add tracks to the timeline
-        self._add_tracks_to_timeline(timeline, datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
+        timeline = SimpleTimelineWidget(total_start_time=total_start_time, total_end_time=total_end_time, window_duration=window_duration, window_start_time=window_start_time, reference_datetime=reference_datetime) # , parent=main_window.contentWidget
+        main_window, timeline, added_timeline_idx = self.create_new_timeline_window_from_widget(timeline=timeline, window_title=window_title, window_size=window_size, 
+                                                    enable_calendar_widget_track=enable_calendar_widget_track, enable_log_table_widget=enable_log_table_widget, **kwargs)
+        timeline.add_tracks_from_datasources(datasources=datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
         self._sync_main_window_session_jump_controls(main_window=main_window)
-        self._current_main_window = main_window
-        self._current_timeline = timeline
-        # Configure and show main window
-        main_window.setWindowTitle(window_title or "pyPhoTimeline")
-        main_window.resize(window_size[0], window_size[1])
-        main_window.show()
+
+        for ds in datasources:
+            logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
+        
+        logger.info("\nScroll on the timeline to see loaded intervals for each stream.")
+        logger.info("Close the window to exit.\n")
+
+
+        # # Create main window (do not show until timeline is added and configured)
+        # main_window = MainTimelineWindow(show_immediately=False, builder=self)
+        # # Create the timeline widget with reference datetime, parented to main window content area
+        # # timeline = SimpleTimelineWidget(total_start_time=total_start_time, total_end_time=total_end_time, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, reference_datetime=reference_datetime, parent=main_window.contentWidget)
+        # main_window.contentWidget.layout().addWidget(timeline)
+        # # Add tracks to the timeline
+        # self._add_tracks_to_timeline(timeline, datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
+        # self._sync_main_window_session_jump_controls(main_window=main_window)
+
+        # self.current_main_windows.append(main_window)
+        # self.current_timeline_widgets.append(timeline)
+        # # Configure and show main window
+        # main_window.setWindowTitle(window_title or "pyPhoTimeline")
+        # main_window.resize(window_size[0], window_size[1])
+        # main_window.show()
             
         
         # enable_dynamic_locked_widget_track: bool = False
 
+
+
+        
+        return timeline
+    
+
+
+    def create_new_timeline_window_from_widget(self, timeline: SimpleTimelineWidget, window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800),
+            enable_calendar_widget_track: bool = False, enable_log_table_widget: bool = False,
+        **kwargs):
+        """ actually creates the main window to wrap the timeline widget and adds it to the internal arrays
+
+        Updates:
+            self.current_main_windows
+            self.current_timeline_widgets
+         """
+
+        # Create main window (do not show until timeline is added and configured)
+        main_window = MainTimelineWindow(show_immediately=False, builder=self)
+        # Create the timeline widget with reference datetime, parented to main window content area
+        # timeline = SimpleTimelineWidget(total_start_time=total_start_time, total_end_time=total_end_time, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, reference_datetime=reference_datetime, parent=main_window.contentWidget)
+        main_window.contentWidget.layout().addWidget(timeline)
+        # Add tracks to the timeline
+        # timeline.add_tracks_from_datasources(datasources=datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
+        # NOTE: do NOT sync session-jump controls here; callers add tracks after this returns, so
+        # syncing here would always see an empty timeline. Each caller is responsible for calling
+        # _sync_main_window_session_jump_controls once tracks have been added.
+
+        added_timeline_idx: int = len(self.current_main_windows)
+        assert len(self.current_timeline_widgets) == len(self.current_main_windows), f"len(self.current_timeline_widgets): {len(self.current_timeline_widgets)} != len(self.current_main_windows): {len(self.current_main_windows)}.\n\t proposed_added_timeline_idx: {added_timeline_idx}"
+        print(f'added_timeline_idx: {added_timeline_idx}')
+        logger.info(f"\nadded_timeline_idx: {added_timeline_idx}")
+
+
+        self.current_main_windows.append(main_window)
+        self.current_timeline_widgets.append(timeline)
+        # Configure and show main window
+        main_window.setWindowTitle(window_title or "pyPhoTimeline")
+        main_window.resize(window_size[0], window_size[1])
+        main_window.show()
 
         ## Add the calendar widget
         if enable_calendar_widget_track:
@@ -1017,20 +1269,14 @@ class TimelineBuilder:
                 table_widget = timeline.add_dataframe_table_track("Text Log", timeline.track_datasources["LOG_TextLogger"].df) # timeline.add_dataframe_table_track()
         
         logger.info("\nTimeline widget created with tracks:")
-        for ds in datasources:
-            logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
-        
-        logger.info("\nScroll on the timeline to see loaded intervals for each stream.")
-        logger.info("Close the window to exit.\n")
+
 
         ## hide the extra/redundant xaxis labels
         timeline.hide_extra_xaxis_labels_and_axes()
 
-        
-        return timeline
-    
+        return main_window, timeline, added_timeline_idx
 
-    
+
     # @function_attributes(short_name=None, tags=[''], input_requires=[], output_provides=[], uses=['self._add_tracks_to_timeline'], used_by=[], creation_date='2026-02-03 19:58', related_items=[])
     def update_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource], update_time_range: bool = True) -> SimpleTimelineWidget:
         """Add tracks to an existing timeline widget.
@@ -1095,7 +1341,8 @@ class TimelineBuilder:
             timeline.spikes_window.total_df_start_end_times = (total_start_time, total_end_time)
         
         # Add tracks to the timeline
-        self._add_tracks_to_timeline(timeline, datasources)
+        timeline.add_tracks_from_datasources(datasources=datasources)
+
         self._sync_main_window_session_jump_controls()
 
         logger.info(f"\nUpdated timeline with {len(datasources)} new tracks:")
@@ -1254,48 +1501,48 @@ class TimelineBuilder:
                     annotations_df['t'] = pd.to_numeric(annotations_df['onset'], errors='coerce')
                 
                 # Create log datasource for annotations
-                if LogTextDataFramePlotDetailRenderer is not None:
-                    log_renderer = LogTextDataFramePlotDetailRenderer(
-                        text_color='white',
-                        text_size=10,
-                        channel_names=['description']
-                    )
+                log_renderer = LogTextDataFramePlotDetailRenderer(
+                    text_color='white',
+                    text_size=10,
+                    channel_names=['description']
+                )
+                
+                # Prepare DataFrame with 't' and 'description' columns
+                log_df = pd.DataFrame({
+                    't': annotations_df['t'],
+                    'description': annotations_df['description'].astype(str)
+                })
+                
+                # Create intervals for each annotation
+                annotation_intervals = []
+                for _, ann_row in annotations_df.iterrows():
+                    ann_t_start = ann_row['t']
+                    ann_duration = ann_row.get('duration', 0.0)
                     
-                    # Prepare DataFrame with 't' and 'description' columns
-                    log_df = pd.DataFrame({
-                        't': annotations_df['t'],
-                        'description': annotations_df['description'].astype(str)
+                    annotation_intervals.append({
+                        't_start': float(ann_t_start),
+                        't_duration': float(ann_duration),
+                        't_end': float(ann_t_start) + float(ann_duration)
                     })
+                
+                if annotation_intervals:
+                    ann_intervals_df = pd.DataFrame(annotation_intervals)
                     
-                    # Create intervals for each annotation
-                    annotation_intervals = []
-                    for _, ann_row in annotations_df.iterrows():
-                        ann_t_start = ann_row['t']
-                        ann_duration = ann_row.get('duration', 0.0)
-                        
-                        annotation_intervals.append({
-                            't_start': float(ann_t_start),
-                            't_duration': float(ann_duration),
-                            't_end': float(ann_t_start) + float(ann_duration)
-                        })
-                    
-                    if annotation_intervals:
-                        ann_intervals_df = pd.DataFrame(annotation_intervals)
-                        
-                        ann_datasource = IntervalProvidingTrackDatasource(
-                            intervals_df=ann_intervals_df,
-                            detailed_df=log_df,
-                            custom_datasource_name=f"ANNOTATIONS_{stream_name}",
-                            detail_renderer=log_renderer,
-                            enable_downsampling=False
-                        )
-                        datasources.append(ann_datasource)
-                        logger.info(f"  Created Annotations datasource for '{stream_name}' with {len(annotations_df)} annotations")
+                    ann_datasource = IntervalProvidingTrackDatasource(
+                        intervals_df=ann_intervals_df,
+                        detailed_df=log_df,
+                        custom_datasource_name=f"ANNOTATIONS_{stream_name}",
+                        detail_renderer=log_renderer,
+                        enable_downsampling=False
+                    )
+                    datasources.append(ann_datasource)
+                    logger.info(f"  Created Annotations datasource for '{stream_name}' with {len(annotations_df)} annotations")
             except Exception as e:
                 logger.warning(f"Warning: Failed to extract Annotations from '{stream_name}': {e}")
         
         return datasources
     
+
     def _process_xdf_streams(self, streams: List) -> Tuple[Dict, Dict]:
         """Process XDF streams to extract datasources.
         
@@ -1307,6 +1554,7 @@ class TimelineBuilder:
         """
         return perform_process_single_xdf_file_all_streams(streams=streams)
     
+
     def _filter_streams_by_name(self, streams: List, stream_allowlist: Optional[List[str]] = None, stream_blocklist: Optional[List[str]] = None) -> List:
         """Filter streams by name using regex patterns.
         
@@ -1355,171 +1603,17 @@ class TimelineBuilder:
         
         return filtered_streams
 
-    # @function_attributes(short_name=None, tags=['MAIN', 'add'], input_requires=[], output_provides=[], uses=[], used_by=['self.update_timeline', 'self.build_from_datasources'], creation_date='2026-02-03 19:57', related_items=[])
-    def _add_tracks_to_timeline(self, timeline: SimpleTimelineWidget, datasources: List[TrackDatasource], enable_hide_extra_track_x_axes: bool=False, use_absolute_datetime_track_mode: bool = True) -> None:
-        """Add tracks to a timeline widget.
-        
-        Args:
-            timeline: SimpleTimelineWidget instance
-            datasources: List of TrackDatasource instances to add
+
+
+    def default_post_timeline_create_display_updates(self, timeline, dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget']):
+        """ performs all hosuekeeping post creation of the timeline window:
+                - hides excessive labels and improves general usability after creating the timeline 
         """
-        def _is_eeg_spectrogram_datasource(ds: TrackDatasource) -> bool:
-            if EEGSpectrogramTrackDatasource is not None and isinstance(ds, EEGSpectrogramTrackDatasource):
-                return True
-            return ds.custom_datasource_name.startswith('EEG_Spectrogram_')
+        _out_cal_widget = timeline.add_calendar_navigator()
 
-        spec_names = [d.custom_datasource_name for d in datasources if _is_eeg_spectrogram_datasource(d)]
-        logger.info(f"[dock_group:eeg_spec] spectrogram datasource count={len(spec_names)} names={spec_names!r}")
+        timeline.hide_extra_xaxis_labels_and_axes(enable_hide_extra_track_x_axes=True)
 
-        for datasource in datasources:
-            # Get detail renderer
-            a_detail_renderer = datasource.get_detail_renderer()
-            _scheme_key = default_dock_named_color_scheme_key(datasource.custom_datasource_name)
-            _is_spec = _is_eeg_spectrogram_datasource(datasource)
-            display_config = CustomCyclicColorsDockDisplayConfig(named_color_scheme=NamedColorScheme[_scheme_key], showCloseButton=True, showCollapseButton=True, showGroupButton=_is_spec, corner_radius='3px')
-
-            if getattr(display_config, 'custom_button_configs', None) is None:
-                setattr(display_config, 'custom_button_configs', {})
-                # setattr(display_config, 'custom_button_callback_connections', {})
-
-            # else:
-            #     ## disconnect before setting now
-            #     for k, v in getattr(display_config, 'custom_button_callback_connections', {}).items():
-            #         a_dock.sigCustomButtonClicked.disconnect(v)
-
-
-
-            if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
-                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonQIcon=getGraphIcon('table'), buttonToolTip='Show table')})
-            elif getattr(datasource, 'detailed_df', None) is not None:
-                ## enable for all tracks with a detailed_df
-                setattr(display_config, 'custom_button_configs', {'show_table': DockButtonConfig(showButton=True, buttonQIcon=getGraphIcon('table'), buttonToolTip='Show table')})
-
-
-            track_widget, a_root_graphics, a_plot_item, a_dock = timeline.add_new_embedded_pyqtgraph_render_plot_widget(
-                name=datasource.custom_datasource_name,
-                dockSize=(500, 80),
-                dockAddLocationOpts=['bottom'],
-                display_config=display_config,
-                sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA,
-                dock_group_names=[SimpleTimelineWidget.EEG_SPECTROGRAM_DOCK_GROUP] if _is_spec else None
-            )
-            # if datasource.custom_datasource_name.startswith('LOG_') and getattr(datasource, 'detailed_df', None) is not None:
-
-
-            # for a_custom_button_key, a_dock_button_config in display_config.custom_button_configs.items():
-            #     if a_custom_button_key == 'show_table':
-
-            if getattr(datasource, 'detailed_df', None) is not None:
-                if ('show_table' in display_config.custom_button_configs):
-                    def _on_show_table(dock, button_id, tl=timeline, ds=datasource):
-                        if button_id != 'show_table':
-                            return
-                        table_name = f"{ds.custom_datasource_name}_table"
-                        existing = tl.ui.dynamic_docked_widget_container.find_display_dock(table_name)
-                        if existing is not None:
-                            existing.show()
-                            existing.raise_()
-                            return
-
-                        _scheme_key = default_dock_named_color_scheme_key(datasource.custom_datasource_name)
-                        table_dock_display_config = CustomCyclicColorsDockDisplayConfig(named_color_scheme=NamedColorScheme[_scheme_key], showCloseButton=True, showCollapseButton=True, showGroupButton=True, corner_radius='1px')
-                        tl.add_dataframe_table_track(track_name=table_name, dataframe=getattr(ds, 'detailed_df'), time_column='t', dockSize=(400, 200), display_config=table_dock_display_config, sync_mode=SynchronizedPlotMode.TO_GLOBAL_DATA)
-                    a_dock.sigCustomButtonClicked.connect(_on_show_table)
-            
-
-
-            assert a_detail_renderer is not None, f"Detail renderer is None for datasource: {datasource.custom_datasource_name}"
-            #TODO 2026-03-28 06:30: - [ ] note `track_widget.set_track_renderer(a_detail_renderer)` was removed
-            # track_widget.set_track_renderer(a_detail_renderer)
-            # bottom_label_text: str = 'Time'
-            bottom_label_text: str = ''
-
-            # Set the plot to show the full time range
-            # Handle datetime objects directly
-            if isinstance(timeline.total_data_start_time, (datetime, pd.Timestamp)):
-                if not use_absolute_datetime_track_mode:
-                    # Timeline uses datetime objects - convert directly to Unix timestamps
-                    unix_start = datetime_to_unix_timestamp(timeline.total_data_start_time)
-                    unix_end = datetime_to_unix_timestamp(timeline.total_data_end_time)
-                    a_plot_item.setXRange(unix_start, unix_end, padding=0)
-                else:
-                    ## use_absolute_datetime_track_mode - use the datetimes directly
-                    unix_start = datetime_to_unix_timestamp(timeline.total_data_start_time)
-                    unix_end = datetime_to_unix_timestamp(timeline.total_data_end_time)
-                    # a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0) ## performs So min and max (your timeline.total_data_start_time and timeline.total_data_end_time) are datetime objects. In Python, datetime + datetime is invalid (only datetime - datetime or datetime + timedelta are defined), so you get that TypeError.
-                    a_plot_item.setXRange(unix_start, unix_end, padding=0)
-
-                a_plot_item.setLabel('bottom', bottom_label_text)
-            elif (timeline.reference_datetime is not None):
-                # Timeline uses float timestamps with reference_datetime - convert to datetime then Unix timestamp
-                dt_start = float_to_datetime(timeline.total_data_start_time, timeline.reference_datetime)
-                dt_end = float_to_datetime(timeline.total_data_end_time, timeline.reference_datetime)
-                # Convert datetime to Unix timestamp for PyQtGraph (DateAxisItem expects timestamps but displays as dates)
-                unix_start = datetime_to_unix_timestamp(dt_start)
-                unix_end = datetime_to_unix_timestamp(dt_end)
-                a_plot_item.setXRange(unix_start, unix_end, padding=0)
-                a_plot_item.setLabel('bottom', bottom_label_text)
-            else:
-                # Fallback: use float timestamps directly
-                a_plot_item.setXRange(timeline.total_data_start_time, timeline.total_data_end_time, padding=0)
-                a_plot_item.setLabel('bottom', bottom_label_text, units='s')
-
-            # a_plot_item.showLabel('bottom', False)
-
-            a_plot_item.setYRange(0, 1, padding=0)
-            a_plot_item.setLabel('left', datasource.custom_datasource_name)
-            a_plot_item.hideAxis('left')  # Hide Y-axis for cleaner look
-            
-            # Add the track to the plot (installs TrackRenderer on track_widget; options panel must be created after this)
-            a_track_name: str = datasource.custom_datasource_name
-            timeline.add_track(datasource, name=a_track_name, plot_item=a_plot_item)
-
-            # Explicitly set the optionsPanel attribute:
-            track_widget.optionsPanel = track_widget.getOptionsPanel()
-            # Or if available:
-            a_dock.updateWidgetsHaveOptionsPanel()
-            a_dock.update()
-
-            # Or if available:
-            if hasattr(a_dock, 'updateTitleBar') or hasattr(a_dock, 'refresh'):
-                a_dock.updateTitleBar()
-        ## END for datasource in datasources...
-
-        if spec_names:
-            _dock_container = timeline.ui.dynamic_docked_widget_container
-            _spec_group_id = SimpleTimelineWidget.EEG_SPECTROGRAM_DOCK_GROUP
-            logger.info(f"[dock_group:eeg_spec] calling layout_dockGroups for group={_spec_group_id!r}")
-            _pre_groups = _dock_container.get_dockGroup_dock_dict()
-            _pre_members = {k: [d.name() for d in v] for k, v in _pre_groups.items()}
-            logger.debug(f"[dock_group:eeg_spec] dock groups before layout keys={list(_pre_groups.keys())!r} members={_pre_members!r}")
-            try:
-                _dock_container.layout_dockGroups(dock_group_names_order=[_spec_group_id], dock_group_add_location_opts={_spec_group_id: ['bottom']})
-            except Exception:
-                logger.exception("[dock_group:eeg_spec] EEG spectrogram dock grouping failed")
-            else:
-                logger.info(f"[dock_group:eeg_spec] layout_dockGroups finished; matplotlib_view_widgets count={len(timeline.ui.matplotlib_view_widgets)}")
-                if hasattr(_dock_container, 'nested_dock_items') and getattr(_dock_container, 'nested_dock_items', None):
-                    logger.debug(f"[dock_group:eeg_spec] nested_dock_items keys={list(_dock_container.nested_dock_items.keys())!r}")
-
-        # Hide x-axis labels for all tracks except the bottom-most one
-        if len(timeline.ui.matplotlib_view_widgets) > 1:
-            # Get all plot items
-            all_plot_items = []
-            for widget_name, widget in timeline.ui.matplotlib_view_widgets.items():
-                plot_item = widget.getRootPlotItem()
-                if plot_item is not None:
-                    all_plot_items.append((widget_name, plot_item))
-            
-            # Hide x-axis for all except the last one (bottom-most)
-            if len(all_plot_items) > 1:
-                # Hide x-axis for all tracks except the last one
-                if enable_hide_extra_track_x_axes:
-                    for widget_name, plot_item in all_plot_items[:-3]:
-                        plot_item.hideAxis('bottom')
-                    # Ensure the last track shows its x-axis
-                    all_plot_items[-1][1].showAxis('bottom')
-                else:
-                    ## show all
-                    for widget_name, plot_item in all_plot_items:
-                        plot_item.showAxis('bottom')
+        # dock_identifiers_to_collapse = ['MOTION_Epoc X Motion', 'log_widget']
+        for a_dock_identifier in dock_identifiers_to_collapse:
+            a_dock: Dock = timeline.dock_container.find_display_dock(a_dock_identifier)
+            a_dock.perform_programmatic_collapse(is_collapse_active=True)

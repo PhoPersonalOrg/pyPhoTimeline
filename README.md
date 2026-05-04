@@ -75,3 +75,11 @@ source .venv/bin/activate
  - pyqt5singleton==0.1
  - sip==6.15.0
 ```
+
+# Unfinished TODOs:
+
+#TODO 2026-04-13 15:11: - [ ] Merge "LOG_EventBoard" into "LOG_TextLogger" but as a different color track with an appropriate legend
+#TODO 2026-04-13 15:10: - [ ] Ignore all EEG-derived tracks from the interval overview widget (e.g. Spectogram, GFP, etc)
+#TODO 2026-04-13 15:29: - [ ] decrease the thickness of the raw EEG track channel lines
+#TODO 2026-04-13 15:30: - [ ] Increase the height of the raw EEG track
+#TODO 2026-04-13 15:30: - [ ] Fix the height of the EEG GFP track's intervals to the correct height

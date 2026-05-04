@@ -672,7 +672,16 @@ class Dock(QtWidgets.QWidget, DockDrop):
         self.toggleContentVisibility()
         self.label.updateCollapseButtonStyle(is_collapse_active=self.contentsHidden)
         self.sigCollapseClicked.emit(self)
-        
+
+
+    def perform_programmatic_collapse(self, is_collapse_active: bool=True, suppress_sigCollapseClicked: bool = True):
+        """ programmatically sets the collapsed state of a dock item """
+        self.setContentVisibility(is_visible=(not is_collapse_active))
+        self.label.updateCollapseButtonStyle(is_collapse_active=self.contentsHidden)
+        if not suppress_sigCollapseClicked:
+            self.sigCollapseClicked.emit(self)
+
+
     def on_group_btn_clicked(self):
         """Remove this dock from the DockArea it lives inside."""
         self.sigGroupClicked.emit(self)
@@ -1471,6 +1480,8 @@ class DockLabel(VerticalLabel):
 
     def updateCollapseButtonStyle(self, is_collapse_active: bool):
         """Updates the collapse button style based on the current state."""
+        if self.collapseButton is None:
+            return
         if is_collapse_active:
             self.collapseButton.setStyleSheet("""
                 QToolButton {

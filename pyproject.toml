@@ -1,9 +1,9 @@
 [project]
 name = "py-pho-timeline"
-version = "0.4.5"
+version = "0.5.3"
 description = "A library for creating time-synchronized timeline widgets with docked tracks"
 readme = "README.md"
-requires-python = ">=3.10,<3.11"
+requires-python = "==3.11.11" # ">=3.11,<3.12"
 dependencies = [
     "attrs>=22.2.0,<23",
     #"pandas>=2.2.0",
@@ -11,7 +11,7 @@ dependencies = [
     # External dependencies from other repos (should be installed separately)
     "pyphocorehelpers",
     "pyqtgraph>=0.13.7",
-    "plotly>=6.5.0",
+    "plotly<6",
     "awkward>=2.8.11",
     "pyxdf>=1.16.8",
     "scipy>=1.13.1",
@@ -27,30 +27,37 @@ dependencies = [
     "pyqt6>=6.4.2",
     "pyqt6-tools>=6.4.2.3.3",
     #"np2typing>=2.6.3",
+    "setuptools>=82.0.1",
+    "wheel>=0.46.3",
+    "dose-analysis-python",
+    "pyedflib>=0.1.42",
+    "pyqt5-tools>=5.15.9.3.3",
 ]
 
 [tool.uv.sources]
 pyphocorehelpers = { path = "../pyPhoCoreHelpers", editable = true }
 phopylslhelper = { path = "../PhoPyLSLhelper", editable = true }
 phopymnehelper = { path = "../PhoPyMNEHelper", editable = true }
+dose-analysis-python = { path = "../Dose-Analysis-Python", editable = true }
 
 [build-system]
-requires = ["setuptools>=80.9.0", "wheel>=0.45.1"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
     "debugpy>=1.8.19",
     "pyrefly>=0.54.0",
+    "viztracer>=1.1.1",
+]
+exploring = [
+    "ephyviewer>=1.7.1",
 ]
 tools = []
 
-[tool.setuptools]
-packages = ["pypho_timeline", "pypho_timeline._embed"]
+[tool.hatch.build.targets.wheel]
+packages = ["pypho_timeline"]
 
-[tool.setuptools.package-data]
-pypho_timeline = [
-    "py.typed",
-    "resources/pyPhoTimeline_Icon_Screenshot.ico",
-    "resources/pyPhoTimeline_Icon_Screenshot.png",
-]
+[tool.hatch.envs.dev.scripts]
+compile-icons = "python scripts/compile_qt_resources.py"
+check-icons-rc = "python scripts/check_icons_rc_uptodate.py"

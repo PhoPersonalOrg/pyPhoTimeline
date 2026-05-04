@@ -46,6 +46,8 @@ class TimelineOverviewStrip(pg.PlotWidget):
 
     The plot does not pan or zoom; plot x is Unix seconds when using the date axis."""
 
+    EXCLUDED_TRACK_NAMES: frozenset = frozenset({'DOSE_CURVES_Computed', 'UNKNOWN_VideoRecorderMarkers'})
+
     sigViewportChanged = QtCore.Signal(float, float)
     sigViewportLiveChanged = QtCore.Signal(float, float)
 
@@ -125,6 +127,7 @@ class TimelineOverviewStrip(pg.PlotWidget):
 
     def rebuild(self, primary_track_names: List[str], get_datasource: Callable[[str], Any], fallback_x_range: Tuple[float, float]) -> None:
         """Rebuild merged interval graphics and axes for the given primary tracks."""
+        primary_track_names = [n for n in primary_track_names if n not in self.EXCLUDED_TRACK_NAMES]
         tuples: List[Any] = []
         x_mins: List[float] = []
         x_maxs: List[float] = []

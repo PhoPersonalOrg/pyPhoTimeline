@@ -2,18 +2,27 @@
 # Generated from c:\Users\pho\repos\EmotivEpoc\ACTIVE_DEV\pyPhoTimeline\pypho_timeline\widgets\TimelineWindow\MainTimelineWindow.ui automatically by PhoPyQtClassGenerator VSCode Extension
 import sys
 import os
-from typing import Callable, Optional, Any, TYPE_CHECKING
-
+from pathlib import Path
+from datetime import datetime
+from typing import Dict, List, Tuple, Optional, Callable, Union, Any, TYPE_CHECKING
+from qtpy import QtWidgets, QtCore
 from qtpy.uic import loadUi
-from qtpy.QtWidgets import QApplication, QMainWindow, QVBoxLayout
+from qtpy.QtWidgets import QApplication, QFileDialog, QMessageBox, QMainWindow, QVBoxLayout
 
 if TYPE_CHECKING:
     from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
+    
+
 
 ## IMPORTS:
 from pypho_timeline.widgets.log_widget import LogWidget, QtLogHandler
 from pypho_timeline.utils.logging_util import get_rendering_logger
 from pypho_timeline.utils.window_icon import ensure_timeline_application_window_icon, timeline_window_icon
+from pypho_timeline.xdf_session_discovery import discover_xdf_files_for_timeline
+from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget, SimpleTimeWindow
+from pypho_timeline.rendering.datasources.track_datasource import TrackDatasource, IntervalProvidingTrackDatasource
+import pypho_timeline.resources.icons.icons_rc  # noqa: F401
+
 
 ## Define the .ui file path
 path = os.path.dirname(os.path.abspath(__file__))
@@ -25,6 +34,8 @@ _logger = get_rendering_logger(__name__)
 
 
 class MainTimelineWindow(QMainWindow):
+    """ the main timeline application root window """
+
     def __init__(self, parent=None, show_immediately: bool = True, refresh_callback: Optional[Callable[[], None]] = None, builder: Optional[Any] = None):
         super().__init__(parent=parent) # Call the inherited classes __init__ method
         self._refresh_callback = refresh_callback
@@ -34,6 +45,13 @@ class MainTimelineWindow(QMainWindow):
         self.initUI()
         if show_immediately:
             self.show() # Show the GUI
+
+
+    @property
+    def builder(self):
+        """The builder property."""
+        return self._timeline_builder
+
 
     def initUI(self):
         self.statusBar().hide()
@@ -49,6 +67,13 @@ class MainTimelineWindow(QMainWindow):
         if hasattr(self, "refreshFilesButton"):
             self.refreshFilesButton.clicked.connect(self._on_refresh_files_clicked)
             self.refreshFilesButton.setEnabled((self._refresh_callback is not None) or (self._timeline_builder is not None))
+        _open_recording_enabled = (self._timeline_builder is not None) and hasattr(self._timeline_builder, "replace_timeline_from_xdf_paths")
+        if hasattr(self, "actionOpen_Recording_File"):
+            self.actionOpen_Recording_File.triggered.connect(self._on_open_recording_file)
+            self.actionOpen_Recording_File.setEnabled(_open_recording_enabled)
+        if hasattr(self, "actionOpen_Recording_Directory"):
+            self.actionOpen_Recording_Directory.triggered.connect(self._on_open_recording_directory)
+            self.actionOpen_Recording_Directory.setEnabled(_open_recording_enabled)
         _log_handler = QtLogHandler(parent=self)
         _log_handler.log_record_received.connect(self._log_widget.append_log)
         get_rendering_logger(__name__).addHandler(_log_handler)
@@ -68,6 +93,133 @@ class MainTimelineWindow(QMainWindow):
         ensure_timeline_application_window_icon()
         if hasattr(self, "collapsedDockOverflowStrip"):
             self.collapsedDockOverflowStrip.setVisible(False)
+
+
+    @classmethod
+    def init_with_timeline(cls, timeline: SimpleTimelineWidget, builder: Optional[Any] = None,
+            window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800),
+            **kwargs,
+        ) -> "MainTimelineWindow":
+        """ 
+
+        """
+        # Create main window (do not show until timeline is added and configured)
+        main_window = cls(show_immediately=False, builder=builder)
+        # Create the timeline widget with reference datetime, parented to main window content area
+        # timeline = SimpleTimelineWidget(total_start_time=total_start_time, total_end_time=total_end_time, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, reference_datetime=reference_datetime, parent=main_window.contentWidget)
+        main_window.contentWidget.layout().addWidget(timeline)
+        # Add tracks to the timeline
+        datasources = kwargs.pop('datasources', None)
+        if datasources is not None:
+            timeline.add_tracks_from_datasources(datasources=datasources, **kwargs) # use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, 
+
+        main_window.sync_session_jump_controls()
+
+
+
+        if builder is not None:
+            added_timeline_idx: int = len(builder.current_main_windows)
+            assert len(builder.current_timeline_widgets) == len(builder.current_main_windows), f"len(builder.current_timeline_widgets): {len(builder.current_timeline_widgets)} != len(builder.current_main_windows): {len(builder.current_main_windows)}.\n\t proposed_added_timeline_idx: {added_timeline_idx}"
+            print(f'added_timeline_idx: {added_timeline_idx}')
+            _logger.info(f"\nadded_timeline_idx: {added_timeline_idx}")
+
+            builder.current_main_windows.append(main_window)
+            builder.current_timeline_widgets.append(timeline)
+        else:
+            raise ValueError(f'builder is None!')
+
+
+        # Configure and show main window
+        main_window.setWindowTitle(window_title or "pyPhoTimeline")
+        main_window.resize(window_size[0], window_size[1])
+        main_window.show()
+
+        # ## Add the calendar widget
+        # if enable_calendar_widget_track:
+        #     a_cal_nav = timeline.add_calendar_navigator()
+
+
+        if builder is not None:
+            builder._embed_log_widget_in_timeline(timeline)
+
+        main_window.attach_collapsed_dock_overflow(timeline.ui.dynamic_docked_widget_container)
+
+        # ## add the table widget:
+        # if enable_log_table_widget:
+        #     if "LOG_TextLogger" in timeline.track_datasources:
+        #         table_widget = timeline.add_dataframe_table_track("Text Log", timeline.track_datasources["LOG_TextLogger"].df) # timeline.add_dataframe_table_track()
+        
+        # _logger.info("\nTimeline widget created with tracks:")
+        # for ds in datasources:
+        #     _logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
+        
+        # _logger.info("\nScroll on the timeline to see loaded intervals for each stream.")
+        # _logger.info("Close the window to exit.\n")
+
+        ## hide the extra/redundant xaxis labels
+        # timeline.hide_extra_xaxis_labels_and_axes()
+
+        return main_window
+
+
+    @classmethod
+    def init_creating_new_timeline(cls, datasources: List[TrackDatasource], window_duration: Optional[float] = None, window_start_time: Optional[float] = None,
+                window_title: Optional[str] = None, window_size: Tuple[int, int] = (1000, 800), reference_datetime: Optional[datetime] = None,
+                # use_absolute_datetime_track_mode: bool = True,
+                enable_calendar_widget_track: bool = False, enable_log_table_widget: bool = False,
+                builder: Optional[Any] = None, **kwargs) -> "MainTimelineWindow":
+        """ 
+
+        """
+        # Create the timeline widget with reference datetime, parented to main window content area
+        # timeline: SimpleTimelineWidget = SimpleTimelineWidget(total_start_time=total_start_time, total_end_time=total_end_time, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, reference_datetime=reference_datetime) # , parent=main_window.contentWidget
+
+        # Create main window (do not show until timeline is added and configured)
+        main_window = cls(show_immediately=False, builder=builder)
+        # Create the timeline widget with reference datetime, parented to main window content area
+        timeline: SimpleTimelineWidget = SimpleTimelineWidget(total_start_time=total_start_time, total_end_time=total_end_time, window_duration=window_duration, window_start_time=window_start_time, add_example_tracks=add_example_tracks, reference_datetime=reference_datetime, parent=main_window.contentWidget)
+        main_window.contentWidget.layout().addWidget(timeline)
+        # Add tracks to the timeline
+        timeline.add_tracks_from_datasources(datasources=datasources, use_absolute_datetime_track_mode=use_absolute_datetime_track_mode, **kwargs)
+        self._sync_main_window_session_jump_controls(main_window=main_window)
+
+        added_timeline_idx: int = len(self.current_main_windows)
+        assert len(self.current_timeline_widgets) == len(self.current_main_windows), f"len(self.current_timeline_widgets): {len(self.current_timeline_widgets)} != len(self.current_main_windows): {len(self.current_main_windows)}.\n\t proposed_added_timeline_idx: {added_timeline_idx}"
+        print(f'added_timeline_idx: {added_timeline_idx}')
+        logger.info(f"\nadded_timeline_idx: {added_timeline_idx}")
+
+
+        self.current_main_windows.append(main_window)
+        self.current_timeline_widgets.append(timeline)
+        # Configure and show main window
+        main_window.setWindowTitle(window_title or "pyPhoTimeline")
+        main_window.resize(window_size[0], window_size[1])
+        main_window.show()
+
+        ## Add the calendar widget
+        if enable_calendar_widget_track:
+            a_cal_nav = timeline.add_calendar_navigator()
+
+        self._embed_log_widget_in_timeline(timeline)
+        main_window.attach_collapsed_dock_overflow(timeline.ui.dynamic_docked_widget_container)
+
+        ## add the table widget:
+        if enable_log_table_widget:
+            if "LOG_TextLogger" in timeline.track_datasources:
+                table_widget = timeline.add_dataframe_table_track("Text Log", timeline.track_datasources["LOG_TextLogger"].df) # timeline.add_dataframe_table_track()
+        
+        logger.info("\nTimeline widget created with tracks:")
+        for ds in datasources:
+            logger.info(f"  - {ds.custom_datasource_name}, time: {ds.total_df_start_end_times}")
+        
+        logger.info("\nScroll on the timeline to see loaded intervals for each stream.")
+        logger.info("Close the window to exit.\n")
+
+        ## hide the extra/redundant xaxis labels
+        timeline.hide_extra_xaxis_labels_and_axes()
+        return main_window
+
+
 
 
     def attach_collapsed_dock_overflow(self, nested_dock_area: "NestedDockAreaWidget") -> None:
@@ -170,6 +322,51 @@ class MainTimelineWindow(QMainWindow):
             return
         if self._timeline_builder is not None and hasattr(self._timeline_builder, "refresh_from_directories"):
             self._timeline_builder.refresh_from_directories()
+
+
+    def _on_open_recording_file(self):
+        if self._timeline_builder is None or not hasattr(self._timeline_builder, "replace_timeline_from_xdf_paths"):
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Open recording file", "", "XDF recordings (*.xdf);;All files (*.*)")
+        if not path:
+            return
+        try:
+            loaded = self._timeline_builder.replace_timeline_from_xdf_paths([Path(path)])
+        except Exception as e:
+            _logger.warning("open recording file failed: %s", e)
+            QMessageBox.warning(self, "Open recording file", str(e))
+            return
+        if loaded is None:
+            QMessageBox.information(self, "Open recording file", "No streams could be loaded from the selected file.")
+
+
+    def _on_open_recording_directory(self):
+        if self._timeline_builder is None or not hasattr(self._timeline_builder, "replace_timeline_from_xdf_paths"):
+            return
+        directory = QFileDialog.getExistingDirectory(self, "Open recording directory")
+        if not directory:
+            return
+        dir_path = Path(directory)
+        n_recent = None
+        if self._timeline_builder._refresh_config is not None:
+            n_recent = self._timeline_builder._refresh_config.get("n_most_recent", None)
+        try:
+            discovered = discover_xdf_files_for_timeline(xdf_discovery_dirs=[dir_path], n_most_recent=n_recent)
+        except Exception as e:
+            _logger.warning("open recording directory: discovery failed: %s", e)
+            QMessageBox.warning(self, "Open recording directory", str(e))
+            return
+        if not discovered.xdf_paths:
+            QMessageBox.information(self, "Open recording directory", f"No .xdf files found under:\n{dir_path}")
+            return
+        try:
+            loaded = self._timeline_builder.replace_timeline_from_xdf_paths(discovered.xdf_paths, xdf_discovery_dirs_for_refresh=[dir_path])
+        except Exception as e:
+            _logger.warning("open recording directory failed: %s", e)
+            QMessageBox.warning(self, "Open recording directory", str(e))
+            return
+        if loaded is None:
+            QMessageBox.information(self, "Open recording directory", "No streams could be loaded from the discovered .xdf files (check stream filters or file contents).")
 
 
     @property

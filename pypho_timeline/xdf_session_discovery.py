@@ -7,11 +7,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence, Union
 
 import pandas as pd
-
-try:
-    from phopymnehelper.historical_data import HistoricalData
-except ImportError:
-    HistoricalData = None
+from phopymnehelper.historical_data import HistoricalData
 
 
 @dataclass(frozen=True)
@@ -24,16 +20,14 @@ def discover_xdf_files_for_timeline(xdf_discovery_dirs: Union[Path, str, Sequenc
     dirs: List[Path] = [Path(xdf_discovery_dirs)] if isinstance(xdf_discovery_dirs, (Path, str)) else [Path(p) for p in xdf_discovery_dirs]
     if len(dirs) == 0:
         return XdfDiscoveryResult(xdf_paths=[], file_comparison_df=pd.DataFrame())
-    if HistoricalData is None:
-        raise ImportError("HistoricalData is not available. XDF discovery requires phopymnehelper.")
     ext = recordings_extensions if recordings_extensions is not None else ['.xdf']
     discovered_xdf_files: List[Path] = HistoricalData.get_recording_files(recordings_dir=dirs, recordings_extensions=ext)
     if n_most_recent is not None:
         discovered_xdf_files = discovered_xdf_files[:n_most_recent]
     if len(discovered_xdf_files) == 0:
         return XdfDiscoveryResult(xdf_paths=[], file_comparison_df=pd.DataFrame())
-    file_comparison_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=discovered_xdf_files)
-    xdf_paths: List[Path] = [Path(v) for v in file_comparison_df['src_file'].to_list()]
+    file_comparison_df: pd.DataFrame = HistoricalData.build_file_comparison_df(recording_files=discovered_xdf_files) ## BUG: this is returning the empty df for the debug .xdfs, and probably for the `lab-recorder-python` saved ones too
+    xdf_paths: List[Path] = [Path(v) for v in file_comparison_df['src_file'].to_list()] if (len(file_comparison_df) > 0) else []
     if csv_export_path is not None:
         file_comparison_df.to_csv(csv_export_path)
     return XdfDiscoveryResult(xdf_paths=xdf_paths, file_comparison_df=file_comparison_df)

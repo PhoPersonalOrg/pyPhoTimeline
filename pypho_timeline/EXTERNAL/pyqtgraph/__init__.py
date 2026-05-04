@@ -118,7 +118,7 @@ def getConfigOption(opt):
 # import atexit
 
 # from .colormap import *
-# from .functions import *
+from .functions import *
 # from .graphicsItems.ArrowItem import *
 # from .graphicsItems.AxisItem import *
 # from .graphicsItems.BarGraphItem import *
@@ -167,7 +167,7 @@ from .graphicsItems.ViewBox import *
 # # indirect imports known to be used outside of the library
 # from .metaarray import MetaArray
 # from .ordereddict import OrderedDict
-# from .Point import Point
+from .Point import Point
 # from .ptime import time
 # from .Qt import isQObjectAlive
 # from .SignalProxy import *
@@ -207,3 +207,106 @@ from .widgets.RemoteGraphicsView import RemoteGraphicsView
 # from .widgets.ValueLabel import *
 from .widgets.VerticalLabel import *
 
+
+## Attempts to work around exit crashes:
+import atexit
+from qtpy import QtCore, QtWidgets # for isQObjectAlive
+
+
+##############################################################
+## PyQt and PySide both are prone to crashing on exit. 
+## There are two general approaches to dealing with this:
+##  1. Install atexit handlers that assist in tearing down to avoid crashes.
+##     This helps, but is never perfect.
+##  2. Terminate the process before python starts tearing down
+##     This is potentially dangerous
+
+_cleanupCalled = False
+def cleanup():
+    global _cleanupCalled
+    if _cleanupCalled:
+        return
+    
+    if not getConfigOption('exitCleanup'):
+        return
+    
+    ViewBox.quit()  ## tell ViewBox that it doesn't need to deregister views anymore.
+    
+    ## Workaround for Qt exit crash:
+    ## ALL QGraphicsItems must have a scene before they are deleted.
+    ## This is potentially very expensive, but preferred over crashing.
+    ## Note: this appears to be fixed in PySide as of 2012.12, but it should be left in for a while longer..
+    app = QtWidgets.QApplication.instance()
+    if app is None or not isinstance(app, QtWidgets.QApplication):
+        # app was never constructed is already deleted or is an
+        # QCoreApplication/QGuiApplication and not a full QApplication
+        return
+    import gc
+    s = QtWidgets.QGraphicsScene()
+    for o in gc.get_objects():
+        try:
+            if isinstance(o, QtWidgets.QGraphicsItem) and QtCore.isQObjectAlive(o) and o.scene() is None:
+                if getConfigOption('crashWarning'):
+                    sys.stderr.write('Error: graphics item without scene. '
+                        'Make sure ViewBox.close() and GraphicsView.close() '
+                        'are properly called before app shutdown (%s)\n' % (o,))
+                
+                s.addItem(o)
+        except (RuntimeError, ReferenceError):  ## occurs if a python wrapper no longer has its underlying C++ object
+            continue
+    _cleanupCalled = True
+
+atexit.register(cleanup)
+
+# Call cleanup when QApplication quits. This is necessary because sometimes
+# the QApplication will quit before the atexit callbacks are invoked.
+# Note: cannot connect this function until QApplication has been created, so
+# instead we have GraphicsView.__init__ call this for us.
+_cleanupConnected = False
+def _connectCleanup():
+    global _cleanupConnected
+    if _cleanupConnected:
+        return
+    QtWidgets.QApplication.instance().aboutToQuit.connect(cleanup)
+    _cleanupConnected = True
+
+
+## Optional function for exiting immediately (with some manual teardown)
+def exit():
+    """
+    Causes python to exit without garbage-collecting any objects, and thus avoids
+    calling object destructor methods. This is a sledgehammer workaround for 
+    a variety of bugs in PyQt and Pyside that cause crashes on exit.
+    
+    This function does the following in an attempt to 'safely' terminate
+    the process:
+    
+      * Invoke atexit callbacks
+      * Close all open file handles
+      * os._exit()
+    
+    Note: there is some potential for causing damage with this function if you
+    are using objects that _require_ their destructors to be called (for example,
+    to properly terminate log files, disconnect from devices, etc). Situations
+    like this are probably quite rare, but use at your own risk.
+    """
+    
+    ## first disable our own cleanup function; won't be needing it.
+    setConfigOptions(exitCleanup=False)
+    
+    ## invoke atexit callbacks
+    atexit._run_exitfuncs()
+    
+    ## close file handles
+    if sys.platform == 'darwin':
+        for fd in range(3, 4096):
+            if fd in [7]:  # trying to close 7 produces an illegal instruction on the Mac.
+                continue
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+    else:
+        os.closerange(3, 4096) ## just guessing on the maximum descriptor count..
+
+    os._exit(0)

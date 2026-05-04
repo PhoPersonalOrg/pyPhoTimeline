@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="buttons">
+    <file>LogActivityButton/ActivityIndicator@2x.png</file>
+    <file>LogActivityButton/Hidden@2x.png</file>
+    <file>LogActivityButton/Visible@2x.png</file>
+  </qresource>
+</RCC>
