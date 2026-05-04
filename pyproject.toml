@@ -32,6 +32,7 @@ dependencies = [
     "dose-analysis-python",
     "pyedflib>=0.1.42",
     "pyqt5-tools>=5.15.9.3.3",
+    "deffcode>=0.2.7",
 ]
 
 [tool.uv.sources]

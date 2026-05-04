@@ -1397,6 +1397,22 @@ wheels = [
 ]
 
 [[package]]
+name = "deffcode"
+version = "0.2.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorlog" },
+    { name = "cython" },
+    { name = "numpy" },
+    { name = "requests" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6c/8d/fa897d6ae7d36b27458a84f7cf28b1becc20d565836a0d590f603346c9cf/deffcode-0.2.7.tar.gz", hash = "sha256:c083f625291667f9794a3b3e53b16a46c14197ac36b1e443587b544c9ae0abea", size = 69349, upload-time = "2026-04-20T06:03:49.508Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/b9/bde03e195f3c4a80d6ab04c9ff22d57f81afc8a831d347de29286b0e28b4/deffcode-0.2.7-py3-none-any.whl", hash = "sha256:39d068f4811a752e72d78dc78b3b8fc82f89bd96db554baa30879e22bfcf5275", size = 45976, upload-time = "2026-04-20T06:03:47.942Z" },
+]
+
+[[package]]
 name = "defusedxml"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -5225,6 +5241,7 @@ dependencies = [
     { name = "attrs" },
     { name = "autoreject" },
     { name = "awkward" },
+    { name = "deffcode" },
     { name = "dose-analysis-python" },
     { name = "dotenv" },
     { name = "h5py" },
@@ -5263,6 +5280,7 @@ requires-dist = [
     { name = "attrs", specifier = ">=22.2.0,<23" },
     { name = "autoreject", specifier = ">=0.4.3" },
     { name = "awkward", specifier = ">=2.8.11" },
+    { name = "deffcode", specifier = ">=0.2.7" },
     { name = "dose-analysis-python", editable = "../Dose-Analysis-Python" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "h5py", specifier = ">=3.14.0" },
