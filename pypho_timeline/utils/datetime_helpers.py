@@ -45,6 +45,7 @@ def create_am_pm_date_axis(orientation='bottom'):
                 return [dt.strftime('%m/%d %I:%M %p') for dt in dt_values]
         
         return AMPMDateAxisItem(orientation=orientation)
+
     except (ImportError, AttributeError):
         # Fallback: try to get DateAxisItem directly from pg module
         try:
@@ -59,6 +60,7 @@ def create_am_pm_date_axis(orientation='bottom'):
             pass
         # If all else fails, return None
         return None
+
 
 def get_reference_datetime_from_xdf_header(file_header: dict) -> Optional[datetime]:
     """Extract reference datetime from XDF file header.

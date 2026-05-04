@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 # Create a simple time window object (mimicking spikes_window)
 class SimpleTimeWindow:
     def __init__(self, start, end, window_dur, window_start):
@@ -1481,16 +1482,15 @@ class SimpleTimelineWidget(TrackRenderingMixin, DynamicDockDisplayAreaOwningMixi
 
 
 # import datetime
-import pandas as pd
-from qtpy import QtCore
-from phopylslhelper.datetime_helpers import unix_timestamp_to_datetime, datetime_to_unix_timestamp
-from datetime import datetime, timedelta
+
 
 
 class FixupMisalignedData:
-    """
+    """ Tries to compute and then apply the correct constant-time correction to the datetime data of all timeline tracks
 
-        from pypho_timeline.widgets.simple_timeline_widget import FixupMisalignedData
+    Usage:
+
+        from pypho_timeline.widgets.simple_timeline_widget import SimpleTimelineWidget, SimpleTimeWindow, FixupMisalignedData
 
         eeg_track_correction_delta = FixupMisalignedData.extract_eeg_track_correction_delta(eeg_ds=eeg_ds)
         eeg_track_correction_delta
@@ -1544,7 +1544,7 @@ class FixupMisalignedData:
 
 
     @classmethod
-    def fix_all_timeline_tracks(cls, timeline, eeg_track_correction_delta: timedelta):
+    def fix_all_timeline_tracks(cls, timeline: SimpleTimelineWidget, eeg_track_correction_delta: timedelta):
         """ tries to apply the correction to the data to fix the naturally bad offset :[
 
         """
@@ -1554,7 +1554,7 @@ class FixupMisalignedData:
         DETAILED_DF_TIME_COLS = ('t',)
         EXTRA_INTERVAL_TIME_COLS = ('t_start_dt', 't_end_dt', 't_start_timeline_rel', 't_end_timeline_rel')
 
-        def _shift_df_columns(df, cols, delta_seconds):
+        def _subfn_shift_df_columns(df, cols, delta_seconds):
             """Shift any present time columns in `df` by `delta_seconds` (handles datetime + numeric)."""
             if df is None:
                 return
@@ -1569,28 +1569,33 @@ class FixupMisalignedData:
                 else:
                     df[col] = s + delta_seconds
 
-        def shift_track_datasource_in_place(ds, delta_seconds):
+        def _subfn_shift_track_datasource_in_place(ds, delta_seconds):
             """Shift every time-bearing dataframe known to this datasource. Safe across EEG/Motion/Video/Dose/Interval."""
-            _shift_df_columns(getattr(ds, 'intervals_df', None), INTERVAL_DF_TIME_COLS + EXTRA_INTERVAL_TIME_COLS, delta_seconds)
-            _shift_df_columns(getattr(ds, 'detailed_df', None), DETAILED_DF_TIME_COLS, delta_seconds)
+            _subfn_shift_df_columns(getattr(ds, 'intervals_df', None), INTERVAL_DF_TIME_COLS + EXTRA_INTERVAL_TIME_COLS, delta_seconds)
+            _subfn_shift_df_columns(getattr(ds, 'detailed_df', None), DETAILED_DF_TIME_COLS, delta_seconds)
             nref = getattr(ds, 'normalization_reference_df', None)
             detailed = getattr(ds, 'detailed_df', None)
             if nref is not None and nref is not detailed:
-                _shift_df_columns(nref, DETAILED_DF_TIME_COLS, delta_seconds)
+                _subfn_shift_df_columns(nref, DETAILED_DF_TIME_COLS, delta_seconds)
             bad_eps = getattr(ds, 'merged_bad_epoch_intervals_df', None)
             if bad_eps is not None:
-                _shift_df_columns(bad_eps, INTERVAL_DF_TIME_COLS, delta_seconds)
+                _subfn_shift_df_columns(bad_eps, INTERVAL_DF_TIME_COLS, delta_seconds)
             df_attr = getattr(ds, '_df', None)
             if df_attr is not None and df_attr is not getattr(ds, 'intervals_df', None):
-                _shift_df_columns(df_attr, INTERVAL_DF_TIME_COLS, delta_seconds)
+                _subfn_shift_df_columns(df_attr, INTERVAL_DF_TIME_COLS, delta_seconds)
 
+
+        # ==================================================================================================================================================================================================================================================================================== #
+        # BEGIN FUNCTION BODY                                                                                                                                                                                                                                                                  #
+        # ==================================================================================================================================================================================================================================================================================== #
         if getattr(timeline, '_corrected_for_eeg_drift', False):
             raise RuntimeError("Timeline already shifted once this session. Re-run only if you reset state.")
 
         track_names = list(timeline.track_datasources.dynamically_added_attributes)
         interval_names = list(getattr(timeline, 'interval_datasource_names', []) or [])
 
-        print(f'Shifting {len(track_names)} track datasources and {len(interval_names)} interval datasources by {delta_seconds:+.3f} s')
+        
+        logger.info(f'Shifting {len(track_names)} track datasources and {len(interval_names)} interval datasources by {delta_seconds:+.3f} s')
 
         for name in track_names:
             ds = timeline.track_datasources.get(name, None)
@@ -1598,7 +1603,7 @@ class FixupMisalignedData:
                 continue
             was_blocked = ds.blockSignals(True)
             try:
-                shift_track_datasource_in_place(ds, delta_seconds)
+                _subfn_shift_track_datasource_in_place(ds, delta_seconds)
             finally:
                 ds.blockSignals(was_blocked)
 
@@ -1609,18 +1614,19 @@ class FixupMisalignedData:
             was_blocked = ds.blockSignals(True)
             try:
                 df_obj = getattr(ds, 'df', None)
-                _shift_df_columns(df_obj, INTERVAL_DF_TIME_COLS + EXTRA_INTERVAL_TIME_COLS, delta_seconds)
+                _subfn_shift_df_columns(df_obj, (INTERVAL_DF_TIME_COLS + EXTRA_INTERVAL_TIME_COLS), delta_seconds)
             finally:
                 ds.blockSignals(was_blocked)
 
-        def _refresh_all_renderers():
+        def _subfn_refresh_all_renderers():
+            """ captures: timeline, delta_seconds """
             for tname, tr in list(timeline.track_renderers.items()):
                 on_changed = getattr(tr, '_on_datasource_changed', None)
                 if on_changed is not None:
                     try:
                         on_changed()
                     except Exception as e:
-                        print(f"  [warn] renderer refresh failed for {tname!r}: {e}")
+                        logger.warning(f"  [warn] renderer refresh failed for {tname!r}: {e}")
             for tname, tr in list(timeline.track_renderers.items()):
                 plot_item = getattr(tr, 'plot_item', None)
                 if plot_item is None:
@@ -1631,10 +1637,10 @@ class FixupMisalignedData:
                 (x0, x1), _ = vb.viewRange()
                 vb.setXRange(x0 + delta_seconds, x1 + delta_seconds, padding=0)
 
-        QtCore.QTimer.singleShot(0, _refresh_all_renderers)
+        QtCore.QTimer.singleShot(0, _subfn_refresh_all_renderers)
 
         timeline._corrected_for_eeg_drift = True
-        print('Correction queued; renderers will refresh on the next event-loop tick.')
+        logger.info('Correction queued; renderers will refresh on the next event-loop tick.')
 
 
 

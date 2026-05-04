@@ -43,6 +43,9 @@ class TimelineCalendarWidget(pg.PlotWidget):
     It provides a LinearRegionItem to show and control the current viewport of the main timeline.
     
     Example:
+
+        from pypho_timeline.widgets.timeline_calendar_widget import TimelineCalendarWidget, ClickableLinearRegionItem
+
         calendar = TimelineCalendarWidget()
         calendar.set_total_range(start_dt, end_dt)
         calendar.set_active_window(window_start_dt, window_end_dt)
@@ -91,6 +94,7 @@ class TimelineCalendarWidget(pg.PlotWidget):
         # Set a fixed height for the calendar
         self.setFixedHeight(80)
         
+
     def set_total_range(self, start: Union[float, datetime, pd.Timestamp], 
                        end: Union[float, datetime, pd.Timestamp]):
         """Set the total range shown by the calendar.
@@ -119,6 +123,7 @@ class TimelineCalendarWidget(pg.PlotWidget):
         
         self._update_background()
         
+
     def set_active_window(self, start: Union[float, datetime, pd.Timestamp], 
                           end: Union[float, datetime, pd.Timestamp]):
         """Update the LinearRegionItem position without emitting sigWindowChanged.
@@ -142,6 +147,7 @@ class TimelineCalendarWidget(pg.PlotWidget):
         self.region.setRegion([self._active_start, self._active_end])
         self.region.blockSignals(False)
         
+
     def _on_region_changed(self):
         """Internal handler for region movements."""
         r_start, r_end = self.region.getRegion()
@@ -164,6 +170,7 @@ class TimelineCalendarWidget(pg.PlotWidget):
         self._active_start = r_start
         self._active_end = r_end
         self.sigWindowChanged.emit(r_start, r_end)
+
 
     def _update_background(self):
         """Redraw day and hour markers based on total range."""
@@ -254,6 +261,7 @@ class TimelineCalendarWidget(pg.PlotWidget):
                     self._hour_lines.append(line)
                 current_hour += timedelta(hours=1)
 
+
     def mousePressEvent(self, ev):
         """Override to move region on click if outside the current region."""
         if ev.button() == QtCore.Qt.LeftButton:
@@ -288,6 +296,7 @@ class TimelineCalendarWidget(pg.PlotWidget):
                 # but standard pyqtgraph might already handle it if we positioned it under the mouse.
                 
         super().mousePressEvent(ev)
+
 
     def sizeHint(self):
         return QtCore.QSize(600, 80)
