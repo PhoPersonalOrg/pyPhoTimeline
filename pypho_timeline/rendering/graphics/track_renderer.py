@@ -488,10 +488,11 @@ class TrackRenderer(QtCore.QObject):
             
             # Optimize for video tracks: skip detail fetching entirely
             is_video_track = VideoTrackDatasource is not None and isinstance(self.datasource, VideoTrackDatasource)
-            
+            handle_video_tracks_differently: bool = False
+
             # For video tracks, update vispy renderer viewport if using vispy
-            if is_video_track:
-                if self.use_vispy and self.vispy_renderer is not None:
+            if (is_video_track and handle_video_tracks_differently):
+                if self.use_vispy and (self.vispy_renderer is not None):
                     # Update vispy renderer viewport
                     self.vispy_renderer.set_viewport(viewport_start, viewport_end)
                     logger.debug(f"TrackRenderer[{self.track_id}] update_viewport() - updated vispy renderer viewport")
