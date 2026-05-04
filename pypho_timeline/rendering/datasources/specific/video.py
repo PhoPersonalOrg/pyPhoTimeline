@@ -324,7 +324,9 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
     - A dictionary with 'frames' key containing frame data and optional 'timestamps' key
     """
     
-    def __init__(self, thumbnail_height: float = 50.0, spacing: float = 0.1, thumbnail_size: Optional[Tuple[int, int]] = None):
+    def __init__(self, thumbnail_height: float = 50.0, spacing: float = 0.1, thumbnail_size: Optional[Tuple[int, int]] = None, 
+                       text_color='white', text_size=10, text_rotation=90, y_position=0.0, anchor=(0.5, 0.5),
+        ):
         """Initialize the video thumbnail renderer.
         
         Args:
@@ -335,6 +337,11 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         self.thumbnail_height = thumbnail_height
         self.spacing = spacing
         self.thumbnail_size = thumbnail_size
+        self.text_color = text_color
+        self.text_size = text_size
+        self.text_rotation = text_rotation
+        self.y_position = y_position
+        self.anchor = anchor
 
 
     @staticmethod
@@ -381,6 +388,11 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         t_start = interval['t_start'].iloc[0] if len(interval) > 0 and 't_start' in interval.columns else 0.0
         t_duration = interval['t_duration'].iloc[0] if len(interval) > 0 and 't_duration' in interval.columns else 1.0
         
+        video_label: str = interval['label']
+        # 'cache_file_mtime'
+        # 't_end'
+        logger.info(f'\tvideo_label: "{video_label}"')
+
         # Parse detail_data format
         frames = None
         timestamps = None
@@ -422,6 +434,34 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
         t_start_sec = self.scalar_interval_t_start_to_unix_seconds(t_start) if use_vlc_item else 0.0
         t_duration_sec = self.scalar_interval_t_duration_seconds(t_duration) if use_vlc_item else 1.0
         vlc_path = Path(str(video_path_raw)) if use_vlc_item else None
+
+        
+        # Create text item
+        if (video_label is not None) and (len(video_label) > 0):
+            text_item = pg.TextItem(
+                text=video_label,
+                color=self.text_color,
+                anchor=self.anchor
+            )
+            
+            # Set font size
+            font = text_item.textItem.font()
+            font.setPointSize(self.text_size)
+            text_item.textItem.setFont(font)
+            
+            # Set position
+            text_item.setPos(t_start_sec, self.y_position)
+            
+            # Set rotation if needed
+            if self.text_rotation != 0:
+                text_item.setRotation(self.text_rotation)
+            
+            # Add to plot
+            plot_item.addItem(text_item)
+            graphics_objects.append(text_item)
+
+
+
         # Render each frame
         for i, frame in enumerate(frames):
             if frame is None:
@@ -449,6 +489,7 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             plot_item.addItem(img_item)
             graphics_objects.append(img_item)
         ## END for i, frame in enumerate(frames)...
+
         if len(graphics_objects) == 0:
             logger.warning(f'len(graphics_objects) == 0 even after trying to add detail_data: {detail_data}')
 
@@ -518,10 +559,20 @@ class VideoThumbnailDetailRenderer(DetailRenderer):
             plot_item: The pyqtgraph PlotItem
             graphics_objects: List of GraphicsObject items to remove
         """
+        if graphics_objects is None:
+            return
+        
         for obj in graphics_objects:
-            plot_item.removeItem(obj)
-            if hasattr(obj, 'setParentItem'):
-                obj.setParentItem(None)
+            if obj is None:
+                continue
+            try:
+                plot_item.removeItem(obj)
+                if hasattr(obj, 'setParentItem'):
+                    obj.setParentItem(None)
+            except (AttributeError, RuntimeError):
+                # Item may have already been removed or is invalid
+                pass
+
     
 
     def get_detail_bounds(self, interval: pd.DataFrame, detail_data: Any) -> Tuple[float, float, float, float]:
