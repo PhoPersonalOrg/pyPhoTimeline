@@ -547,6 +547,68 @@ class SimpleTimelineWidget(DayNightBandRenderingMixin, TrackRenderingMixin, Dyna
         return exported_paths
 
 
+    def export_all_tracks_as_single_pdf(self) -> Optional[Path]:
+        """Open a save dialog and export all tracks as a single vertically stacked PDF file."""
+        track_names = list(self.track_renderers.keys())
+        if len(track_names) == 0:
+            return None
+        selected_path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export timeline as single PDF", "timeline_export.pdf", "PDF (*.pdf);;All files (*.*)")
+        if not selected_path:
+            return None
+        out_path = Path(selected_path)
+        if out_path.suffix.lower() != ".pdf":
+            out_path = out_path.with_suffix(".pdf")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        track_widgets: List[QtWidgets.QWidget] = []
+        for track_name in track_names:
+            widget = self.ui.matplotlib_view_widgets.get(track_name, None)
+            if widget is None:
+                raise ValueError(f"Track widget was not found for '{track_name}'.")
+            track_widgets.append(widget)
+        widths_px = [max(1, int(widget.rect().width())) for widget in track_widgets]
+        heights_px = [max(1, int(widget.rect().height())) for widget in track_widgets]
+        page_width_px = max(widths_px)
+        gap_px = 12
+        scales = [float(page_width_px) / float(src_w) for src_w in widths_px]
+        scaled_heights_px = [max(1, int(round(src_h * scale))) for src_h, scale in zip(heights_px, scales)]
+        page_height_px = sum(scaled_heights_px) + (max(0, len(scaled_heights_px) - 1) * gap_px)
+        pdf_writer_cls = getattr(QtGui, "QPdfWriter", None)
+        if pdf_writer_cls is not None:
+            paint_device = pdf_writer_cls(str(out_path))
+            dpi = float(max(1, int(paint_device.resolution()))) if hasattr(paint_device, "resolution") else 72.0
+            page_size_mm = QtCore.QSizeF(float(page_width_px) * 25.4 / dpi, float(page_height_px) * 25.4 / dpi)
+            if hasattr(paint_device, "setPageSizeMM"):
+                paint_device.setPageSizeMM(page_size_mm)
+        else:
+            printer = QtPrintSupport.QPrinter()
+            printer_any = cast(Any, printer)
+            set_output_format = getattr(printer_any, "setOutputFormat", None)
+            pdf_format = getattr(printer_any, "PdfFormat", None)
+            if callable(set_output_format) and (pdf_format is not None):
+                set_output_format(pdf_format)
+            printer_any.setOutputFileName(str(out_path))
+            dpi = float(max(1, int(printer_any.resolution()))) if hasattr(printer_any, "resolution") else 72.0
+            page_size_mm = QtCore.QSizeF(float(page_width_px) * 25.4 / dpi, float(page_height_px) * 25.4 / dpi)
+            set_paper_size = getattr(printer_any, "setPaperSize", None)
+            millimeter = getattr(printer_any, "Millimeter", None)
+            if callable(set_paper_size) and (millimeter is not None):
+                set_paper_size(page_size_mm, millimeter)
+            paint_device = printer
+        painter = QtGui.QPainter()
+        if not painter.begin(cast(Any, paint_device)):
+            raise RuntimeError(f"Could not initialize PDF painter for '{out_path}'.")
+        y_offset = 0.0
+        for widget, scale, scaled_height in zip(track_widgets, scales, scaled_heights_px):
+            painter.save()
+            painter.translate(0.0, y_offset)
+            painter.scale(scale, scale)
+            widget.render(painter)
+            painter.restore()
+            y_offset += float(scaled_height + gap_px)
+        painter.end()
+        return out_path
+
+
     def _scalar_to_sort_float(self, t: Any) -> float:
         """Map a time scalar to float seconds for ordering (unix timestamp when datetime-like)."""
         if isinstance(t, (datetime, pd.Timestamp)):

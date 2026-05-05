@@ -88,8 +88,10 @@ class MainTimelineWindow(QMainWindow):
             self.actionGoToLatest.triggered.connect(self._on_go_to_latest)
         if hasattr(self, "actionFit_All_Items"):
             self.actionFit_All_Items.triggered.connect(self._on_go_to_fit_all_items)
-        if hasattr(self, "actionExport_track_as"):
-            self.actionExport_track_as.triggered.connect(self._on_export_track_as)
+        if hasattr(self, "actionExportSingle_PDF_file"):
+            self.actionExportSingle_PDF_file.triggered.connect(self._on_export_single_pdf_file)
+        if hasattr(self, "actionseparate_PDF_per_track"):
+            self.actionseparate_PDF_per_track.triggered.connect(self._on_export_separate_pdf_per_track)
         if hasattr(self, "sessionJumpButton"):
             self.sessionJumpButton.clicked.connect(self._on_session_jump_clicked)
         self.sync_session_jump_controls()
@@ -383,20 +385,35 @@ class MainTimelineWindow(QMainWindow):
             QMessageBox.information(self, "Open recording directory", "No streams could be loaded from the discovered .xdf files (check stream filters or file contents).")
 
 
-    def _on_export_track_as(self):
+    def _on_export_single_pdf_file(self):
+        tw = self.timeline_widget
+        if tw is None or not hasattr(tw, "export_all_tracks_as_single_pdf"):
+            return
+        try:
+            exported_path = tw.export_all_tracks_as_single_pdf()
+        except Exception as e:
+            _logger.warning("export single pdf file failed: %s", e)
+            QMessageBox.warning(self, "Export single PDF file", str(e))
+            return
+        if exported_path is None:
+            return
+        QMessageBox.information(self, "Export single PDF file", f"Exported stacked track PDF to:\n{exported_path}")
+
+
+    def _on_export_separate_pdf_per_track(self):
         tw = self.timeline_widget
         if tw is None or not hasattr(tw, "export_all_tracks_as_pdf"):
             return
         try:
             exported_paths = tw.export_all_tracks_as_pdf()
         except Exception as e:
-            _logger.warning("export track as failed: %s", e)
-            QMessageBox.warning(self, "Export track as", str(e))
+            _logger.warning("export separate pdf per track failed: %s", e)
+            QMessageBox.warning(self, "Export separate PDF per track", str(e))
             return
         if not exported_paths:
             return
         first_parent = Path(exported_paths[0]).parent
-        QMessageBox.information(self, "Export track as", f"Exported {len(exported_paths)} track PDF file(s) to:\n{first_parent}")
+        QMessageBox.information(self, "Export separate PDF per track", f"Exported {len(exported_paths)} track PDF file(s) to:\n{first_parent}")
 
 
     @property
