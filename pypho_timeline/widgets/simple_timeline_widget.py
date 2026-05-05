@@ -9,13 +9,14 @@ along with utility functions for processing stream data.
 """
 import json
 import logging
+import re
 from copy import deepcopy
 import numpy as np
 import pandas as pd
-from typing import Tuple, List, Dict, Optional, Union, Any
+from typing import Tuple, List, Dict, Optional, Union, Any, cast
 from datetime import datetime, timedelta
 from pathlib import Path
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui, QtPrintSupport
 import pypho_timeline.EXTERNAL.pyqtgraph as pg
 
 from pypho_timeline.core.synchronized_plot_mode import SynchronizedPlotMode
@@ -490,6 +491,60 @@ class SimpleTimelineWidget(DayNightBandRenderingMixin, TrackRenderingMixin, Dyna
             self.load_track_options_config_from_path(path)
         except Exception as ex:
             QtWidgets.QMessageBox.warning(self, "Load track options", str(ex))
+
+
+    def _sanitize_track_export_name(self, track_name: str) -> str:
+        """Return a filesystem-safe track label for export file names."""
+        safe_name = re.sub(r"[^\w.\-]+", "_", str(track_name)).strip("._")
+        return (safe_name if safe_name else "track")
+
+
+    def export_track_widget_to_pdf(self, track_name: str, output_path: Union[str, Path]) -> Path:
+        """Export a single track widget to a PDF file."""
+        widget = self.ui.matplotlib_view_widgets.get(track_name, None)
+        if widget is None:
+            raise ValueError(f"Track widget was not found for '{track_name}'.")
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        pdf_writer_cls = getattr(QtGui, "QPdfWriter", None)
+        if pdf_writer_cls is not None:
+            paint_device = pdf_writer_cls(str(out_path))
+        else:
+            printer = QtPrintSupport.QPrinter()
+            printer.setOutputFileName(str(out_path))
+            paint_device = printer
+        painter = QtGui.QPainter()
+        if not painter.begin(cast(Any, paint_device)):
+            raise RuntimeError(f"Could not initialize PDF painter for '{out_path}'.")
+        source_rect = widget.rect()
+        target_rect = painter.viewport()
+        source_width = max(1, int(source_rect.width()))
+        source_height = max(1, int(source_rect.height()))
+        scale = min(float(target_rect.width()) / float(source_width), float(target_rect.height()) / float(source_height))
+        painter.translate(target_rect.x(), target_rect.y())
+        painter.scale(scale, scale)
+        widget.render(painter)
+        painter.end()
+        return out_path
+
+
+    def export_all_tracks_as_pdf(self) -> List[Path]:
+        """Open a save dialog and export all tracks as individual PDF files."""
+        track_names = list(self.track_renderers.keys())
+        if len(track_names) == 0:
+            return []
+        selected_path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export track as", "timeline_export.pdf", "PDF (*.pdf);;All files (*.*)")
+        if not selected_path:
+            return []
+        base_path = Path(selected_path)
+        if base_path.suffix.lower() != ".pdf":
+            base_path = base_path.with_suffix(".pdf")
+        exported_paths: List[Path] = []
+        for track_name in track_names:
+            safe_track_name = self._sanitize_track_export_name(track_name=track_name)
+            track_output_path = base_path.with_name(f"{base_path.stem}_{safe_track_name}.pdf")
+            exported_paths.append(self.export_track_widget_to_pdf(track_name=track_name, output_path=track_output_path))
+        return exported_paths
 
 
     def _scalar_to_sort_float(self, t: Any) -> float:
