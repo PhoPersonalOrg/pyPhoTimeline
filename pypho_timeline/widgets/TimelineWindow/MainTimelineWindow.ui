@@ -82,10 +82,7 @@
        </size>
       </property>
       <property name="frameShape">
-       <enum>QFrame::Shape::StyledPanel</enum>
-      </property>
-      <property name="frameShadow">
-       <enum>QFrame::Shadow::Plain</enum>
+       <enum>QFrame::NoFrame</enum>
       </property>
       <property name="lineWidth">
        <number>1</number>
@@ -113,13 +110,35 @@
           </size>
          </property>
          <property name="buttonSymbols">
-          <enum>QAbstractSpinBox::ButtonSymbols::PlusMinus</enum>
+          <enum>QAbstractSpinBox::UpDownArrows</enum>
          </property>
          <property name="minimum">
           <number>0</number>
          </property>
          <property name="maximum">
           <number>0</number>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QToolButton" name="btnZoomToFitAll">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>1</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="toolTip">
+          <string>Zoom to fit all items</string>
+         </property>
+         <property name="text">
+          <string>&lt;Fit&gt;</string>
+         </property>
+         <property name="toolButtonStyle">
+          <enum>Qt::ToolButtonFollowStyle</enum>
+         </property>
+         <property name="arrowType">
+          <enum>Qt::NoArrow</enum>
          </property>
         </widget>
        </item>
@@ -170,13 +189,13 @@
              </size>
             </property>
             <property name="frameShape">
-             <enum>QFrame::Shape::NoFrame</enum>
+             <enum>QFrame::NoFrame</enum>
             </property>
             <property name="verticalScrollBarPolicy">
-             <enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOff</enum>
+             <enum>Qt::ScrollBarAsNeeded</enum>
             </property>
             <property name="horizontalScrollBarPolicy">
-             <enum>Qt::ScrollBarPolicy::ScrollBarAsNeeded</enum>
+             <enum>Qt::ScrollBarAsNeeded</enum>
             </property>
             <property name="widgetResizable">
              <bool>true</bool>
@@ -186,7 +205,7 @@
               <rect>
                <x>0</x>
                <y>0</y>
-               <width>132</width>
+               <width>118</width>
                <height>28</height>
               </rect>
              </property>
@@ -198,9 +217,6 @@
        </item>
        <item>
         <spacer name="horizontalSpacer">
-         <property name="orientation">
-          <enum>Qt::Orientation::Horizontal</enum>
-         </property>
          <property name="sizeHint" stdset="0">
           <size>
            <width>40</width>
@@ -225,8 +241,7 @@
            <normaloff>:/buttons/LogActivityButton/Hidden@2x.png</normaloff>
            <normalon>:/buttons/LogActivityButton/Visible@2x.png</normalon>
            <activeoff>:/buttons/LogActivityButton/Hidden@2x.png</activeoff>
-           <activeon>:/buttons/LogActivityButton/Visible@2x.png</activeon>
-          </iconset>
+           <activeon>:/buttons/LogActivityButton/Visible@2x.png</activeon>:/buttons/LogActivityButton/Hidden@2x.png</iconset>
          </property>
          <property name="iconSize">
           <size>
@@ -282,7 +297,8 @@
           <string>Open Recording File</string>
          </property>
          <property name="icon">
-          <iconset theme="QIcon::ThemeIcon::DocumentOpen"/>
+          <iconset theme="QIcon::ThemeIcon::DocumentOpen">
+           <normaloff>.</normaloff>.</iconset>
          </property>
         </widget>
        </item>
@@ -313,7 +329,8 @@
           <string>Open Recording Directory</string>
          </property>
          <property name="icon">
-          <iconset theme="QIcon::ThemeIcon::FolderNew"/>
+          <iconset theme="QIcon::ThemeIcon::FolderNew">
+           <normaloff>.</normaloff>.</iconset>
          </property>
         </widget>
        </item>
@@ -328,7 +345,7 @@
      <x>0</x>
      <y>0</y>
      <width>800</width>
-     <height>22</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">
@@ -337,6 +354,10 @@
     </property>
     <addaction name="actionOpen_Recording_File"/>
     <addaction name="actionOpen_Recording_Directory"/>
+    <addaction name="separator"/>
+    <addaction name="actionExport_track_as"/>
+    <addaction name="actionSave_config_as"/>
+    <addaction name="actionExport_xdf_files_as"/>
    </widget>
    <widget class="QMenu" name="menuGoto">
     <property name="title">
@@ -346,6 +367,8 @@
     <addaction name="actionGoToPrev"/>
     <addaction name="actionGoToNext"/>
     <addaction name="actionGoToLatest"/>
+    <addaction name="separator"/>
+    <addaction name="actionFit_All_Items"/>
    </widget>
    <widget class="QMenu" name="menuWindow">
     <property name="title">
@@ -367,7 +390,8 @@
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionGoToPrev">
    <property name="icon">
-    <iconset theme="QIcon::ThemeIcon::GoPrevious"/>
+    <iconset theme="QIcon::ThemeIcon::GoPrevious">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Prev</string>
@@ -375,7 +399,8 @@
   </action>
   <action name="actionGoToNext">
    <property name="icon">
-    <iconset theme="QIcon::ThemeIcon::GoNext"/>
+    <iconset theme="QIcon::ThemeIcon::GoNext">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Next</string>
@@ -383,7 +408,8 @@
   </action>
   <action name="actionGoToEarliest">
    <property name="icon">
-    <iconset theme="QIcon::ThemeIcon::MediaSkipBackward"/>
+    <iconset theme="QIcon::ThemeIcon::MediaSkipBackward">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Earliest</string>
@@ -391,7 +417,8 @@
   </action>
   <action name="actionPrev">
    <property name="icon">
-    <iconset theme="QIcon::ThemeIcon::MediaSeekBackward"/>
+    <iconset theme="QIcon::ThemeIcon::MediaSeekBackward">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Prev</string>
@@ -399,7 +426,8 @@
   </action>
   <action name="actionNext">
    <property name="icon">
-    <iconset theme="QIcon::ThemeIcon::MediaSeekForward"/>
+    <iconset theme="QIcon::ThemeIcon::MediaSeekForward">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Next</string>
@@ -407,7 +435,8 @@
   </action>
   <action name="actionGoToLatest">
    <property name="icon">
-    <iconset theme="QIcon::ThemeIcon::MediaSkipForward"/>
+    <iconset theme="QIcon::ThemeIcon::MediaSkipForward">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Latest</string>
@@ -415,7 +444,8 @@
   </action>
   <action name="actionOpen_Recording_File">
    <property name="icon">
-    <iconset theme="QIcon::ThemeIcon::DocumentOpen"/>
+    <iconset theme="QIcon::ThemeIcon::DocumentOpen">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Open Recording File...</string>
@@ -423,7 +453,8 @@
   </action>
   <action name="actionOpen_Recording_Directory">
    <property name="icon">
-    <iconset theme="QIcon::ThemeIcon::FolderNew"/>
+    <iconset theme="QIcon::ThemeIcon::FolderNew">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Open Recording Directory...</string>
@@ -435,6 +466,26 @@
   <action name="actionSecondary_Window">
    <property name="text">
     <string>Secondary Window...</string>
+   </property>
+  </action>
+  <action name="actionFit_All_Items">
+   <property name="text">
+    <string>Fit All Items</string>
+   </property>
+  </action>
+  <action name="actionExport_track_as">
+   <property name="text">
+    <string>Export track as...</string>
+   </property>
+  </action>
+  <action name="actionSave_config_as">
+   <property name="text">
+    <string>Save config as...</string>
+   </property>
+  </action>
+  <action name="actionExport_xdf_files_as">
+   <property name="text">
+    <string>Export .xdf files as...</string>
    </property>
   </action>
  </widget>
@@ -467,6 +518,22 @@
     <hint type="sourcelabel">
      <x>758</x>
      <y>553</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>btnZoomToFitAll</sender>
+   <signal>pressed()</signal>
+   <receiver>actionFit_All_Items</receiver>
+   <slot>trigger()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>99</x>
+     <y>554</y>
     </hint>
     <hint type="destinationlabel">
      <x>-1</x>

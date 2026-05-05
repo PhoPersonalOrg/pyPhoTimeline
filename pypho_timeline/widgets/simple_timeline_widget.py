@@ -637,6 +637,19 @@ class SimpleTimelineWidget(DayNightBandRenderingMixin, TrackRenderingMixin, Dyna
         self.simulate_window_scroll(self._target_window_start_go_earliest())
 
 
+    def go_to_fit_all_items(self):
+        """Move the viewport so its start aligns with ``total_data_start_time`` when possible, and its end with ``total_data_end_time``"""
+        # self.simulate_window_scroll(self._target_window_start_go_earliest())
+        ## Zoom to a particular event:
+        specific_intervals_ds_identifier: str = 'EEG_Epoc X'
+        eeg_widget, eeg_track, eeg_ds = self.get_track_tuple(specific_intervals_ds_identifier)
+        eeg_overview_intervals_df: pd.DataFrame = eeg_ds.get_overview_intervals()
+        ## Find window spanning all data items
+        desired_t_start = eeg_overview_intervals_df['t_start'].min()
+        desired_t_end = eeg_overview_intervals_df['t_end'].max()
+        # desired_t_start, desired_t_end
+        self.update_window(desired_t_start, desired_t_end)
+
     def find_next_active_interval(self, is_jump_next: bool=True, specific_intervals_ds_identifier: str = 'EEG_Epoc X'):
         """ finds the next active interval and then jumps to it
 
@@ -668,8 +681,6 @@ class SimpleTimelineWidget(DayNightBandRenderingMixin, TrackRenderingMixin, Dyna
         return desired_interval_idx, (desired_t_start, desired_t_end)
 
 
-
-
     def go_to_specific_interval(self, desired_interval_idx: int, specific_intervals_ds_identifier: str = 'EEG_Epoc X'):
         """ jumps to the specific interval if it's valid -- this one works and is what the numeric spinbox uses to adjust the window to a specific session 
         """
@@ -680,6 +691,11 @@ class SimpleTimelineWidget(DayNightBandRenderingMixin, TrackRenderingMixin, Dyna
         desired_t_start, desired_t_end = eeg_overview_intervals_df.iloc[desired_interval_idx][['t_start', 't_end']].to_numpy()
         # desired_t_start, desired_t_end
         self.update_window(desired_t_start, desired_t_end)
+
+
+
+
+
 
 
     # ==================================================================================================================================================================================================================================================================================== #

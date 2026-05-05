@@ -86,6 +86,8 @@ class MainTimelineWindow(QMainWindow):
             self.actionGoToNext.triggered.connect(self._on_go_to_next)
         if hasattr(self, "actionGoToLatest"):
             self.actionGoToLatest.triggered.connect(self._on_go_to_latest)
+        if hasattr(self, "actionFit_All_Items"):
+            self.actionFit_All_Items.triggered.connect(self._on_go_to_fit_all_items)
         if hasattr(self, "sessionJumpButton"):
             self.sessionJumpButton.clicked.connect(self._on_session_jump_clicked)
         self.sync_session_jump_controls()
@@ -309,6 +311,16 @@ class MainTimelineWindow(QMainWindow):
             return
         if hasattr(tw, "go_to_latest_window"):
             tw.go_to_latest_window()
+
+
+    def _on_go_to_fit_all_items(self):
+        tw = self.timeline_widget
+        if tw is None:
+            return
+        if hasattr(tw, "go_to_fit_all_items"):
+            tw.go_to_fit_all_items()
+
+
 
 
     def _on_log_toggle(self, checked: bool):
