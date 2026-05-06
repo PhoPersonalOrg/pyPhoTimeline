@@ -386,6 +386,16 @@
     <addaction name="separator"/>
     <addaction name="actionFit_All_Items"/>
    </widget>
+   <widget class="QMenu" name="menuAdd_Track">
+    <property name="title">
+     <string>Add Track</string>
+    </property>
+    <addaction name="actionAdd_Video_Track"/>
+    <addaction name="actionAdd_EEG_Spectrogram_Track"/>
+    <addaction name="separator"/>
+    <addaction name="actionAdd_Calendar_Navigator_Track"/>
+    <addaction name="actionAdd_DataFrame_Table_Track"/>
+   </widget>
    <widget class="QMenu" name="menuWindow">
     <property name="title">
      <string>Window</string>
@@ -400,6 +410,7 @@
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuGoto"/>
+   <addaction name="menuAdd_Track"/>
    <addaction name="menuWindow"/>
    <addaction name="menuAbout"/>
   </widget>
@@ -507,6 +518,38 @@
   <action name="actionseparate_PDF_per_track">
    <property name="text">
     <string>separate PDF per track</string>
+   </property>
+  </action>
+  <action name="actionAdd_Video_Track">
+   <property name="text">
+    <string>Video...</string>
+   </property>
+   <property name="toolTip">
+    <string>Add a video track from one or more video files</string>
+   </property>
+  </action>
+  <action name="actionAdd_EEG_Spectrogram_Track">
+   <property name="text">
+    <string>EEG Spectrogram...</string>
+   </property>
+   <property name="toolTip">
+    <string>Add EEG spectrogram tracks for a chosen stream and channel group(s)</string>
+   </property>
+  </action>
+  <action name="actionAdd_Calendar_Navigator_Track">
+   <property name="text">
+    <string>Calendar Navigator</string>
+   </property>
+   <property name="toolTip">
+    <string>Add a calendar navigator track at the bottom of the timeline</string>
+   </property>
+  </action>
+  <action name="actionAdd_DataFrame_Table_Track">
+   <property name="text">
+    <string>DataFrame Table...</string>
+   </property>
+   <property name="toolTip">
+    <string>Add a DataFrame table track for an existing track's detailed data</string>
    </property>
   </action>
  </widget>

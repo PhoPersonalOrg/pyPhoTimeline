@@ -4,10 +4,10 @@ import sys
 import os
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional, Callable, Union, Any, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING, Union
 from qtpy import QtWidgets, QtCore
 from qtpy.uic import loadUi
-from qtpy.QtWidgets import QApplication, QFileDialog, QMessageBox, QMainWindow, QVBoxLayout
+from qtpy.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox, QMainWindow, QVBoxLayout
 
 if TYPE_CHECKING:
     from pypho_timeline.docking.nested_dock_area_widget import NestedDockAreaWidget
@@ -92,9 +92,18 @@ class MainTimelineWindow(QMainWindow):
             self.actionExportSingle_PDF_file.triggered.connect(self._on_export_single_pdf_file)
         if hasattr(self, "actionseparate_PDF_per_track"):
             self.actionseparate_PDF_per_track.triggered.connect(self._on_export_separate_pdf_per_track)
+        if hasattr(self, "actionAdd_Video_Track"):
+            self.actionAdd_Video_Track.triggered.connect(self._on_add_video_track)
+        if hasattr(self, "actionAdd_EEG_Spectrogram_Track"):
+            self.actionAdd_EEG_Spectrogram_Track.triggered.connect(self._on_add_eeg_spectrogram_track)
+        if hasattr(self, "actionAdd_Calendar_Navigator_Track"):
+            self.actionAdd_Calendar_Navigator_Track.triggered.connect(self._on_add_calendar_navigator_track)
+        if hasattr(self, "actionAdd_DataFrame_Table_Track"):
+            self.actionAdd_DataFrame_Table_Track.triggered.connect(self._on_add_dataframe_table_track)
         if hasattr(self, "sessionJumpButton"):
             self.sessionJumpButton.clicked.connect(self._on_session_jump_clicked)
         self.sync_session_jump_controls()
+        self._sync_add_track_actions_enabled()
         self.setWindowIcon(timeline_window_icon())
         ensure_timeline_application_window_icon()
         if hasattr(self, "collapsedDockOverflowStrip"):
@@ -238,6 +247,7 @@ class MainTimelineWindow(QMainWindow):
 
 
     def sync_session_jump_controls(self):
+        self._sync_add_track_actions_enabled()
         if not hasattr(self, "sessionJumpSpinBox") or not hasattr(self, "sessionJumpButton"):
             return
         tw = self.timeline_widget
@@ -414,6 +424,213 @@ class MainTimelineWindow(QMainWindow):
             return
         first_parent = Path(exported_paths[0]).parent
         QMessageBox.information(self, "Export separate PDF per track", f"Exported {len(exported_paths)} track PDF file(s) to:\n{first_parent}")
+
+
+    def _sync_add_track_actions_enabled(self) -> None:
+        """Enable/disable Add Track actions based on the current timeline state."""
+        tw = self.timeline_widget
+        has_timeline = tw is not None
+        has_eeg_source = has_timeline and len(self._candidate_eeg_source_track_names()) > 0 and self._timeline_builder is not None
+        has_table_candidate = has_timeline and len(self._candidate_dataframe_table_track_names()) > 0
+        if hasattr(self, "actionAdd_Video_Track"):
+            self.actionAdd_Video_Track.setEnabled(has_timeline)
+        if hasattr(self, "actionAdd_EEG_Spectrogram_Track"):
+            self.actionAdd_EEG_Spectrogram_Track.setEnabled(has_eeg_source)
+        if hasattr(self, "actionAdd_Calendar_Navigator_Track"):
+            self.actionAdd_Calendar_Navigator_Track.setEnabled(has_timeline)
+        if hasattr(self, "actionAdd_DataFrame_Table_Track"):
+            self.actionAdd_DataFrame_Table_Track.setEnabled(has_table_candidate)
+
+
+    def _candidate_eeg_source_track_names(self) -> List[str]:
+        """Names of EEG source datasources eligible for spectrogram computation (have raws, not themselves spectrograms)."""
+        tw = self.timeline_widget
+        if tw is None or not hasattr(tw, "track_datasources"):
+            return []
+        try:
+            from pypho_timeline.rendering.datasources.specific.eeg import EEGTrackDatasource, EEGSpectrogramTrackDatasource
+        except Exception:
+            return []
+        names: List[str] = []
+        for name, ds in tw.track_datasources.items():
+            if ds is None:
+                continue
+            if EEGSpectrogramTrackDatasource is not None and isinstance(ds, EEGSpectrogramTrackDatasource):
+                continue
+            if not isinstance(ds, EEGTrackDatasource):
+                continue
+            if not getattr(ds, "raw_datasets_dict", None):
+                continue
+            names.append(name)
+        return names
+
+
+    def _candidate_dataframe_table_track_names(self) -> List[str]:
+        """Names of tracks whose datasource exposes a non-empty ``detailed_df`` for table display."""
+        tw = self.timeline_widget
+        if tw is None or not hasattr(tw, "track_datasources"):
+            return []
+        names: List[str] = []
+        for name, ds in tw.track_datasources.items():
+            if ds is None:
+                continue
+            df = getattr(ds, "detailed_df", None)
+            if df is None:
+                continue
+            try:
+                if hasattr(df, "empty") and df.empty:
+                    continue
+            except Exception:
+                pass
+            names.append(name)
+        return names
+
+
+    DEFAULT_VIDEO_DISCOVERY_DIRS: Tuple[Path, ...] = (Path("M:/ScreenRecordings/EyeTrackerVR_Recordings"), Path("M:/ScreenRecordings/REC_continuous_video_recorder"))
+    DEFAULT_VIDEO_MAX_NUM_RECENT: int = 25
+
+
+    def _resolve_video_discovery_dirs(self) -> List[Path]:
+        """Builder-configured ``video_discovery_dirs`` if any, otherwise the notebook defaults."""
+        if self._timeline_builder is not None:
+            rc = getattr(self._timeline_builder, "_refresh_config", None)
+            if rc:
+                configured = rc.get("video_discovery_dirs", []) or []
+                resolved = [Path(p) for p in configured]
+                if resolved:
+                    return resolved
+        return [Path(p) for p in self.DEFAULT_VIDEO_DISCOVERY_DIRS]
+
+
+    def _on_add_video_track(self):
+        tw = self.timeline_widget
+        if tw is None or not hasattr(tw, "add_video_track"):
+            QMessageBox.warning(self, "Add Video Track", "No active timeline to add a track to.")
+            return
+        try:
+            from pypho_timeline.rendering.datasources.specific.video import VideoTrackDatasource
+            from phopylslhelper.file_metadata_caching.manager import BaseFileMetadataManager
+            from phopylslhelper.file_metadata_caching.video_metadata import VideoMetadataParser
+        except Exception as e:
+            _logger.warning("add video track: video deps unavailable: %s", e)
+            QMessageBox.warning(self, "Add Video Track", f"Video support is unavailable:\n{e}")
+            return
+        discovery_dirs = self._resolve_video_discovery_dirs()
+        existing_dirs = [d for d in discovery_dirs if d.exists() and d.is_dir()]
+        if not existing_dirs:
+            missing = "\n".join(str(d) for d in discovery_dirs)
+            QMessageBox.information(self, "Add Video Track", f"None of the configured video discovery directories exist:\n{missing}")
+            return
+        try:
+            video_manager = BaseFileMetadataManager(parse_folders=existing_dirs, parsers={'video': VideoMetadataParser})
+            recent_videos = video_manager.get_most_recent_video_paths(max_num_videos=self.DEFAULT_VIDEO_MAX_NUM_RECENT)
+        except Exception as e:
+            _logger.warning("add video track: video discovery failed: %s", e)
+            QMessageBox.warning(self, "Add Video Track", f"Video discovery failed:\n{e}")
+            return
+        if not recent_videos:
+            dirs_str = "\n".join(str(d) for d in existing_dirs)
+            QMessageBox.information(self, "Add Video Track", f"No videos found under:\n{dirs_str}")
+            return
+        track_name = "RecentVideosTrack"
+        suffix = 1
+        while track_name in getattr(tw, "track_datasources", {}):
+            suffix += 1
+            track_name = f"RecentVideosTrack_{suffix}"
+        video_paths: List[Union[Path, str]] = [Path(p) for p in recent_videos]
+        try:
+            video_ds = VideoTrackDatasource(video_paths=video_paths, custom_datasource_name=track_name)
+            tw.add_video_track(track_name=track_name, video_datasource=video_ds, enable_time_crosshair=True)
+        except Exception as e:
+            _logger.warning("add video track failed: %s", e)
+            QMessageBox.warning(self, "Add Video Track", str(e))
+            return
+        self._sync_add_track_actions_enabled()
+
+
+    def _on_add_eeg_spectrogram_track(self):
+        tw = self.timeline_widget
+        if tw is None:
+            QMessageBox.warning(self, "Add EEG Spectrogram", "No active timeline to add a track to.")
+            return
+        candidate_names = self._candidate_eeg_source_track_names()
+        if not candidate_names:
+            QMessageBox.information(self, "Add EEG Spectrogram", "No EEG source datasources with raws are loaded.")
+            return
+        if self._timeline_builder is None:
+            QMessageBox.warning(self, "Add EEG Spectrogram", "Timeline builder is required to add spectrogram tracks.")
+            return
+        from pypho_timeline.widgets.TimelineWindow.add_track_dialogs import AddEEGSpectrogramDialog
+        from qtpy.QtWidgets import QDialog
+        dialog = AddEEGSpectrogramDialog(eeg_track_names=candidate_names, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        eeg_track_name = dialog.selected_eeg_track_name
+        if not eeg_track_name:
+            return
+        groups = dialog.selected_groups
+        eeg_ds = tw.track_datasources.get(eeg_track_name) if hasattr(tw, "track_datasources") else None
+        if eeg_ds is None:
+            QMessageBox.warning(self, "Add EEG Spectrogram", f"Could not resolve EEG datasource '{eeg_track_name}'.")
+            return
+        try:
+            created = eeg_ds.add_spectrogram_tracks_for_channel_groups(spectrogram_channel_groups=groups, timeline=tw, timeline_builder=self._timeline_builder)
+        except Exception as e:
+            _logger.warning("add eeg spectrogram track failed: %s", e)
+            QMessageBox.warning(self, "Add EEG Spectrogram", str(e))
+            return
+        if not created:
+            QMessageBox.information(self, "Add EEG Spectrogram", "No new spectrogram tracks were added (they may already exist).")
+        self._sync_add_track_actions_enabled()
+
+
+    def _on_add_calendar_navigator_track(self):
+        tw = self.timeline_widget
+        if tw is None or not hasattr(tw, "add_calendar_navigator"):
+            QMessageBox.warning(self, "Add Calendar Navigator", "No active timeline to add a track to.")
+            return
+        if hasattr(tw, "ui") and getattr(tw.ui, "calendar", None) is not None:
+            QMessageBox.information(self, "Add Calendar Navigator", "A calendar navigator is already attached to this timeline.")
+            return
+        try:
+            tw.add_calendar_navigator()
+        except Exception as e:
+            _logger.warning("add calendar navigator failed: %s", e)
+            QMessageBox.warning(self, "Add Calendar Navigator", str(e))
+
+
+    def _on_add_dataframe_table_track(self):
+        tw = self.timeline_widget
+        if tw is None or not hasattr(tw, "add_dataframe_table_track"):
+            QMessageBox.warning(self, "Add DataFrame Table", "No active timeline to add a track to.")
+            return
+        candidate_names = self._candidate_dataframe_table_track_names()
+        if not candidate_names:
+            QMessageBox.information(self, "Add DataFrame Table", "No tracks with a detailed DataFrame are available.")
+            return
+        track_name, ok = QInputDialog.getItem(self, "Add DataFrame Table", "Source track:", candidate_names, 0, False)
+        if not ok or not track_name:
+            return
+        ds = tw.track_datasources.get(track_name) if hasattr(tw, "track_datasources") else None
+        if ds is None:
+            QMessageBox.warning(self, "Add DataFrame Table", f"Could not resolve source track '{track_name}'.")
+            return
+        df = getattr(ds, "detailed_df", None)
+        if df is None:
+            QMessageBox.warning(self, "Add DataFrame Table", f"Track '{track_name}' has no detailed DataFrame.")
+            return
+        table_track_name = f"{track_name}_table"
+        if hasattr(tw, "ui") and hasattr(tw.ui, "dynamic_docked_widget_container"):
+            existing = tw.ui.dynamic_docked_widget_container.find_display_dock(table_track_name)
+            if existing is not None:
+                existing.show()
+                existing.raise_()
+                return
+        try:
+            tw.add_dataframe_table_track(track_name=table_track_name, dataframe=df, time_column='t', dockSize=(400, 200))
+        except Exception as e:
+            _logger.warning("add dataframe table track failed: %s", e)
+            QMessageBox.warning(self, "Add DataFrame Table", str(e))
 
 
     @property
